@@ -189,18 +189,14 @@ export interface Assignment {
   title: string;
   description: string | null;
   instructions: string | null;
-  problem_statement: string | null;
-  input_format: string | null;
-  output_format: string | null;
-  constraints_text: string | null;
-  starter_code: string | null;
-  hints: string[];
-  sample_solution: string | null;
-  sample_solution_visibility: 'always' | 'after_submission' | 'after_grading' | 'never';
+  assignment_type: 'coding' | 'written' | 'mixed';
+  status: 'draft' | 'published' | 'closed';
+  start_date: string | null;
+  due_date: string | null;
+  allow_late_submission: boolean;
   max_submissions: number | null;
   passing_score: number | null;
   order_index: number;
-  due_date: string | null;
   max_marks: number;
   difficulty: string;
   allow_resubmit: boolean;
@@ -210,9 +206,29 @@ export interface Assignment {
   updated_at: string;
 }
 
+export interface AssignmentQuestion {
+  id: string;
+  assignment_id: string;
+  title: string;
+  problem_statement: string | null;
+  instructions: string | null;
+  input_format: string | null;
+  output_format: string | null;
+  constraints_text: string | null;
+  starter_code: string | null;
+  hints: string[];
+  question_type: 'coding' | 'short_answer' | 'long_answer';
+  difficulty: string;
+  marks: number;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AssignmentTestCase {
   id: string;
   assignment_id: string;
+  question_id: string | null;
   input_data: string | null;
   expected_output: string;
   is_hidden: boolean;
@@ -226,22 +242,28 @@ export interface AssignmentSubmission {
   id: string;
   assignment_id: string;
   student_id: string;
-  submission_text: string | null;
-  github_url: string | null;
-  project_url: string | null;
-  file_url: string | null;
-  submitted_code: string | null;
-  language: string;
-  execution_output: string | null;
-  visible_tests_passed: number;
-  visible_tests_total: number;
-  submission_number: number;
   status: 'draft' | 'submitted' | 'graded' | 'returned';
   score: number | null;
   feedback: string | null;
   graded_by: string | null;
   graded_at: string | null;
   submitted_at: string;
+  updated_at: string;
+  submission_number: number;
+}
+
+export interface AssignmentQuestionSubmission {
+  id: string;
+  submission_id: string;
+  question_id: string;
+  submitted_code: string | null;
+  submitted_text: string | null;
+  execution_output: string | null;
+  passed_test_cases: number;
+  total_test_cases: number;
+  marks_awarded: number | null;
+  feedback: string | null;
+  created_at: string;
   updated_at: string;
 }
 
