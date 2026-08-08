@@ -185,44 +185,34 @@ export async function registerForSession(sessionId: string, studentId: string): 
 
 // Faculty: Get sessions for assigned courses
 export async function getFacultySessions(facultyId: string): Promise<SessionWithDetails[]> {
-  const { data, error } = await supabase
+  // Supabase .in() accepts an array, not another query builder.
+  // Load the faculty's course IDs first, then fetch sessions for those courses.
+  const { data: facultyCourses, error: facultyCoursesError } = await supabase
+    .from('course_faculty')
+    .select('course_id')
+    .eq('faculty_id', facultyId);
+
+  if (facultyCoursesError) throw facultyCoursesError;
+
+  const courseIds = Array.from(
+    new Set((facultyCourses || []).map(course => course.course_id).filter(Boolean)),
+  );
+
+  if (!courseIds.length) return [];
+
+  // The course relation is backed by live_sessions.course_id.
+  // Avoid requiring a created_by -> profiles relation while preview mode has no real auth.
+  const { data: sessions, error: sessionsError } = await supabase
     .from('live_sessions')
     .select(`
       *,
-      course:courses(id, title, slug),
-      faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
+      course:courses(id, title, slug)
     `)
-    .in('course_id', (
-      supabase.from('course_faculty')
-        .select('course_id')
-        .eq('faculty_id', facultyId)
-    ))
+    .in('course_id', courseIds)
     .order('session_date', { ascending: true });
 
-  if (error) {
-    // If the nested query fails, try a simpler approach
-    const { data: facultyCourses } = await supabase
-      .from('course_faculty')
-      .select('course_id')
-      .eq('faculty_id', facultyId);
-
-    if (!facultyCourses?.length) return [];
-
-    const courseIds = facultyCourses.map(fc => fc.course_id);
-    const { data: sessions } = await supabase
-      .from('live_sessions')
-      .select(`
-        *,
-        course:courses(id, title, slug),
-        faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
-      `)
-      .in('course_id', courseIds)
-      .order('session_date', { ascending: true });
-
-    return (sessions || []) as SessionWithDetails[];
-  }
-
-  return (data || []) as SessionWithDetails[];
+  if (sessionsError) throw sessionsError;
+  return (sessions || []) as SessionWithDetails[];
 }
 
 // Faculty: Create a new session

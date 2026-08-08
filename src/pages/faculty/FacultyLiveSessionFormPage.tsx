@@ -283,6 +283,13 @@ export default function FacultyLiveSessionFormPage() {
 
       if (isEdit && sessionId) {
         await updateSession(sessionId, input);
+
+        // Recover sessions that were saved before their generated Meet link
+        // could be persisted. Saving the edit generates and stores the link.
+        if (googleConnected && !form.google_meet_url.trim()) {
+          await handleGenerateMeet(sessionId);
+        }
+
         success('Session updated successfully!');
         navigate('/faculty/live-classes');
       } else {
