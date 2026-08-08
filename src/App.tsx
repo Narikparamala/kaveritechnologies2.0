@@ -38,6 +38,7 @@ const LessonPage = lazy(() => import('./pages/student/LessonPage'));
 const RoadmapPage = lazy(() => import('./pages/student/RoadmapPage'));
 const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
+const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
 const LeaderboardPage = lazy(() => import('./pages/student/LeaderboardPage'));
@@ -67,6 +68,8 @@ const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStude
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
 const FacultyAssignmentsPage = lazy(() => import('./pages/faculty/FacultyAssignmentsPage'));
+const FacultyQuestionBankPage = lazy(() => import('./pages/faculty/FacultyQuestionBankPage'));
+const FacultyAssignmentBuilderPage = lazy(() => import('./pages/faculty/FacultyAssignmentBuilderPage'));
 const FacultyQuizzesPage = lazy(() => import('./pages/faculty/FacultyQuizzesPage'));
 const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
@@ -216,6 +219,8 @@ export default function App() {
                     <Route path="playground" element={<PlaygroundPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
+                    <Route path="coding-practice" element={<CodingPracticePage />} />
+                    <Route path="coding-practice/:questionId" element={<CodingPracticePage />} />
                     <Route path="quizzes" element={<QuizzesPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
                     <Route path="jobs" element={<JobsPage />} />
@@ -251,6 +256,10 @@ export default function App() {
                     <Route path="courses/:courseId/builder" element={<CourseBuilderPage />} />
                     <Route path="lessons" element={<FacultyLessonsPage />} />
                     <Route path="assignments" element={<FacultyAssignmentsPage />} />
+                    <Route path="question-bank" element={<FacultyQuestionBankPage />} />
+                    <Route path="question-bank/editor/:questionId" element={<FacultyQuestionBankPage />} />
+                    <Route path="assignments/new" element={<FacultyAssignmentBuilderPage />} />
+                    <Route path="assignments/builder/:assignmentId" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="submissions" element={<SubmissionsPage />} />
                     <Route path="quizzes" element={<FacultyQuizzesPage />} />
                     <Route path="projects" element={<FacultyProjectsPage />} />

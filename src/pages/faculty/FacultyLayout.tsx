@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: 'Course Builder', icon: BookPlus, to: '/courses' },
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
+  { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
   { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { MessageSquare, ExternalLink, Github, Star, ChevronRight, Code, Type, CheckCircle, XCircle } from 'lucide-react';
+import { MessageSquare, CheckCircle } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -7,9 +7,11 @@ import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/utils';
-import { 
-  getAssignmentSubmissions, getQuestionSubmissions, 
-  gradeSubmission, gradeQuestionSubmission, getAssignmentQuestions 
+import {
+  getQuestionSubmissions,
+  gradeSubmission,
+  gradeQuestionSubmission,
+  getAssignmentQuestions,
 } from '../../services/assignments';
 import type { 
   AssignmentSubmission, Assignment, Profile, 
@@ -64,7 +66,9 @@ export default function SubmissionsPage() {
 
   const openGrading = async (sub: SubmissionFull) => {
     setGrading(sub);
-    setGradeForm({ score: sub.score?.toString() || '', feedback: sub.feedback || '' });
+    setQuestions([]);
+    setQSubmissions([]);
+    setGradeForm({ score: '0', feedback: sub.feedback || '' });
     try {
       const [qs, qSubs] = await Promise.all([
         getAssignmentQuestions(sub.assignment_id),
@@ -72,14 +76,29 @@ export default function SubmissionsPage() {
       ]);
       setQuestions(qs);
       setQSubmissions(qSubs);
+      const maximum = Math.max(0, Number(sub.assignment?.max_marks ?? 0));
+      const questionTotal = qSubs.reduce(
+        (sum, questionSubmission) => sum + Number(questionSubmission.marks_awarded ?? 0),
+        0,
+      );
+      const safeTotal = Math.min(maximum, Math.max(0, questionTotal));
+      setGradeForm({ score: safeTotal.toString(), feedback: sub.feedback || '' });
     } catch (e: any) { toastError('Error loading details', e.message); }
   };
 
   const handleGrade = async () => {
     if (!grading || !profile) return;
+    const score = Number(gradeForm.score);
+    const maximum = Math.max(0, Number(grading.assignment?.max_marks ?? 0));
+
+    if (!Number.isFinite(score) || score < 0 || score > maximum) {
+      toastError('Invalid score', `The final score must be between 0 and ${maximum}.`);
+      return;
+    }
+
     setSaving(true);
     try {
-      await gradeSubmission(grading.id, Number(gradeForm.score), gradeForm.feedback, profile.id);
+      await gradeSubmission(grading.id, score, gradeForm.feedback.trim(), profile.id);
       success('Submission graded!');
       setGrading(null);
       await loadSubmissions();
@@ -87,18 +106,34 @@ export default function SubmissionsPage() {
     setSaving(false);
   };
 
-  const handleGradeQuestion = async (qSubId: string, marks: number, feedback: string) => {
+  const handleGradeQuestion = async (
+    qSubId: string,
+    marks: number,
+    maximum: number,
+    feedback: string,
+  ) => {
+    if (!Number.isFinite(marks) || marks < 0 || marks > maximum) {
+      toastError('Invalid marks', `Marks for this question must be between 0 and ${maximum}.`);
+      return false;
+    }
+
     try {
-      await gradeQuestionSubmission(qSubId, marks, feedback);
+      await gradeQuestionSubmission(qSubId, marks, feedback.trim());
       success('Question graded');
       if (grading) {
         const updatedQSubs = await getQuestionSubmissions(grading.id);
         setQSubmissions(updatedQSubs);
-        // Auto-calculate total score
-        const total = updatedQSubs.reduce((sum, qs) => sum + (qs.marks_awarded || 0), 0);
-        setGradeForm(prev => ({ ...prev, score: total.toString() }));
+        const assignmentMaximum = Math.max(0, Number(grading.assignment?.max_marks ?? 0));
+        const total = updatedQSubs.reduce(
+          (sum, questionSubmission) => sum + Number(questionSubmission.marks_awarded ?? 0),
+          0,
+        );
+        const safeTotal = Math.min(assignmentMaximum, Math.max(0, total));
+        setGradeForm(prev => ({ ...prev, score: safeTotal.toString() }));
       }
+      return true;
     } catch (e: any) { toastError('Error', e.message); }
+    return false;
   };
 
   return (
@@ -133,7 +168,7 @@ export default function SubmissionsPage() {
       )}
 
       {/* Grading Modal */}
-      <Modal isOpen={!!grading} onClose={() => setGrading(null)} title="Grade Submission" size="xl">
+      <Modal open={!!grading} onClose={() => setGrading(null)} title="Grade Submission" size="xl">
         <div className="flex flex-col h-[80vh]">
           <div className="flex-1 overflow-y-auto p-6 space-y-8">
             {/* Student Info */}
@@ -202,8 +237,23 @@ export default function SubmissionsPage() {
                         <input 
                           type="number" 
                           className="input py-1.5 text-sm" 
+                          min={0}
+                          max={q.marks}
+                          step="1"
                           defaultValue={qSub?.marks_awarded || 0}
-                          onBlur={(e) => qSub && handleGradeQuestion(qSub.id, Number(e.target.value), qSub.feedback || '')}
+                          onBlur={async (e) => {
+                            if (!qSub) return;
+                            const marksInput = e.currentTarget;
+                            const saved = await handleGradeQuestion(
+                              qSub.id,
+                              Number(marksInput.value),
+                              Number(q.marks),
+                              qSub.feedback || '',
+                            );
+                            if (!saved) {
+                              marksInput.value = String(qSub.marks_awarded ?? 0);
+                            }
+                          }}
                         />
                       </div>
                       <div className="flex-1">
@@ -213,7 +263,12 @@ export default function SubmissionsPage() {
                           className="input py-1.5 text-sm" 
                           placeholder="Feedback for this question..."
                           defaultValue={qSub?.feedback || ''}
-                          onBlur={(e) => qSub && handleGradeQuestion(qSub.id, qSub.marks_awarded || 0, e.target.value)}
+                          onBlur={(e) => qSub && handleGradeQuestion(
+                            qSub.id,
+                            Number(qSub.marks_awarded ?? 0),
+                            Number(q.marks),
+                            e.currentTarget.value,
+                          )}
                         />
                       </div>
                     </div>
@@ -228,7 +283,17 @@ export default function SubmissionsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Final Score (out of {grading?.assignment?.max_marks})</label>
-                <input type="number" className="input" value={gradeForm.score} onChange={e => setGradeForm({ ...gradeForm, score: e.target.value })} />
+                <input
+                  type="number"
+                  className="input bg-slate-100 dark:bg-slate-800 cursor-not-allowed"
+                  min={0}
+                  max={grading?.assignment?.max_marks ?? 0}
+                  value={gradeForm.score}
+                  readOnly
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Automatically calculated from the marks awarded to each question.
+                </p>
               </div>
               <div>
                 <label className="label">Overall Feedback</label>

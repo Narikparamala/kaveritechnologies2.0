@@ -6,7 +6,7 @@ import type { Profile, UserRole } from '../types/database';
 // ─── PREVIEW MODE ────────────────────────────────────────────────────────────
 // Set to 'student' | 'faculty' | 'super_admin' to bypass login in preview.
 // Set to null to restore normal authentication.
-export const PREVIEW_ROLE: UserRole | null = 'student';
+export const PREVIEW_ROLE: UserRole | null = 'faculty';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PREVIEW_PROFILE: Profile = {
