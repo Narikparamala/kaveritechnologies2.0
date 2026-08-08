@@ -79,6 +79,8 @@ export async function createLesson(input: {
   notes_markdown?: string;
   code_example?: string;
   explanation?: string;
+  teaching_mode?: 'live_class' | 'recorded_video';
+  enable_coding_playground?: boolean;
   duration_minutes?: number;
   order_index?: number;
   is_published?: boolean;
@@ -89,10 +91,12 @@ export async function createLesson(input: {
     ...input,
     order_index: nextOrder,
     is_published: input.is_published ?? false,
-  duration_minutes: input.duration_minutes ?? 10,
-  xp_reward: 10,
-  slug: input.slug,
-  video_url: null,
+    teaching_mode: input.teaching_mode ?? 'live_class',
+    enable_coding_playground: input.enable_coding_playground ?? false,
+    duration_minutes: input.duration_minutes ?? 10,
+    xp_reward: 10,
+    slug: input.slug,
+    video_url: null,
     is_free_preview: false,
   }).select().single();
   if (error) throw error;
