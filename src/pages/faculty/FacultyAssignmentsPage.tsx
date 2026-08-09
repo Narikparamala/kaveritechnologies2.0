@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Code2, Edit3, FileText, Plus, Trash2 } from 'lucide-react';
+import { Calendar, Code2, Edit3, FileText, Play, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
@@ -131,6 +131,14 @@ export default function FacultyAssignmentsPage() {
                   </button>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      className="btn-secondary flex items-center gap-2 text-sm"
+                      onClick={() =>
+                        navigate(`/faculty/practice/assignments/${assignment.id}?practice=1&returnTo=${encodeURIComponent('/faculty/assignments')}`)
+                      }
+                    >
+                      <Play size={16} /> Practice
+                    </button>
                     <button
                       className="btn-secondary flex items-center gap-2 text-sm"
                       onClick={() => navigate(`/faculty/assignments/builder/${assignment.id}`)}
