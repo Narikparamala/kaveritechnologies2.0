@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   HelpCircle, Plus, Edit2, Trash2, Eye, EyeOff, Clock, Trophy, ChevronDown,
-  ChevronRight, Check, X, Copy, ArrowUp, ArrowDown, Code, Image,
+  ChevronRight, Check, X, Copy, ArrowUp, ArrowDown, Code, Image, Play,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -99,6 +100,7 @@ const validateQuestion = (question: QuestionValidationInput): string | null => {
 
 export default function FacultyQuizzesPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const { success, error: toastError } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<(Quiz & { course: Course })[]>([]);
@@ -485,6 +487,12 @@ export default function FacultyQuizzesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => navigate(`/faculty/practice/quizzes?practice=1&quizId=${q.id}&returnTo=${encodeURIComponent('/faculty/quizzes')}`)}
+                    className="btn-secondary text-xs flex items-center gap-1"
+                  >
+                    <Play size={13} /> Practice
+                  </button>
                   <button onClick={() => openManage(q)} className="btn-secondary text-xs">Manage Questions</button>
                   <button onClick={() => openAttempts(q)} className="btn-secondary text-xs">Attempts</button>
                   <button onClick={() => handleTogglePublish(q)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
