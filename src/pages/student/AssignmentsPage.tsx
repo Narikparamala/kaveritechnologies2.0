@@ -94,12 +94,14 @@ export default function AssignmentsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get('returnTo');
-  const listPath = returnTo ?? '/student/assignments';
+  const practiceMode = searchParams.get('practice') === '1';
+  const listPath = returnTo ?? (practiceMode ? '/faculty/assignments' : '/student/assignments');
 
   if (assignmentId) {
     return (
       <AssignmentWorkspace
         assignmentId={assignmentId}
+        practiceMode={practiceMode}
         onBack={() => navigate(listPath)}
         onSubmitted={() => navigate(listPath)}
       />
@@ -176,10 +178,12 @@ function AssignmentList({ onOpen }: { onOpen: (id: string) => void }) {
 
 function AssignmentWorkspace({
   assignmentId,
+  practiceMode,
   onBack,
   onSubmitted,
 }: {
   assignmentId: string;
+  practiceMode: boolean;
   onBack: () => void;
   onSubmitted: () => void;
 }) {
@@ -209,7 +213,7 @@ function AssignmentWorkspace({
       const [assignmentData, questionData, submissionData] = await Promise.all([
         getAssignmentById(assignmentId),
         getAssignmentQuestions(assignmentId),
-        getStudentSubmission(assignmentId, profile.id),
+        practiceMode ? Promise.resolve(null) : getStudentSubmission(assignmentId, profile.id),
       ]);
       if (!assignmentData) throw new Error('Assignment not found');
 
@@ -231,7 +235,7 @@ function AssignmentWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [assignmentId, profile, toastError]);
+  }, [assignmentId, practiceMode, profile, toastError]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -257,10 +261,10 @@ function AssignmentWorkspace({
   };
 
   const saveCurrentDraft = async () => {
-    if (!currentQuestion || !answers[currentQuestion.id]) return;
+    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
     setSaving(true);
     try {
-      const currentSubmission = await ensureSubmission();
+      const currentSubmission = practiceMode ? null : await ensureSubmission();
       await saveQuestionSubmission({
         ...answers[currentQuestion.id],
         submission_id: currentSubmission.id,
@@ -274,10 +278,10 @@ function AssignmentWorkspace({
   };
 
   useEffect(() => {
-    if (!currentQuestion || !answers[currentQuestion.id]) return;
+    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
     const timer = window.setTimeout(() => { void saveCurrentDraft(); }, 1500);
     return () => window.clearTimeout(timer);
-  }, [answers, currentQuestion?.id]);
+  }, [answers, currentQuestion?.id, practiceMode]);
 
   const runVisibleTests = async () => {
     if (!currentQuestion) return;
@@ -369,15 +373,17 @@ function AssignmentWorkspace({
           firstFailedQuestion = index;
         }
 
-        await saveQuestionSubmission({
-          ...answers[question.id],
-          submission_id: currentSubmission.id,
-          question_id: question.id,
-          submitted_code: code,
-          execution_output: JSON.stringify(results),
-          passed_test_cases: questionPassed,
-          total_test_cases: tests.length,
-        });
+        if (currentSubmission) {
+          await saveQuestionSubmission({
+            ...answers[question.id],
+            submission_id: currentSubmission.id,
+            question_id: question.id,
+            submitted_code: code,
+            execution_output: JSON.stringify(results),
+            passed_test_cases: questionPassed,
+            total_test_cases: tests.length,
+          });
+        }
       }
 
       if (totalTests === 0) {
@@ -393,10 +399,15 @@ function AssignmentWorkspace({
         return;
       }
 
-      await submitAssignment(currentSubmission.id);
-      setConsoleText(`ACCEPTED\nAll ${totalTests} test cases passed.`);
-      success('All test cases passed!', 'Your assignment was submitted successfully.');
-      window.setTimeout(onSubmitted, 900);
+      if (currentSubmission) {
+        await submitAssignment(currentSubmission.id);
+        setConsoleText(`ACCEPTED\nAll ${totalTests} test cases passed.`);
+        success('All test cases passed!', 'Your assignment was submitted successfully.');
+        window.setTimeout(onSubmitted, 900);
+      } else {
+        setConsoleText(`PRACTICE COMPLETE\nAll ${totalTests} test cases passed. No student submission or grade was created.`);
+        success('Practice complete!', 'All test cases passed. Nothing was submitted or graded.');
+      }
     } catch (error) {
       toastError('Submission failed', errorMessage(error));
       setConsoleText(`Submission error: ${errorMessage(error)}`);
@@ -418,8 +429,12 @@ function AssignmentWorkspace({
           <div><h1 className="text-sm font-semibold">{assignment.title}</h1><p className="text-[10px] uppercase tracking-wider text-slate-400">{assignment.course?.title}</p></div>
         </div>
         <div className="flex items-center gap-3">
-          <span className={`flex items-center gap-1 text-xs ${saving ? 'text-amber-500' : 'text-emerald-500'}`}><Save size={12} />{saving ? 'Saving...' : 'Saved'}</span>
-          <button className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs" disabled={submitting} onClick={() => setConfirmSubmit(true)}><Send size={14} /> Submit</button>
+          {practiceMode ? (
+            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Faculty Practice</span>
+          ) : (
+            <span className={`flex items-center gap-1 text-xs ${saving ? 'text-amber-500' : 'text-emerald-500'}`}><Save size={12} />{saving ? 'Saving...' : 'Saved'}</span>
+          )}
+          <button className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs" disabled={submitting} onClick={() => setConfirmSubmit(true)}><Send size={14} /> {practiceMode ? 'Check Practice' : 'Submit'}</button>
         </div>
       </header>
 
@@ -475,11 +490,11 @@ function AssignmentWorkspace({
         </section>
       </div>
 
-      <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title="Run final submission tests">
+      <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title={practiceMode ? 'Check faculty practice' : 'Run final submission tests'}>
         <div className="space-y-5">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">Submitting will run every visible and hidden test case. If any test fails, you can correct your code and submit again.</p>
-          <div className="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-900"><div className="flex justify-between"><span>Questions</span><strong>{questions.length}</strong></div><div className="mt-2 flex justify-between"><span>Current status</span><strong>{submission?.status === 'submitted' ? 'Submitted' : 'Draft'}</strong></div></div>
-          <div className="flex justify-end gap-3"><button className="btn-secondary" onClick={() => setConfirmSubmit(false)}>Keep Coding</button><button className="btn-primary flex items-center gap-2" disabled={submitting} onClick={evaluateAndSubmit}>{submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Run Tests & Submit</button></div>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{practiceMode ? 'This runs every visible and hidden test case, but it will not create a student submission, grade, XP, or progress.' : 'Submitting will run every visible and hidden test case. If any test fails, you can correct your code and submit again.'}</p>
+          <div className="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-900"><div className="flex justify-between"><span>Questions</span><strong>{questions.length}</strong></div><div className="mt-2 flex justify-between"><span>Current status</span><strong>{practiceMode ? 'Practice only' : submission?.status === 'submitted' ? 'Submitted' : 'Draft'}</strong></div></div>
+          <div className="flex justify-end gap-3"><button className="btn-secondary" onClick={() => setConfirmSubmit(false)}>Keep Coding</button><button className="btn-primary flex items-center gap-2" disabled={submitting} onClick={evaluateAndSubmit}>{submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{practiceMode ? 'Run All Practice Tests' : 'Run Tests & Submit'}</button></div>
         </div>
       </Modal>
     </div>
