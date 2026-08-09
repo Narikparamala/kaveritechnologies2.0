@@ -266,6 +266,9 @@ export default function App() {
                     <Route path="projects" element={<FacultyProjectsPage />} />
                     <Route path="projects/new" element={<FacultyProjectBuilderPage />} />
                     <Route path="projects/:projectId/builder" element={<FacultyProjectBuilderPage />} />
+                    <Route path="practice/assignments/:assignmentId" element={<AssignmentsPage />} />
+                    <Route path="practice/quizzes" element={<QuizzesPage />} />
+                    <Route path="practice/projects" element={<ProjectsPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="progress" element={<StudentProgressPage />} />
                     <Route path="calendar" element={<CalendarPage />} />
