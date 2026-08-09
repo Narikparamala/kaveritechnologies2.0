@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { FolderKanban, Clock, Tag, Github, ExternalLink, CheckCircle } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { FolderKanban, Clock, Tag, Github, ExternalLink, CheckCircle, ArrowLeft } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -14,6 +15,11 @@ import type { Project, ProjectSubmission } from '../../types/database';
 export default function ProjectsPage() {
   const { profile } = useAuth();
   const { success, error: toastError } = useToast();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const practiceMode = searchParams.get('practice') === '1';
+  const requestedProjectId = searchParams.get('projectId');
+  const returnTo = searchParams.get('returnTo') ?? '/faculty/projects';
   const [projects, setProjects] = useState<Project[]>([]);
   const [submissions, setSubmissions] = useState<Map<string, ProjectSubmission>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -24,6 +30,26 @@ export default function ProjectsPage() {
   useEffect(() => {
     const load = async () => {
       if (!profile) { setLoading(false); return; }
+
+      if (practiceMode && requestedProjectId) {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', requestedProjectId)
+          .eq('is_published', true)
+          .maybeSingle();
+        if (error) {
+          console.error(error);
+          setProjects([]);
+          setLoading(false);
+          return;
+        }
+        setProjects(data ? [data as Project] : []);
+        setSubmissions(new Map());
+        setLoading(false);
+        return;
+      }
+
       const { data: enrData } = await supabase.from('course_enrollments').select('course_id').eq('student_id', profile.id);
       const courseIds = (enrData ?? []).map((e: any) => e.course_id);
 
@@ -39,10 +65,15 @@ export default function ProjectsPage() {
       setLoading(false);
     };
     load();
-  }, [profile]);
+  }, [profile, practiceMode, requestedProjectId]);
 
   const handleSubmit = async () => {
     if (!submitModal || !profile) return;
+    if (practiceMode) {
+      success('Practice complete. No project submission, grade, or progress was recorded.');
+      setSubmitModal(null);
+      return;
+    }
     const { error: err } = await supabase.from('project_submissions').upsert({
       project_id: submitModal.id, student_id: profile.id, ...form, status: 'submitted',
     }, { onConflict: 'project_id,student_id' });
@@ -61,7 +92,18 @@ export default function ProjectsPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="Projects" subtitle="Real-world projects to build your portfolio" icon={FolderKanban} />
+      {practiceMode && (
+        <button onClick={() => navigate(returnTo)} className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-700">
+          <ArrowLeft size={14} /> Back to Faculty Projects
+        </button>
+      )}
+      {practiceMode && (
+        <div className="mb-5 rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm text-primary-800 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-200">
+          <strong>Faculty Practice Mode</strong>
+          <p className="mt-1">Work through this project exactly as a student would. Completing practice will not create a submission, grade, or progress record.</p>
+        </div>
+      )}
+      <PageHeader title="Projects" subtitle={practiceMode ? 'Try this project exactly as a student would' : 'Real-world projects to build your portfolio'} icon={FolderKanban} />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-6">
@@ -78,7 +120,7 @@ export default function ProjectsPage() {
           {[1, 2, 3, 4, 5, 6].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={FolderKanban} title="No projects found" />
+        <EmptyState icon={FolderKanban} title={practiceMode ? 'This project is not available for practice' : 'No projects found'} />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(proj => {
@@ -107,7 +149,7 @@ export default function ProjectsPage() {
                   onClick={() => { setSubmitModal(proj); setForm({ github_url: '', live_url: '', description: '' }); }}
                   className="btn-primary text-sm py-2 w-full"
                 >
-                  {sub ? 'Update Submission' : 'Submit Project'}
+                  {practiceMode ? 'Try Project' : (sub ? 'Update Submission' : 'Submit Project')}
                 </button>
               </div>
             );
@@ -115,7 +157,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title={`Submit: ${submitModal?.title}`}>
+      <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title={practiceMode ? `Practice: ${submitModal?.title}` : `Submit: ${submitModal?.title}`}>
         <div className="space-y-4">
           <div>
             <label className="label">GitHub Repository URL</label>
@@ -137,7 +179,7 @@ export default function ProjectsPage() {
           </div>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setSubmitModal(null)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSubmit} className="btn-primary">Submit Project</button>
+            <button onClick={handleSubmit} className="btn-primary">{practiceMode ? 'Complete Practice' : 'Submit Project'}</button>
           </div>
         </div>
       </Modal>
