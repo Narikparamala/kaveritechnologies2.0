@@ -10,6 +10,7 @@ import {
   Github,
   Layers3,
   MessageSquare,
+  Play,
   Plus,
   Star,
   Tag,
@@ -223,6 +224,12 @@ export default function FacultyProjectsPage() {
               <div className="flex items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-700">
                 <button onClick={() => navigate(`/faculty/projects/${project.id}/builder`)} className="btn-primary text-xs flex-1 flex items-center justify-center gap-1.5">
                   <Edit2 size={13} /> Build
+                </button>
+                <button
+                  onClick={() => navigate(`/faculty/practice/projects?practice=1&projectId=${project.id}&returnTo=${encodeURIComponent('/faculty/projects')}`)}
+                  className="btn-secondary text-xs flex items-center gap-1.5"
+                >
+                  <Play size={13} /> Try Project
                 </button>
                 <button onClick={() => void openSubmissions(project)} className="btn-secondary text-xs flex items-center gap-1.5">
                   <MessageSquare size={13} /> Review
