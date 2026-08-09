@@ -3,11 +3,11 @@ import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole } from '../types/database';
 
-// ─── PREVIEW MODE ────────────────────────────────────────────────────────────
+// â”€â”€â”€ PREVIEW MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Set to 'student' | 'faculty' | 'super_admin' to bypass login in preview.
 // Set to null to restore normal authentication.
-export const PREVIEW_ROLE: UserRole | null = 'faculty';
-// ─────────────────────────────────────────────────────────────────────────────
+export const PREVIEW_ROLE: UserRole | null = null;
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PREVIEW_PROFILE: Profile = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -48,7 +48,7 @@ const ROLE_DASHBOARDS: Record<UserRole, string> = {
 };
 
 async function fetchProfileById(userId: string): Promise<Profile | null> {
-  // Retry up to 5 times with delay — trigger may not have fired yet
+  // Retry up to 5 times with delay â€” trigger may not have fired yet
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await supabase
       .from('profiles')
@@ -189,7 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { full_name: fullName },
-        // Do not pass role — trigger always assigns 'student'
+        // Do not pass role â€” trigger always assigns 'student'
       },
     });
 
@@ -216,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Email confirmation required
     if (data.user && !data.session) {
-      return { error: null }; // Success — user needs to confirm email
+      return { error: null }; // Success â€” user needs to confirm email
     }
 
     return { error: 'Something went wrong. Please try again.' };

@@ -3,6 +3,7 @@ import type {
   Course, Chapter, Lesson, Assignment, Quiz, QuizQuestion, QuizOption, Project,
   AssignmentSubmission, ProjectSubmission, QuizAttempt, Profile, CourseEnrollment, LessonProgress,
   LessonTopic, LessonSubtopic, LessonPracticeQuestion, LessonResource, LessonResourceType, LiveSession, AssignmentTestCase,
+  ProjectMilestone, ProjectRubricItem, ProjectStarterFile, ProjectSubmissionMode, ProjectType,
 } from '../types/database';
 
 // ============================================================
@@ -330,9 +331,16 @@ export async function getQuizAttempts(quizId: string): Promise<(QuizAttempt & { 
 
 export async function getFacultyProjects(facultyId: string): Promise<(Project & { course: Course | null })[]> {
   const courseIds = await getFacultyCourseIds(facultyId);
-  if (!courseIds.length) return [];
-  const { data, error } = await supabase
-    .from('projects').select('*, course:courses(*)').in('course_id', courseIds).order('created_at', { ascending: false });
+  let query = supabase
+    .from('projects')
+    .select('*, course:courses(*)')
+    .order('created_at', { ascending: false });
+
+  query = courseIds.length
+    ? query.or(`created_by.eq.${facultyId},course_id.in.(${courseIds.join(',')})`)
+    : query.eq('created_by', facultyId);
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as any;
 }
@@ -346,6 +354,15 @@ export async function createProject(input: {
   tech_tags?: string[];
   requirements?: string;
   starter_code?: string;
+  project_type?: ProjectType;
+  objectives?: string;
+  instructions?: string;
+  submission_mode?: ProjectSubmissionMode;
+  max_marks?: number;
+  due_at?: string | null;
+  allow_late_submissions?: boolean;
+  repository_required?: boolean;
+  live_demo_required?: boolean;
   course_id?: string | null;
   is_published?: boolean;
   created_by: string;
@@ -359,6 +376,15 @@ export async function createProject(input: {
     tech_tags: input.tech_tags ?? [],
     requirements: input.requirements ?? null,
     starter_code: input.starter_code ?? null,
+    project_type: input.project_type ?? 'python',
+    objectives: input.objectives ?? null,
+    instructions: input.instructions ?? null,
+    submission_mode: input.submission_mode ?? 'github_and_live',
+    max_marks: input.max_marks ?? 100,
+    due_at: input.due_at ?? null,
+    allow_late_submissions: input.allow_late_submissions ?? false,
+    repository_required: input.repository_required ?? true,
+    live_demo_required: input.live_demo_required ?? false,
     course_id: input.course_id ?? null,
     is_published: input.is_published ?? false,
     created_by: input.created_by,
@@ -374,6 +400,61 @@ export async function updateProject(projectId: string, updates: Partial<Project>
 
 export async function deleteProject(projectId: string): Promise<void> {
   const { error } = await supabase.from('projects').delete().eq('id', projectId);
+  if (error) throw error;
+}
+
+export async function getProjectBuilderData(projectId: string): Promise<{
+  project: Project;
+  milestones: ProjectMilestone[];
+  rubric: ProjectRubricItem[];
+  starterFiles: ProjectStarterFile[];
+}> {
+  const [projectResult, milestoneResult, rubricResult, starterFileResult] = await Promise.all([
+    supabase.from('projects').select('*').eq('id', projectId).single(),
+    supabase.from('project_milestones').select('*').eq('project_id', projectId).order('order_index'),
+    supabase.from('project_rubric_items').select('*').eq('project_id', projectId).order('order_index'),
+    supabase.from('project_starter_files').select('*').eq('project_id', projectId).order('order_index'),
+  ]);
+
+  if (projectResult.error) throw projectResult.error;
+  if (milestoneResult.error) throw milestoneResult.error;
+  if (rubricResult.error) throw rubricResult.error;
+  if (starterFileResult.error) throw starterFileResult.error;
+
+  return {
+    project: projectResult.data as Project,
+    milestones: (milestoneResult.data ?? []) as ProjectMilestone[],
+    rubric: (rubricResult.data ?? []) as ProjectRubricItem[],
+    starterFiles: (starterFileResult.data ?? []) as ProjectStarterFile[],
+  };
+}
+
+export async function saveProjectStructure(
+  projectId: string,
+  input: {
+    milestones: Array<Pick<ProjectMilestone, 'title' | 'description' | 'max_marks'>>;
+    rubric: Array<Pick<ProjectRubricItem, 'title' | 'description' | 'max_marks'>>;
+    starterFiles: Array<Pick<ProjectStarterFile, 'file_path' | 'content' | 'language'>>;
+  },
+): Promise<void> {
+  const { error } = await supabase.rpc('save_project_structure', {
+    p_project_id: projectId,
+    p_milestones: input.milestones.map(item => ({
+      title: item.title,
+      description: item.description || null,
+      max_marks: Number(item.max_marks) || 0,
+    })),
+    p_rubric: input.rubric.map(item => ({
+      title: item.title,
+      description: item.description || null,
+      max_marks: Number(item.max_marks) || 1,
+    })),
+    p_starter_files: input.starterFiles.map(item => ({
+      file_path: item.file_path,
+      content: item.content,
+      language: item.language || 'text',
+    })),
+  });
   if (error) throw error;
 }
 

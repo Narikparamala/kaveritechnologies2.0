@@ -330,9 +330,66 @@ export interface Project {
   tech_tags: string[];
   requirements: string | null;
   starter_code: string | null;
+  project_type: ProjectType;
+  objectives: string | null;
+  instructions: string | null;
+  submission_mode: ProjectSubmissionMode;
+  max_marks: number;
+  due_at: string | null;
+  allow_late_submissions: boolean;
+  repository_required: boolean;
+  live_demo_required: boolean;
   course_id: string | null;
   is_published: boolean;
   created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProjectType =
+  | 'python'
+  | 'html_css_js'
+  | 'selenium_python'
+  | 'selenium_java'
+  | 'python_fullstack'
+  | 'java_fullstack'
+  | 'mern'
+  | 'csharp_fullstack'
+  | 'genai'
+  | 'n8n'
+  | 'custom';
+
+export type ProjectSubmissionMode = 'github' | 'github_and_live' | 'file_upload' | 'external_url';
+
+export interface ProjectMilestone {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  order_index: number;
+  max_marks: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRubricItem {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  order_index: number;
+  max_marks: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectStarterFile {
+  id: string;
+  project_id: string;
+  file_path: string;
+  content: string;
+  language: string;
+  order_index: number;
   created_at: string;
   updated_at: string;
 }
