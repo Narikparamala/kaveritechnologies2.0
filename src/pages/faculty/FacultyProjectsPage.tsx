@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileText,
   FolderKanban,
   Github,
   Layers3,
@@ -30,6 +31,7 @@ import {
   gradeProjectSubmission,
   updateProject,
 } from '../../services/faculty';
+import { createProjectEvidenceUrl } from '../../services/projectSubmissions';
 import { formatDate, getDifficultyColor } from '../../lib/utils';
 import type { Course, Profile, Project, ProjectSubmission, ProjectType } from '../../types/database';
 
@@ -65,6 +67,7 @@ export default function FacultyProjectsPage() {
   const [gradingModal, setGradingModal] = useState<ProjectSubmission | null>(null);
   const [gradeForm, setGradeForm] = useState({
     status: 'approved' as 'approved' | 'rejected' | 'reviewed',
+    score: '',
     feedback: '',
   });
   const [saving, setSaving] = useState(false);
@@ -129,10 +132,15 @@ export default function FacultyProjectsPage() {
   };
 
   const handleGrade = async () => {
-    if (!gradingModal) return;
+    if (!gradingModal || !submissionsView) return;
+    const score = Number(gradeForm.score);
+    if (!Number.isFinite(score) || score < 0 || score > submissionsView.max_marks) {
+      toastError('Invalid score', `Enter a score from 0 to ${submissionsView.max_marks}.`);
+      return;
+    }
     setSaving(true);
     try {
-      await gradeProjectSubmission(gradingModal.id, gradeForm.status, gradeForm.feedback);
+      await gradeProjectSubmission(gradingModal.id, gradeForm.status, score, gradeForm.feedback);
       success('Submission reviewed');
       setGradingModal(null);
       if (submissionsView) await openSubmissions(submissionsView);
@@ -140,6 +148,19 @@ export default function FacultyProjectsPage() {
       toastError('Could not save review', messageOf(error));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpenEvidence = async (storagePath: string) => {
+    const evidenceWindow = window.open('about:blank', '_blank');
+    if (evidenceWindow) evidenceWindow.opener = null;
+    try {
+      const url = await createProjectEvidenceUrl(storagePath);
+      if (evidenceWindow) evidenceWindow.location.href = url;
+      else window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      evidenceWindow?.close();
+      toastError('Could not open evidence', messageOf(error));
     }
   };
 
@@ -268,13 +289,35 @@ export default function FacultyProjectsPage() {
                 <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
                   {submission.github_url && <a href={submission.github_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-1"><Github size={12} /> GitHub repository</a>}
                   {submission.live_url && <a href={submission.live_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-1"><ExternalLink size={12} /> Live demo</a>}
-                  <span className="text-slate-400">{formatDate(submission.submitted_at)}</span>
+                  {submission.external_url && <a href={submission.external_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-1"><ExternalLink size={12} /> External project</a>}
+                  {submission.submitted_at && <span className="text-slate-400">Submitted {formatDate(submission.submitted_at)}</span>}
                 </div>
+                {!!submission.files?.length && (
+                  <div className="mb-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-900/40">
+                    <p className="mb-2 text-xs font-medium text-slate-700 dark:text-slate-200">Private evidence files</p>
+                    <div className="flex flex-wrap gap-2">
+                      {submission.files.map(file => (
+                        <button key={file.id} type="button" onClick={() => void handleOpenEvidence(file.storage_path)} className="btn-secondary text-xs flex items-center gap-1.5">
+                          <FileText size={12} /> {file.file_name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {submission.score !== null && (
+                  <p className="mb-3 text-sm font-semibold text-emerald-600">Score: {submission.score}/{submissionsView?.max_marks}</p>
+                )}
                 {submission.feedback && <p className="mb-3 rounded-lg bg-slate-50 p-2 text-xs italic text-slate-500 dark:bg-slate-900/40">Feedback: {submission.feedback}</p>}
                 <button
                   onClick={() => {
                     setGradingModal(submission);
-                    setGradeForm({ status: submission.status === 'submitted' ? 'approved' : submission.status, feedback: submission.feedback ?? '' });
+                    setGradeForm({
+                      status: submission.status === 'approved' || submission.status === 'rejected' || submission.status === 'reviewed'
+                        ? submission.status
+                        : 'approved',
+                      score: String(submission.score ?? submissionsView?.max_marks ?? 0),
+                      feedback: submission.feedback ?? '',
+                    });
                   }}
                   className="btn-primary text-xs flex items-center gap-1"
                 >
@@ -295,6 +338,18 @@ export default function FacultyProjectsPage() {
               <option value="reviewed">Needs changes / reviewed</option>
               <option value="rejected">Reject</option>
             </select>
+          </div>
+          <div>
+            <label className="label">Score (maximum {submissionsView?.max_marks ?? 0})</label>
+            <input
+              type="number"
+              min="0"
+              max={submissionsView?.max_marks ?? 0}
+              step="1"
+              className="input"
+              value={gradeForm.score}
+              onChange={event => setGradeForm(form => ({ ...form, score: event.target.value }))}
+            />
           </div>
           <div>
             <label className="label">Faculty feedback</label>

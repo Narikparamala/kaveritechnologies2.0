@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
-  { label: 'Course Builder', icon: BookPlus, to: '/courses' },
+  { label: 'Course Builder', icon: BookPlus, to: '/course-builder' },
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },

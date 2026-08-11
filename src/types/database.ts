@@ -400,10 +400,27 @@ export interface ProjectSubmission {
   student_id: string;
   github_url: string | null;
   live_url: string | null;
+  external_url: string | null;
   description: string | null;
-  status: 'submitted' | 'reviewed' | 'approved' | 'rejected';
+  status: 'draft' | 'submitted' | 'reviewed' | 'approved' | 'rejected';
   feedback: string | null;
-  submitted_at: string;
+  score: number | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  submitted_at: string | null;
+  updated_at: string;
+  files?: ProjectSubmissionFile[];
+}
+
+export interface ProjectSubmissionFile {
+  id: string;
+  submission_id: string;
+  student_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number;
+  created_at: string;
 }
 
 export interface Certificate {

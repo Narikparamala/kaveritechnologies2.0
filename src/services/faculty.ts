@@ -461,16 +461,28 @@ export async function saveProjectStructure(
 export async function getProjectSubmissions(projectId: string): Promise<(ProjectSubmission & { student: Profile })[]> {
   const { data, error } = await supabase
     .from('project_submissions')
-    .select('*, student:profiles!project_submissions_student_id_fkey(full_name, email)')
+    .select('*, student:profiles!project_submissions_student_id_fkey(full_name, email), files:project_submission_files(*)')
     .eq('project_id', projectId)
+    .neq('status', 'draft')
     .order('submitted_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as any;
 }
 
-export async function gradeProjectSubmission(submissionId: string, status: 'approved' | 'rejected' | 'reviewed', feedback: string): Promise<void> {
-  const { error } = await supabase.from('project_submissions').update({ status, feedback }).eq('id', submissionId);
+export async function gradeProjectSubmission(
+  submissionId: string,
+  status: 'approved' | 'rejected' | 'reviewed',
+  score: number,
+  feedback: string,
+): Promise<ProjectSubmission> {
+  const { data, error } = await supabase.rpc('review_project_submission', {
+    p_submission_id: submissionId,
+    p_status: status,
+    p_score: score,
+    p_feedback: feedback || null,
+  });
   if (error) throw error;
+  return data as ProjectSubmission;
 }
 
 // ============================================================
