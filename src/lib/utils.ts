@@ -34,7 +34,7 @@ export function formatRelativeTime(date: string | Date | null | undefined): stri
 }
 
 export function truncate(text: string, maxLen = 100): string {
-  return text.length <= maxLen ? text : text.slice(0, maxLen).trimEnd() + 'â€¦';
+  return text.length <= maxLen ? text : text.slice(0, maxLen).trimEnd() + '\u2026';
 }
 
 export function slugify(text: string): string {
