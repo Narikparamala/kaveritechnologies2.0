@@ -272,6 +272,7 @@ export default function App() {
                     <Route path="practice/projects" element={<ProjectsPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="progress" element={<StudentProgressPage />} />
+                    <Route path="student-progress" element={<Navigate to="/faculty/progress" replace />} />
                     <Route path="calendar" element={<CalendarPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
                     <Route path="profile" element={<ProfilePage />} />
