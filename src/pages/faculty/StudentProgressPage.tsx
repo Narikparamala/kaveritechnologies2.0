@@ -110,7 +110,14 @@ type StudentMetric = {
 };
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Something went wrong.';
+  if (error instanceof Error) return error.message;
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+
+  return 'Something went wrong.';
 }
 
 function clampPercent(value: number | null | undefined) {
@@ -190,7 +197,7 @@ export default function StudentProgressPage() {
           progress_percentage,
           access_status,
           course:courses(id, title),
-          student:profiles(id, full_name, email, avatar_url, last_active_date, is_active)
+          student:profiles!course_enrollments_student_id_fkey(id, full_name, email, avatar_url, last_active_date, is_active)
         `)
         .in('course_id', courseIds)
         .neq('access_status', 'revoked')
