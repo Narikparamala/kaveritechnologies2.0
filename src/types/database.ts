@@ -706,6 +706,73 @@ export interface BatchAnnouncement {
   author?: Profile;
 }
 
+// Faculty teaching work types. Delivery mode is intentionally independent from
+// Lesson.teaching_mode so faculty can switch between live, recorded, and hybrid.
+export type TeachingWorkMode = 'live_class' | 'recorded_video' | 'hybrid';
+export type TeachingWorkStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+export type TeachingWorkSource = 'faculty' | 'admin';
+export type FacultyWorkRequestType = 'new_assignment' | 'schedule_swap' | 'availability' | 'assistant' | 'capacity';
+export type FacultyWorkRequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+
+export interface FacultyTeachingWork {
+  id: string;
+  faculty_id: string;
+  batch_id: string | null;
+  course_id: string | null;
+  chapter_id: string | null;
+  lesson_id: string | null;
+  live_session_id: string | null;
+  title: string;
+  description: string | null;
+  scheduled_date: string;
+  start_time: string;
+  end_time: string;
+  delivery_mode: TeachingWorkMode;
+  status: TeachingWorkStatus;
+  source: TeachingWorkSource;
+  recording_url: string | null;
+  notes: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  batch?: Batch;
+  course?: Course;
+  lesson?: Lesson;
+}
+
+export interface FacultyWorkPreference {
+  faculty_id: string;
+  daily_workload_limit_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FacultyWorkRequest {
+  id: string;
+  faculty_id: string;
+  batch_id: string | null;
+  course_id: string | null;
+  request_type: FacultyWorkRequestType;
+  details: string;
+  requested_date: string | null;
+  status: FacultyWorkRequestStatus;
+  reviewed_by: string | null;
+  response_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  batch?: Batch;
+  course?: Course;
+}
+
+export interface FacultyBatchAssignment extends BatchFaculty {
+  batch: Batch & { course?: Course };
+  student_count: number;
+  faculty_count: number;
+  schedules: BatchSchedule[];
+}
+
 // Placement & Jobs types
 export type JobType = 'full_time' | 'internship' | 'contract' | 'part_time';
 export type JobStatus = 'open' | 'closed' | 'on_hold' | 'filled';

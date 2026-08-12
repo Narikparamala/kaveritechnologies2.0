@@ -74,6 +74,7 @@ const FacultyQuizzesPage = lazy(() => import('./pages/faculty/FacultyQuizzesPage
 const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPage'));
 const FacultyProjectBuilderPage = lazy(() => import('./pages/faculty/FacultyProjectBuilderPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
+const FacultyBatchesPage = lazy(() => import('./pages/faculty/FacultyBatchesPage'));
 
 // Lazy-loaded admin pages
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -249,7 +250,7 @@ export default function App() {
                     <Route path="live-classes/create" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/edit" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/attendance" element={<FacultySessionAttendancePage />} />
-                    <Route path="batches" element={<ComingSoon title="My Batches" />} />
+                    <Route path="batches" element={<FacultyBatchesPage />} />
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />
