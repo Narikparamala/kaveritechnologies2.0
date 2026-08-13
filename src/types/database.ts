@@ -475,10 +475,18 @@ export interface Notification {
 export interface Announcement {
   id: string;
   course_id: string | null;
+  batch_id: string | null;
   title: string;
   content: string;
   author_id: string | null;
   is_global: boolean;
+  audience_type: 'platform' | 'all_students' | 'course' | 'batch';
+  status: 'draft' | 'published' | 'scheduled' | 'archived';
+  priority: 'normal' | 'important' | 'urgent';
+  publish_at: string | null;
+  published_at: string | null;
+  expires_at: string | null;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }
