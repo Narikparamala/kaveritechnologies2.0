@@ -75,6 +75,7 @@ const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPa
 const FacultyProjectBuilderPage = lazy(() => import('./pages/faculty/FacultyProjectBuilderPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
 const FacultyBatchesPage = lazy(() => import('./pages/faculty/FacultyBatchesPage'));
+const FacultyCalendarPage = lazy(() => import('./pages/faculty/FacultyCalendarPage'));
 
 // Lazy-loaded admin pages
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -273,7 +274,7 @@ export default function App() {
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="progress" element={<StudentProgressPage />} />
                     <Route path="student-progress" element={<Navigate to="/faculty/progress" replace />} />
-                    <Route path="calendar" element={<CalendarPage />} />
+                    <Route path="calendar" element={<FacultyCalendarPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
                     <Route path="profile" element={<ProfilePage />} />
                     <Route path="settings" element={<SettingsPage />} />
