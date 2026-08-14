@@ -465,13 +465,27 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade';
+  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support';
   is_read: boolean;
+  read_at: string | null;
   reference_id: string | null;
   reference_type: string | null;
+  action_url: string | null;
+  archived_at: string | null;
+  aggregation_key: string | null;
+  event_count: number;
+  last_event_at: string;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 
+export interface NotificationPreferences {
+  user_id: string;
+  assignment_submission_notifications_enabled: boolean;
+  assignment_submission_threshold: number;
+  created_at: string;
+  updated_at: string;
+}
 export interface Announcement {
   id: string;
   course_id: string | null;
