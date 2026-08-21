@@ -12,6 +12,34 @@ import { useAuth } from '../../contexts/AuthContext';
 import { createCourse } from '../../services/faculty';
 import type { Course } from '../../types/database';
 
+function CourseThumbnail({ src, alt }: { src?: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500">
+        <BookOpen size={38} strokeWidth={1.5} />
+        <span className="text-xs font-medium">No cover image</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={`${alt} course cover`}
+      className="h-full w-full object-contain p-5 sm:p-6"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 const INITIAL_FORM = { title: '', slug: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', duration_hours: 0 };
 
 export default function FacultyCoursesPage() {
@@ -98,47 +126,76 @@ export default function FacultyCoursesPage() {
       />
 
       {loading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-3">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
       ) : courses.length === 0 ? (
         <EmptyState icon={BookOpen} title="No courses yet" description="Create your first course or ask your admin to assign you to an existing one." action={
           <button onClick={() => setCreateModal(true)} className="btn-primary flex items-center gap-2"><Plus size={14} /> Create Course</button>
         } />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-3">
           {courses.map(c => (
-            <div key={c.id} className="card-hover overflow-hidden">
-              <div className="h-36 bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
-                {c.thumbnail_url ? (
-                  <img src={c.thumbnail_url} alt={c.title} className="w-full h-full object-cover" />
-                ) : (
-                  <BookOpen size={40} className="text-white/20" />
-                )}
-                <div className="absolute top-3 right-3">
-                  <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
-                </div>
-                <div className="absolute top-3 left-3">
-                  <span className={`badge text-xs ${c.is_published ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+            <article key={c.id} className="card-hover group flex h-full min-h-[430px] flex-col overflow-hidden">
+              <div className="relative aspect-video overflow-hidden bg-slate-100 dark:bg-slate-900/70">
+                <CourseThumbnail src={c.thumbnail_url} alt={c.title} />
+
+                <div className="absolute left-3 top-3">
+                  <span className={`badge border border-white/60 text-xs shadow-sm ${c.is_published ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-600'}`}>
                     {c.is_published ? 'Published' : 'Draft'}
                   </span>
                 </div>
-              </div>
-              <div className="p-5">
-                <h3 className="font-bold text-slate-900 dark:text-white mb-2">{c.title}</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 line-clamp-2">{c.short_description}</p>
-                <div className="flex items-center gap-3 text-xs text-slate-400 mb-4">
-                  <span className="flex items-center gap-1"><Users size={11} /> {c.enrollment_count} students</span>
-                  <span>{c.duration_hours}h</span>
-                  <span className="capitalize">{c.category}</span>
+
+                <div className="absolute right-3 top-3">
+                  <span className={`badge capitalize text-xs shadow-sm ${getDifficultyColor(c.difficulty)}`}>
+                    {c.difficulty}
+                  </span>
                 </div>
-                <div className="flex gap-2">
-                  <Link to={`/faculty/courses/${c.id}/builder`} className="flex-1 btn-primary text-xs py-2 text-center flex items-center justify-center gap-1">
-                    <Settings size={12} /> Build Course
+              </div>
+
+              <div className="flex flex-1 flex-col p-5">
+                <div className="min-h-[92px]">
+                  <h3 className="mb-2 line-clamp-2 text-lg font-bold text-slate-900 dark:text-white">
+                    {c.title}
+                  </h3>
+                  <p className="line-clamp-2 text-sm leading-5 text-slate-500 dark:text-slate-400">
+                    {c.short_description?.trim() || 'No course description added yet.'}
+                  </p>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <Users size={13} />
+                    {c.enrollment_count ?? 0} students
+                  </span>
+                  <span>{c.duration_hours ?? 0}h</span>
+                  <span className="capitalize">{c.category || 'Uncategorized'}</span>
+                </div>
+
+                <div className="mt-auto space-y-2 pt-5">
+                  <Link
+                    to={`/faculty/courses/${c.id}/builder`}
+                    className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm"
+                  >
+                    <Settings size={14} />
+                    {c.is_published ? 'Manage Course' : 'Continue Building'}
                   </Link>
-                  <Link to={`/faculty/assignments`} className="flex-1 btn-secondary text-xs py-2 text-center">Assignments</Link>
-                  <Link to={`/faculty/quizzes`} className="btn-secondary text-xs py-2 px-3 text-center">Quizzes</Link>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      to="/faculty/assignments"
+                      className="btn-secondary py-2 text-center text-xs"
+                    >
+                      Assignments
+                    </Link>
+                    <Link
+                      to="/faculty/quizzes"
+                      className="btn-secondary py-2 text-center text-xs"
+                    >
+                      Quizzes
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
