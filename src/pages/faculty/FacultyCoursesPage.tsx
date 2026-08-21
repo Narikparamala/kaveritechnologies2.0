@@ -32,7 +32,7 @@ function CourseThumbnail({ src, alt }: { src?: string | null; alt: string }) {
     <img
       src={src}
       alt={`${alt} course cover`}
-      className="h-full w-full object-contain p-5 sm:p-6"
+      className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
