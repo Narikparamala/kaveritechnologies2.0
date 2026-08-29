@@ -20,6 +20,7 @@ import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { runPython } from '../../services/pythonExecution';
+import { securelyGradeAssignment } from '../../services/secureGrading';
 import { formatDate } from '../../lib/utils';
 import {
   createSubmission,
@@ -401,12 +402,22 @@ function AssignmentWorkspace({
 
       if (currentSubmission) {
         await submitAssignment(currentSubmission.id);
-        setConsoleText(`SUBMITTED\nAll ${totalTests} visible test cases passed. Faculty review is the authoritative grade.`);
-        success('Assignment submitted!', 'Visible tests passed. Your faculty will review the submission.');
-        window.setTimeout(onSubmitted, 900);
+        try {
+          const verified = await securelyGradeAssignment(currentSubmission.id);
+          setConsoleText(
+            `VERIFIED SUBMISSION\n${verified.passed} of ${verified.total} final tests passed.\nVerified score: ${verified.score}/${assignment.max_marks}`,
+          );
+          success('Assignment securely graded!', `Verified score: ${verified.score}/${assignment.max_marks}. Faculty may review the result.`);
+        } catch (gradingError) {
+          setConsoleText(
+            `SUBMITTED FOR FACULTY REVIEW\nVisible tests passed, but secure automatic grading is unavailable.\n${errorMessage(gradingError)}`,
+          );
+          success('Assignment submitted!', 'Your work is safe and available for faculty review.');
+        }
+        window.setTimeout(onSubmitted, 1200);
       } else {
-        setConsoleText(`PRACTICE COMPLETE\nAll ${totalTests} test cases passed. No student submission or grade was created.`);
-        success('Practice complete!', 'All test cases passed. Nothing was submitted or graded.');
+        setConsoleText(`PRACTICE COMPLETE\nAll ${totalTests} visible test cases passed. No student submission or grade was created.`);
+        success('Practice complete!', 'All visible test cases passed. Nothing was submitted or graded.');
       }
     } catch (error) {
       toastError('Submission failed', errorMessage(error));
