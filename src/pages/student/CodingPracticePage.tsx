@@ -140,12 +140,9 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
     const load = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('coding_questions')
-          .select('*')
-          .eq('is_published', true)
-          .order('frequency_score', { ascending: false })
-          .order('title', { ascending: true });
+        const { data, error } = await supabase.rpc('get_student_coding_questions', {
+          p_question_id: null,
+        });
 
         if (error) throw error;
         if (active) setQuestions((data ?? []) as CodingQuestion[]);
@@ -304,18 +301,20 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
       setLoading(true);
       try {
         const [questionResponse, testsResponse] = await Promise.all([
-          supabase.from('coding_questions').select('*').eq('id', questionId).single(),
+          supabase.rpc('get_student_coding_questions', { p_question_id: questionId }),
           supabase
             .from('coding_question_test_cases')
             .select('*')
             .eq('question_id', questionId)
+            .eq('is_hidden', false)
             .order('order_index', { ascending: true }),
         ]);
 
         if (questionResponse.error) throw questionResponse.error;
         if (testsResponse.error) throw testsResponse.error;
 
-        const loadedQuestion = questionResponse.data as CodingQuestion;
+        const loadedQuestion = questionResponse.data?.[0] as CodingQuestion | undefined;
+        if (!loadedQuestion) throw new Error('Coding question is unavailable.');
         const loadedTests = (testsResponse.data ?? []) as QuestionTestCase[];
         if (!active) return;
 
@@ -367,7 +366,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
       const allResults = await Promise.all(testCases.map(test => executeTest(code, test)));
       setResults(allResults.filter(result => !result.hidden));
       const passed = allResults.filter(result => result.passed).length;
-      const solved = passed === allResults.length && allResults.length > 0;
+      const visibleTestsPassed = passed === allResults.length && allResults.length > 0;
 
       if (profile) {
         const { data: previous } = await supabase
@@ -381,20 +380,22 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           question_id: question.id,
           student_id: profile.id,
           submitted_code: code,
-          status: solved ? 'solved' : 'attempted',
+          // Browser results are provisional. Verified solved status is reserved
+          // for the future isolated grading service or an authorised reviewer.
+          status: 'attempted',
           attempts_count: Number(previous?.attempts_count ?? 0) + 1,
-          passed_test_cases: passed,
-          total_test_cases: allResults.length,
+          passed_test_cases: 0,
+          total_test_cases: 0,
           last_execution_output: allResults.map(result => result.actual).join('\n---\n'),
-          first_solved_at: solved ? previous?.first_solved_at || new Date().toISOString() : previous?.first_solved_at,
+          first_solved_at: previous?.first_solved_at,
           last_attempted_at: new Date().toISOString(),
         }, { onConflict: 'question_id,student_id' });
 
         if (error) throw error;
       }
 
-      if (solved) {
-        success('All test cases passed!', 'Excellent—this question is marked as solved.');
+      if (visibleTestsPassed) {
+        success('Visible tests passed!', 'Your practice attempt was saved. Verified grading will run securely later.');
       } else {
         toastError('Tests failed', `${allResults.length - passed} of ${allResults.length} test case(s) failed. Change your code and try again.`);
       }
