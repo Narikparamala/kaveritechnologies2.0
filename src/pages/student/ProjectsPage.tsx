@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -22,7 +22,7 @@ import { Modal } from '../../components/ui/Modal';
 import { SkeletonCard } from '../../components/ui/LoadingSpinner';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
+import { DEVELOPER_EMAIL, useAuth } from '../../contexts/AuthContext';
 import { formatDate, getDifficultyColor } from '../../lib/utils';
 import {
   createProjectEvidenceUrl,
@@ -66,6 +66,9 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
   const practiceMode = searchParams.get('practice') === '1';
   const requestedProjectId = searchParams.get('projectId');
+  const submissionRequested = searchParams.get('submit') === '1';
+  const requestedGithubUrl = searchParams.get('githubUrl') ?? '';
+  const requestedLiveUrl = searchParams.get('liveUrl') ?? '';
   const returnTo = searchParams.get('returnTo') ?? '/faculty/projects';
   const [projects, setProjects] = useState<Project[]>([]);
   const [submissions, setSubmissions] = useState<Map<string, ProjectSubmission>>(new Map());
@@ -78,6 +81,8 @@ export default function ProjectsPage() {
   const [evidenceFiles, setEvidenceFiles] = useState<ProjectSubmissionFile[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const openedSubmissionRef = useRef('');
+  const developerStudentView = import.meta.env.DEV && profile?.email?.toLowerCase() === DEVELOPER_EMAIL;
 
   useEffect(() => {
     const load = async () => {
@@ -102,23 +107,33 @@ export default function ProjectsPage() {
         return;
       }
 
-      const { data: enrollmentData } = await supabase
-        .from('course_enrollments')
-        .select('course_id')
-        .eq('student_id', profile.id)
-        .or('access_status.eq.active,access_status.is.null');
-      const courseIds = (enrollmentData ?? []).map((enrollment: { course_id: string }) => enrollment.course_id);
-
       let projectData: Project[] = [];
-      if (courseIds.length) {
+      if (developerStudentView) {
         const result = await supabase
           .from('projects')
           .select('*')
           .eq('is_published', true)
-          .in('course_id', courseIds)
           .order('difficulty');
         if (result.error) toastError('Could not load projects', result.error.message);
         projectData = (result.data ?? []) as Project[];
+      } else {
+        const { data: enrollmentData } = await supabase
+          .from('course_enrollments')
+          .select('course_id')
+          .eq('student_id', profile.id)
+          .or('access_status.eq.active,access_status.is.null');
+        const courseIds = (enrollmentData ?? []).map((enrollment: { course_id: string }) => enrollment.course_id);
+
+        if (courseIds.length) {
+          const result = await supabase
+            .from('projects')
+            .select('*')
+            .eq('is_published', true)
+            .in('course_id', courseIds)
+            .order('difficulty');
+          if (result.error) toastError('Could not load projects', result.error.message);
+          projectData = (result.data ?? []) as Project[];
+        }
       }
       setProjects(projectData);
 
@@ -131,17 +146,22 @@ export default function ProjectsPage() {
       setLoading(false);
     };
     void load();
-  }, [profile, practiceMode, requestedProjectId, toastError]);
+  }, [profile, practiceMode, requestedProjectId, toastError, developerStudentView]);
 
-  const openProject = async (project: Project) => {
+  const openProject = async (project: Project, prefill: { githubUrl?: string; liveUrl?: string } = {}) => {
     setSubmitModal(project);
     const current = submissions.get(project.id);
-    setForm(current ? {
+    const existingForm = current ? {
       githubUrl: current.github_url ?? '',
       liveUrl: current.live_url ?? '',
       externalUrl: current.external_url ?? '',
       description: current.description ?? '',
-    } : emptyForm);
+    } : emptyForm;
+    setForm({
+      ...existingForm,
+      githubUrl: prefill.githubUrl || existingForm.githubUrl,
+      liveUrl: prefill.liveUrl || existingForm.liveUrl,
+    });
     setEvidenceFiles([]);
     setMilestones([]);
     setRubric([]);
@@ -158,6 +178,14 @@ export default function ProjectsPage() {
       toastError('Could not load project details', messageOf(error));
     }
   };
+
+  useEffect(() => {
+    if (loading || !submissionRequested || !requestedProjectId || openedSubmissionRef.current === requestedProjectId) return;
+    const requested = projects.find(project => project.id === requestedProjectId);
+    if (!requested) return;
+    openedSubmissionRef.current = requestedProjectId;
+    void openProject(requested, { githubUrl: requestedGithubUrl, liveUrl: requestedLiveUrl });
+  }, [loading, projects, requestedProjectId, submissionRequested, requestedGithubUrl, requestedLiveUrl]);
 
   const persist = async (submit: boolean) => {
     if (!submitModal || !profile) return null;
@@ -299,9 +327,12 @@ export default function ProjectsPage() {
                 {submission?.score !== null && submission?.score !== undefined && (
                   <p className="mb-3 text-sm font-semibold text-emerald-600">Score: {submission.score}/{project.max_marks}</p>
                 )}
-                <button onClick={() => void openProject(project)} className="btn-primary text-sm py-2 w-full">
-                  {practiceMode ? 'Try Project' : submission?.status === 'submitted' || submission?.status === 'approved' ? 'View Submission' : submission ? 'View / Update Submission' : 'Start Project Submission'}
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  {!practiceMode && <button onClick={() => navigate(`/student/projects/${project.id}/workspace`)} className="btn-primary text-sm py-2">{submission ? 'Continue Building' : 'Start Building'}</button>}
+                  <button onClick={() => void openProject(project)} className={`${practiceMode ? 'btn-primary col-span-2' : 'btn-secondary'} text-sm py-2`}>
+                    {practiceMode ? 'View Project Brief' : submission ? 'Submission' : 'Brief & Submit'}
+                  </button>
+                </div>
               </div>
             );
           })}

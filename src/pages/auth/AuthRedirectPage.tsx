@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, ROLE_DASHBOARDS } from '../../contexts/AuthContext';
+import { useAuth, ROLE_DASHBOARDS, DEVELOPER_EMAIL, DEVELOPER_ROLE_KEY } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { AlertCircle, LogOut, RefreshCw } from 'lucide-react';
@@ -35,6 +35,11 @@ export default function AuthRedirectPage() {
   useEffect(() => {
     // If profile is loaded, redirect immediately
     if (profile && user) {
+      if (import.meta.env.DEV && profile.email?.toLowerCase() === DEVELOPER_EMAIL) {
+        sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
+        navigate('/developer-role', { replace: true });
+        return;
+      }
       navigate(ROLE_DASHBOARDS[profile.role], { replace: true });
       return;
     }

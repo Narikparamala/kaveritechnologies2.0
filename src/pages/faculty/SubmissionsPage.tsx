@@ -54,6 +54,7 @@ export default function SubmissionsPage() {
         .from('assignment_submissions')
         .select('*, assignment:assignments(*), student_profile:profiles!assignment_submissions_student_id_fkey(*)')
         .in('assignment_id', aIds)
+        .neq('status', 'draft')
         .order('submitted_at', { ascending: false });
 
       if (error) throw error;
@@ -155,7 +156,7 @@ export default function SubmissionsPage() {
                 </div>
                 <p className="text-sm text-primary-600 dark:text-primary-400 mb-1">{sub.assignment?.title}</p>
                 <div className="flex items-center gap-4 text-xs text-slate-400">
-                  <span>Submitted: {formatDate(sub.submitted_at)}</span>
+                  <span>Submitted: {sub.submitted_at ? formatDate(sub.submitted_at) : 'Not submitted'}</span>
                   {sub.score !== null && <span className="text-emerald-600 font-bold">Score: {sub.score}/{sub.assignment?.max_marks}</span>}
                 </div>
               </div>

@@ -3,11 +3,26 @@ import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole } from '../types/database';
 
-// â”€â”€â”€ PREVIEW MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PREVIEW MODE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Set to 'student' | 'faculty' | 'super_admin' to bypass login in preview.
 // Set to null to restore normal authentication.
-export const PREVIEW_ROLE: UserRole | null = null;
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const configuredPreviewRole = import.meta.env.DEV ? import.meta.env.VITE_PREVIEW_ROLE : undefined;
+export const PREVIEW_ROLE: UserRole | null = configuredPreviewRole === 'student' || configuredPreviewRole === 'faculty' || configuredPreviewRole === 'super_admin' ? configuredPreviewRole : null;
+export const DEVELOPER_EMAIL = 'narikparamala@gmail.com';
+export const DEVELOPER_ROLE_KEY = 'kaveri-developer-role';
+
+function selectedDeveloperRole(profile: Profile | null): UserRole | null {
+  if (!import.meta.env.DEV || profile?.email?.toLowerCase() !== DEVELOPER_EMAIL) return null;
+
+  const requestedRole = new URLSearchParams(window.location.search).get('developerRole');
+  if (requestedRole === 'student' || requestedRole === 'faculty' || requestedRole === 'super_admin') {
+    return requestedRole;
+  }
+
+  const selected = sessionStorage.getItem(DEVELOPER_ROLE_KEY);
+  return selected === 'student' || selected === 'faculty' || selected === 'super_admin' ? selected : null;
+}
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 const PREVIEW_PROFILE: Profile = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -48,7 +63,7 @@ const ROLE_DASHBOARDS: Record<UserRole, string> = {
 };
 
 async function fetchProfileById(userId: string): Promise<Profile | null> {
-  // Retry up to 5 times with delay â€” trigger may not have fired yet
+  // Retry up to 5 times with delay Ã¢â‚¬â€ trigger may not have fired yet
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await supabase
       .from('profiles')
@@ -189,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { full_name: fullName },
-        // Do not pass role â€” trigger always assigns 'student'
+        // Do not pass role Ã¢â‚¬â€ trigger always assigns 'student'
       },
     });
 
@@ -216,27 +231,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Email confirmation required
     if (data.user && !data.session) {
-      return { error: null }; // Success â€” user needs to confirm email
+      return { error: null }; // Success Ã¢â‚¬â€ user needs to confirm email
     }
 
     return { error: 'Something went wrong. Please try again.' };
   };
 
   const signOut = async () => {
+    sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
   };
 
-  const role = profile?.role ?? null;
+  const developerRole = selectedDeveloperRole(profile);
+  const effectiveProfile = profile && developerRole ? { ...profile, role: developerRole } : profile;
+  const role = effectiveProfile?.role ?? null;
   const isAuthenticated = !!user && !!session;
 
   return (
     <AuthContext.Provider value={{
       user,
       session,
-      profile,
+      profile: effectiveProfile,
       role,
       loading,
       isAuthenticated,
