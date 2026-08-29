@@ -348,7 +348,7 @@ function AssignmentWorkspace({
     setSubmitting(true);
     setConfirmSubmit(false);
     setRunResults([]);
-    setConsoleText('Checking all visible and hidden test cases...');
+    setConsoleText('Checking visible test cases before submission...');
 
     try {
       const currentSubmission = await ensureSubmission();
@@ -359,7 +359,7 @@ function AssignmentWorkspace({
       for (let index = 0; index < questions.length; index += 1) {
         const question = questions[index];
         const code = answers[question.id]?.submitted_code ?? question.starter_code ?? '';
-        const tests = await getTestCases(assignment.id, question.id, true);
+        const tests = await getTestCases(assignment.id, question.id, false);
         const results: TestResult[] = [];
 
         if (code.trim()) {
@@ -401,8 +401,8 @@ function AssignmentWorkspace({
 
       if (currentSubmission) {
         await submitAssignment(currentSubmission.id);
-        setConsoleText(`ACCEPTED\nAll ${totalTests} test cases passed.`);
-        success('All test cases passed!', 'Your assignment was submitted successfully.');
+        setConsoleText(`SUBMITTED\nAll ${totalTests} visible test cases passed. Faculty review is the authoritative grade.`);
+        success('Assignment submitted!', 'Visible tests passed. Your faculty will review the submission.');
         window.setTimeout(onSubmitted, 900);
       } else {
         setConsoleText(`PRACTICE COMPLETE\nAll ${totalTests} test cases passed. No student submission or grade was created.`);
@@ -492,7 +492,7 @@ function AssignmentWorkspace({
 
       <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title={practiceMode ? 'Check faculty practice' : 'Run final submission tests'}>
         <div className="space-y-5">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{practiceMode ? 'This runs every visible and hidden test case, but it will not create a student submission, grade, XP, or progress.' : 'Submitting will run every visible and hidden test case. If any test fails, you can correct your code and submit again.'}</p>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{practiceMode ? 'This runs visible test cases only and does not create a grade, XP, or verified progress.' : 'Submitting runs visible test cases before sending your code for authoritative faculty review. Hidden tests are never downloaded to the browser.'}</p>
           <div className="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-900"><div className="flex justify-between"><span>Questions</span><strong>{questions.length}</strong></div><div className="mt-2 flex justify-between"><span>Current status</span><strong>{practiceMode ? 'Practice only' : submission?.status === 'submitted' ? 'Submitted' : 'Draft'}</strong></div></div>
           <div className="flex justify-end gap-3"><button className="btn-secondary" onClick={() => setConfirmSubmit(false)}>Keep Coding</button><button className="btn-primary flex items-center gap-2" disabled={submitting} onClick={evaluateAndSubmit}>{submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{practiceMode ? 'Run All Practice Tests' : 'Run Tests & Submit'}</button></div>
         </div>
