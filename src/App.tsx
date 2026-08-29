@@ -25,6 +25,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import AuthRedirectPage from './pages/auth/AuthRedirectPage';
+import DeveloperRolePage from './pages/auth/DeveloperRolePage';
 
 // Layouts (keep eager so shell renders immediately)
 import StudentLayout from './pages/student/StudentLayout';
@@ -41,6 +42,7 @@ const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
 const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
+const ProjectWorkspacePage = lazy(() => import('./pages/shared/ProjectWorkspacePage'));
 const LeaderboardPage = lazy(() => import('./pages/student/LeaderboardPage'));
 const CertificatesPage = lazy(() => import('./pages/student/CertificatesPage'));
 const DownloadsPage = lazy(() => import('./pages/student/DownloadsPage'));
@@ -180,6 +182,7 @@ export default function App() {
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route path="/auth/redirect" element={<AuthRedirectPage />} />
+                  <Route path="/developer-role" element={<DeveloperRolePage />} />
 
                   {/* Demo routes - lazy loaded */}
                   <Route path="/demo/student" element={<DemoStudentLayout />}>
@@ -208,6 +211,8 @@ export default function App() {
                       <CourseWorkspace />
                     </RoleGuard>
                   } />
+                  <Route path="/student/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['student']}><ProjectWorkspacePage mode="student" /></RoleGuard>} />
+                  <Route path="/faculty/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['faculty', 'super_admin']}><ProjectWorkspacePage mode="faculty" /></RoleGuard>} />
 
                   {/* Student routes */}
                   <Route path="/student" element={

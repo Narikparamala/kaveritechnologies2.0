@@ -106,7 +106,7 @@ export default function FacultyAssignmentBuilderPage() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [assignmentId, setAssignmentId] = useState(routeAssignmentId ?? '');
+  const [assignmentId, setAssignmentId] = useState(routeAssignmentId && routeAssignmentId !== 'new' ? routeAssignmentId : '');
   const [courses, setCourses] = useState<Course[]>([]);
   const [questions, setQuestions] = useState<AssignmentQuestion[]>([]);
   const [testCases, setTestCases] = useState<Record<string, AssignmentTestCase[]>>({});
@@ -329,7 +329,7 @@ export default function FacultyAssignmentBuilderPage() {
         if (!active) return;
         setCourses(facultyCourses);
 
-        if (routeAssignmentId) {
+        if (routeAssignmentId && routeAssignmentId !== 'new') {
           const existing = await getAssignmentById(routeAssignmentId);
           if (!existing) throw new Error('Assignment not found');
           if (!active) return;
@@ -501,7 +501,7 @@ export default function FacultyAssignmentBuilderPage() {
     }
     const questionWithoutTests = questions.find(question => !(testCases[question.id]?.length));
     if (questionWithoutTests) {
-      toastError('Test cases required', `Add a test case for “${questionWithoutTests.title}”.`);
+      toastError('Test cases required', `Add a test case for â€œ${questionWithoutTests.title}â€.`);
       return;
     }
 
@@ -630,7 +630,7 @@ export default function FacultyAssignmentBuilderPage() {
                 {questions.map((question, index) => (
                   <div key={question.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                     <button className="w-full text-left" onClick={() => { setEditingQuestionId(question.id); setQuestionForm(question); }}>
-                      <span className="text-xs text-slate-400">Question {index + 1} · {question.marks} marks</span>
+                      <span className="text-xs text-slate-400">Question {index + 1} Â· {question.marks} marks</span>
                       <span className="mt-1 block font-medium">{question.title}</span>
                     </button>
                     <button className="mt-2 text-red-500" onClick={() => removeQuestion(question.id)}><Trash2 size={15} /></button>
@@ -652,7 +652,7 @@ export default function FacultyAssignmentBuilderPage() {
                   <div><label className="label">Input format</label><textarea className="input min-h-24" value={questionForm.input_format ?? ''} onChange={event => setQuestionForm({ ...questionForm, input_format: event.target.value })} /></div>
                   <div><label className="label">Output format</label><textarea className="input min-h-24" value={questionForm.output_format ?? ''} onChange={event => setQuestionForm({ ...questionForm, output_format: event.target.value })} /></div>
                 </div>
-                <div><label className="label">Constraints</label><textarea className="input min-h-20" value={questionForm.constraints_text ?? ''} onChange={event => setQuestionForm({ ...questionForm, constraints_text: event.target.value })} placeholder="Example: 1 ≤ N ≤ 100" /></div>
+                <div><label className="label">Constraints</label><textarea className="input min-h-20" value={questionForm.constraints_text ?? ''} onChange={event => setQuestionForm({ ...questionForm, constraints_text: event.target.value })} placeholder="Example: 1 â‰¤ N â‰¤ 100" /></div>
                 <div><label className="label">Starter code</label><textarea className="input min-h-32 font-mono" value={questionForm.starter_code ?? ''} onChange={event => setQuestionForm({ ...questionForm, starter_code: event.target.value })} /></div>
               </div>
               <div className="mt-6 flex justify-between gap-3"><button className="btn-secondary" disabled={!questions.length} onClick={() => setStep(3)}>Continue to Test Cases</button><button className="btn-primary" disabled={saving} onClick={saveQuestion}>{saving ? 'Saving...' : editingQuestionId ? 'Update Question' : 'Add Question'}</button></div>
@@ -678,7 +678,7 @@ export default function FacultyAssignmentBuilderPage() {
               <div className="space-y-3">
                 {(testCases[selectedQuestionId] ?? []).map((testCase, index) => (
                   <div key={testCase.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                    <div className="flex justify-between gap-3"><strong className="text-sm">Test #{index + 1} {testCase.is_hidden && '· Hidden'}</strong><button className="text-red-500" onClick={() => removeTestCase(testCase.id)}><Trash2 size={16} /></button></div>
+                    <div className="flex justify-between gap-3"><strong className="text-sm">Test #{index + 1} {testCase.is_hidden && 'Â· Hidden'}</strong><button className="text-red-500" onClick={() => removeTestCase(testCase.id)}><Trash2 size={16} /></button></div>
                     <div className="mt-3 grid gap-3 text-xs md:grid-cols-2"><pre className="overflow-auto rounded-lg bg-slate-100 p-3 dark:bg-slate-900">Input:{'\n'}{testCase.input_data || '(no input)'}</pre><pre className="overflow-auto rounded-lg bg-slate-100 p-3 dark:bg-slate-900">Expected:{'\n'}{testCase.expected_output}</pre></div>
                   </div>
                 ))}
@@ -796,7 +796,7 @@ export default function FacultyAssignmentBuilderPage() {
                           <div>
                             <p className="text-xs font-bold uppercase tracking-wide text-primary-600">Question preview</p>
                             <h3 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{previewBankQuestion.title}</h3>
-                            <p className="mt-2 text-sm text-slate-500">{previewBankQuestion.topic}{previewBankQuestion.subtopic ? ` · ${previewBankQuestion.subtopic}` : ''}</p>
+                            <p className="mt-2 text-sm text-slate-500">{previewBankQuestion.topic}{previewBankQuestion.subtopic ? ` Â· ${previewBankQuestion.subtopic}` : ''}</p>
                           </div>
                           <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm dark:bg-slate-800"><strong>{previewBankQuestion.default_marks}</strong> marks</div>
                         </div>

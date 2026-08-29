@@ -394,6 +394,18 @@ export interface ProjectStarterFile {
   updated_at: string;
 }
 
+export interface ProjectWorkspaceFile {
+  id: string;
+  project_id: string;
+  student_id: string;
+  file_path: string;
+  content: string;
+  language: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectSubmission {
   id: string;
   project_id: string;

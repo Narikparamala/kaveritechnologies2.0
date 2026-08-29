@@ -242,25 +242,24 @@ export default function FacultyProjectsPage() {
                 ))}
               </div>
 
-              <div className="flex items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-700">
+              <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 dark:border-slate-700">
                 <button onClick={() => navigate(`/faculty/projects/${project.id}/builder`)} className="btn-primary text-xs flex-1 flex items-center justify-center gap-1.5">
                   <Edit2 size={13} /> Build
                 </button>
                 <button
-                  onClick={() => navigate(`/faculty/practice/projects?practice=1&projectId=${project.id}&returnTo=${encodeURIComponent('/faculty/projects')}`)}
-                  className="btn-secondary text-xs flex items-center gap-1.5"
+                  onClick={() => navigate(`/faculty/projects/${project.id}/workspace`)}
+                  className="btn-secondary text-xs flex items-center justify-center gap-1.5"
                 >
-                  <Play size={13} /> Try Project
+                  <Play size={13} /> Preview Workspace
                 </button>
-                <button onClick={() => void openSubmissions(project)} className="btn-secondary text-xs flex items-center gap-1.5">
+                <button onClick={() => void openSubmissions(project)} className="btn-secondary text-xs flex items-center justify-center gap-1.5">
                   <MessageSquare size={13} /> Review
                 </button>
-                <button onClick={() => void handleTogglePublish(project)} title={project.is_published ? 'Unpublish' : 'Publish'} className="p-2 text-slate-400 hover:text-primary-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
-                  {project.is_published ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-                <button onClick={() => setDeleteTarget(project)} title="Delete" className="p-2 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
-                  <Trash2 size={15} />
-                </button>
+                <div className="flex items-center justify-end gap-1 rounded-xl border border-slate-200 px-1 dark:border-slate-700">
+                  <button onClick={() => void handleTogglePublish(project)} title={project.is_published ? 'Unpublish' : 'Publish'} className="p-2 text-slate-400 hover:text-primary-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">{project.is_published ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+                  <span className="h-5 w-px bg-slate-200 dark:bg-slate-700" />
+                  <button onClick={() => setDeleteTarget(project)} title="Delete" className="p-2 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={15} /></button>
+                </div>
               </div>
             </article>
           ))}
