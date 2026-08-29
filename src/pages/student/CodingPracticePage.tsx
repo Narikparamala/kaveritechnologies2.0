@@ -18,9 +18,9 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
-import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { runPython } from '../../services/pythonExecution';
+import { securelyGradePractice } from '../../services/secureGrading';
 
 const MonacoEditor = lazy(() =>
   import('@monaco-editor/react').then(module => ({ default: module.default })),
@@ -282,7 +282,6 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
 }
 
 function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack: () => void }) {
-  const { profile } = useAuth();
   const { success, error: toastError } = useToast();
   const [question, setQuestion] = useState<CodingQuestion | null>(null);
   const [testCases, setTestCases] = useState<QuestionTestCase[]>([]);
@@ -362,45 +361,20 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   const submitSolution = async () => {
     if (!question || !code.trim()) return;
     setSubmitting(true);
+    setCustomOutput('Running secure final tests...');
     try {
-      const allResults = await Promise.all(testCases.map(test => executeTest(code, test)));
-      setResults(allResults.filter(result => !result.hidden));
-      const passed = allResults.filter(result => result.passed).length;
-      const visibleTestsPassed = passed === allResults.length && allResults.length > 0;
-
-      if (profile) {
-        const { data: previous } = await supabase
-          .from('coding_question_attempts')
-          .select('attempts_count, first_solved_at')
-          .eq('question_id', question.id)
-          .eq('student_id', profile.id)
-          .maybeSingle();
-
-        const { error } = await supabase.from('coding_question_attempts').upsert({
-          question_id: question.id,
-          student_id: profile.id,
-          submitted_code: code,
-          // Browser results are provisional. Verified solved status is reserved
-          // for the future isolated grading service or an authorised reviewer.
-          status: 'attempted',
-          attempts_count: Number(previous?.attempts_count ?? 0) + 1,
-          passed_test_cases: 0,
-          total_test_cases: 0,
-          last_execution_output: allResults.map(result => result.actual).join('\n---\n'),
-          first_solved_at: previous?.first_solved_at,
-          last_attempted_at: new Date().toISOString(),
-        }, { onConflict: 'question_id,student_id' });
-
-        if (error) throw error;
-      }
-
-      if (visibleTestsPassed) {
-        success('Visible tests passed!', 'Your practice attempt was saved. Verified grading will run securely later.');
+      const result = await securelyGradePractice(question.id, code);
+      setCustomOutput(
+        `VERIFIED RESULT\n\n${result.passed} of ${result.total} final tests passed.\nScore: ${result.score}/${question.default_marks}`,
+      );
+      if (result.allPassed) {
+        success('Solution verified!', 'All visible and hidden tests passed securely.');
       } else {
-        toastError('Tests failed', `${allResults.length - passed} of ${allResults.length} test case(s) failed. Change your code and try again.`);
+        toastError('Final tests failed', `${result.total - result.passed} final test case(s) failed. Hidden test details remain protected.`);
       }
     } catch (error) {
-      toastError('Could not submit solution', errorMessage(error));
+      toastError('Could not securely grade solution', errorMessage(error));
+      setCustomOutput(`Secure grading error: ${errorMessage(error)}`);
     } finally {
       setSubmitting(false);
     }
