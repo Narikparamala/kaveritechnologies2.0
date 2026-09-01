@@ -1,0 +1,131 @@
+name: Secure Grading CI
+
+on:
+  pull_request:
+    branches:
+      - lms-stable
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: secure-grading-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Build and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Typecheck secure grading function
+        run: deno check supabase/functions/secure-grade/index.ts
+
+  security:
+    name: Secrets and migration safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Reject tracked environment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tracked_env="$(
+            git ls-files |
+              grep -E '(^|/)\.env($|\.[^/]+$)' |
+              grep -vE '\.env\.example$' || true
+          )"
+
+          if [ -n "$tracked_env" ]; then
+            echo "Tracked environment files are forbidden:"
+            echo "$tracked_env"
+            exit 1
+          fi
+
+      - name: Reject real runner tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git grep -n -I -E \
+            'GO_JUDGE_TOKEN=[a-fA-F0-9]{32,}' \
+            -- .; then
+            echo "A possible real go-judge token is tracked."
+            exit 1
+          fi
+
+      - name: Validate repaired historical migration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          retired="supabase/migrations/20260807100220_assignment_mvp.sql"
+          repair="supabase/migrations/20260901090000_repair_assignment_mvp_history.sql"
+          archive="docs/historical-migrations/20260807100220_assignment_mvp.preview.sql.txt"
+
+          test -f "$retired"
+          test -f "$repair"
+          test -f "$archive"
+
+          if grep -Eiq \
+            'create[[:space:]]+table|using[[:space:]]*\(true\)|with[[:space:]]+check[[:space:]]*\(true\)|insert[[:space:]]+into' \
+            "$retired"; then
+            echo "Unsafe preview SQL returned to executable history."
+            exit 1
+          fi
+
+          if git grep -n \
+            '00000000-0000-0000-0000-000000000001' \
+            -- 'supabase/migrations/*.sql'; then
+            echo "A fake preview-profile dependency remains executable."
+            exit 1
+          fi
+
+      - name: Reject duplicate migration versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          duplicates="$(
+            find supabase/migrations \
+              -maxdepth 1 \
+              -type f \
+              -name '*.sql' \
+              -printf '%f\n' |
+              cut -d_ -f1 |
+              sort |
+              uniq -d
+          )"
+
+          if [ -n "$duplicates" ]; then
+            echo "Duplicate migration versions detected:"
+            echo "$duplicates"
+            exit 1
+          fi
