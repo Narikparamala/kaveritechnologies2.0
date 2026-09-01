@@ -213,6 +213,7 @@ Deno.serve(async req => {
           .select('attempts_count,first_solved_at')
           .eq('question_id', question.id).eq('student_id', user.id).maybeSingle();
         const outcome = await runTests(code, (tests ?? []) as TestCase[]);
+        const solvedBefore = Boolean(previousAttempt?.first_solved_at);
         const score = outcome.allPassed ? Number(question.default_marks ?? 0) : 0;
         await Promise.all([
           admin.from('secure_grading_runs').update({
@@ -221,7 +222,7 @@ Deno.serve(async req => {
           }).eq('id', run.id),
           admin.from('coding_question_attempts').upsert({
             question_id: question.id, student_id: user.id, submitted_code: code,
-            status: outcome.allPassed ? 'solved' : 'attempted',
+            status: (solvedBefore || outcome.allPassed) ? 'solved' : 'attempted',
             attempts_count: Number(previousAttempt?.attempts_count ?? 0) + 1,
             passed_test_cases: outcome.passed, total_test_cases: outcome.total,
             first_solved_at: previousAttempt?.first_solved_at ?? (outcome.allPassed ? new Date().toISOString() : null),
