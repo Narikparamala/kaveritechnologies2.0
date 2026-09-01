@@ -127,7 +127,9 @@ create policy preview_coding_question_attempts_all
 on public.coding_question_attempts for all to anon, authenticated
 using (true) with check (true);
 
--- Five original starter questions. The bank can later be expanded through CSV import.
+-- Five system-authored starter questions. created_by is intentionally NULL:
+-- seed content must not depend on a preview, faculty, or production user.
+-- The bank can later be expanded through authenticated faculty workflows.
 insert into public.coding_questions (
   id, title, slug, problem_statement, input_format, output_format,
   constraints_text, starter_code, reference_solution, explanation, hints,
@@ -151,7 +153,7 @@ values
   array['input', 'output', 'arithmetic'],
   array['TCS', 'Infosys', 'Wipro', 'Accenture'], 90,
   10, 'original', true,
-  '00000000-0000-0000-0000-000000000001'
+  null
 ),
 (
   '21000000-0000-0000-0000-000000000002',
@@ -169,7 +171,7 @@ values
   array['conditions', 'modulo'],
   array['TCS', 'Cognizant', 'Capgemini'], 88,
   10, 'original', true,
-  '00000000-0000-0000-0000-000000000001'
+  null
 ),
 (
   '21000000-0000-0000-0000-000000000003',
@@ -187,7 +189,7 @@ values
   array['conditions', 'comparison'],
   array['Infosys', 'Wipro', 'Accenture'], 82,
   10, 'original', true,
-  '00000000-0000-0000-0000-000000000001'
+  null
 ),
 (
   '21000000-0000-0000-0000-000000000004',
@@ -205,7 +207,7 @@ values
   array['strings', 'slicing'],
   array['TCS', 'Cognizant', 'Amazon'], 86,
   10, 'adapted_pattern', true,
-  '00000000-0000-0000-0000-000000000001'
+  null
 ),
 (
   '21000000-0000-0000-0000-000000000005',
@@ -223,7 +225,7 @@ values
   array['strings', 'loops', 'counting'],
   array['TCS', 'Infosys', 'Cognizant'], 84,
   10, 'original', true,
-  '00000000-0000-0000-0000-000000000001'
+  null
 )
 on conflict (id) do update set
   title = excluded.title,
