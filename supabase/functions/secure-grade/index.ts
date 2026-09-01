@@ -43,58 +43,91 @@ async function sha256(value: string) {
 }
 
 async function judgePython(code: string, test: TestCase): Promise<JudgeResult> {
-  const endpoint = Deno.env.get('JUDGE0_URL');
-  if (!endpoint) throw new Error('RUNNER_NOT_CONFIGURED');
+  const endpoint = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
 
-  const url = new URL('/submissions', endpoint.endsWith('/') ? endpoint : `${endpoint}/`);
-  url.searchParams.set('base64_encoded', 'false');
-  url.searchParams.set('wait', 'true');
+  if (!endpoint || !token) throw new Error('RUNNER_NOT_CONFIGURED');
 
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  const token = Deno.env.get('JUDGE0_TOKEN');
-  const host = Deno.env.get('JUDGE0_HOST');
-  if (token) headers['x-rapidapi-key'] = token;
-  if (host) headers['x-rapidapi-host'] = host;
+  const baseUrl = endpoint.endsWith('/') ? endpoint : `${endpoint}/`;
+  const url = new URL('run', baseUrl);
 
   const response = await fetch(url, {
     method: 'POST',
-    headers,
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
     signal: AbortSignal.timeout(8_000),
     body: JSON.stringify({
-      source_code: code,
-      language_id: 71,
-      stdin: test.input_data ?? '',
-      expected_output: test.expected_output,
-      cpu_time_limit: 2,
-      wall_time_limit: 5,
-      memory_limit: 128_000,
-      max_file_size: 1_024,
-      enable_network: false,
+      cmd: [{
+        args: ['/usr/bin/python3', '-I', 'solution.py'],
+        env: [
+          'PATH=/usr/bin:/bin',
+          'PYTHONIOENCODING=utf-8',
+        ],
+        files: [
+          { content: test.input_data ?? '' },
+          { name: 'stdout', max: 65_536 },
+          { name: 'stderr', max: 65_536 },
+        ],
+        cpuLimit: 2_000_000_000,
+        clockLimit: 5_000_000_000,
+        memoryLimit: 134_217_728,
+        procLimit: 30,
+        copyIn: {
+          'solution.py': { content: code },
+        },
+        copyOut: ['stdout', 'stderr'],
+      }],
     }),
   });
 
   if (!response.ok) throw new Error(`RUNNER_HTTP_${response.status}`);
-  const result = await response.json();
-  const statusId = Number(result?.status?.id ?? 0);
-  const stdout = normalizeOutput(result?.stdout);
+
+  const payload = await response.json();
+  const result = Array.isArray(payload) ? payload[0] : null;
+
+  if (!result || typeof result.status !== 'string') {
+    throw new Error('RUNNER_INVALID_RESPONSE');
+  }
+
+  const runnerStatus = String(result.status);
+  const stdout = normalizeOutput(result.files?.stdout);
   const expected = normalizeOutput(test.expected_output);
-  const passed = statusId === 3 && stdout === expected;
+  const passed = runnerStatus === 'Accepted' && stdout === expected;
+
+  let status = 'execution_error';
+
+  if (passed) {
+    status = 'accepted';
+  } else if (runnerStatus === 'Accepted') {
+    status = 'wrong_answer';
+  } else if (runnerStatus === 'Time Limit Exceeded') {
+    status = 'time_limit';
+  } else if (runnerStatus === 'Memory Limit Exceeded') {
+    status = 'memory_limit';
+  } else if (runnerStatus === 'Output Limit Exceeded') {
+    status = 'output_limit';
+  }
 
   return {
     passed,
-    status: passed ? 'accepted' : statusId === 3 ? 'wrong_answer' : 'execution_error',
-    timeMs: result?.time == null ? null : Math.round(Number(result.time) * 1_000),
-    memoryKb: result?.memory == null ? null : Number(result.memory),
+    status,
+    timeMs: result.time == null
+      ? null
+      : Math.round(Number(result.time) / 1_000_000),
+    memoryKb: result.memory == null
+      ? null
+      : Math.round(Number(result.memory) / 1_024),
   };
 }
-
 async function runTests(code: string, tests: TestCase[]) {
   if (tests.length === 0) throw new Error('NO_TESTS');
   if (tests.length > MAX_TESTS) throw new Error('TOO_MANY_TESTS');
 
   const results: JudgeResult[] = [];
-  for (let index = 0; index < tests.length; index += 4) {
-    results.push(...await Promise.all(tests.slice(index, index + 4).map(test => judgePython(code, test))));
+  for (let index = 0; index < tests.length; index += 2) {
+    results.push(...await Promise.all(tests.slice(index, index + 2).map(test => judgePython(code, test))));
   }
 
   const passed = results.filter(result => result.passed).length;

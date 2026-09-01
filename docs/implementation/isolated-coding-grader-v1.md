@@ -10,15 +10,15 @@ Move final Python grading and hidden tests out of the browser while keeping loca
 2. The browser invokes the `secure-grade` Supabase Edge Function with only a question/submission identifier and, for practice, the submitted code.
 3. The Edge Function validates the Supabase user and resource ownership.
 4. A service-role client loads hidden tests; hidden inputs and expected outputs never enter the browser.
-5. The function calls a configured Judge0-compatible isolated runner with CPU, wall-time, memory, file-size, and network limits.
+5. The function calls the authenticated, self-hosted go-judge runner with CPU, wall-time, memory, process, output, and network limits.
 6. Only aggregate safe results are written to `secure_grading_runs` and returned to the student.
 7. Verified practice results update `coding_question_attempts`; assignment results update per-question marks and the overall submission. Faculty can still review and override assignment grades.
 
 ## Required production secrets
 
-- `JUDGE0_URL`: base URL of the trusted isolated Judge0 deployment.
-- `JUDGE0_TOKEN`: optional RapidAPI/private runner token.
-- `JUDGE0_HOST`: optional RapidAPI host header.
+- `GO_JUDGE_URL`: server-only base URL of the trusted go-judge deployment.
+- `GO_JUDGE_TOKEN`: required server-only Bearer token shared with go-judge.
+- The runner token must never be exposed through frontend environment variables.
 - `LMS_ALLOWED_ORIGINS`: comma-separated exact LMS origins, including preview domains if required.
 
 Do not point production at an untrusted public compiler. The runner must execute each request in an ephemeral restricted sandbox with no platform secrets and no internal-network access.
@@ -29,7 +29,7 @@ Do not point production at an untrusted public compiler. The runner must execute
 - Maximum 20 KB of Python source.
 - Maximum 30 tests per grading request.
 - Maximum 10 grading requests per student per five minutes.
-- Judge0 receives explicit CPU, wall-clock, memory, output-file, and network restrictions.
+- go-judge receives explicit CPU, wall-clock, memory, process, output, and network restrictions.
 - Hidden test bodies and raw hidden outputs are excluded from `public_result`.
 - Students receive read-only access to their grading audit records.
 
