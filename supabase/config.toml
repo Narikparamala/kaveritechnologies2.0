@@ -370,6 +370,15 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+[functions.secure-grade]
+verify_jwt = true
+
+[functions.google-calendar-auth]
+verify_jwt = true
+
+[functions.google-meet-create]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

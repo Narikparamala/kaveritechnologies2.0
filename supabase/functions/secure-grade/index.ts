@@ -280,7 +280,7 @@ async function judgeCode(
         stdin: encodeBase64(test.input_data ?? ''),
         cpu_time_limit: 2,
         wall_time_limit: 5,
-        memory_limit: 131_072,
+        memory_limit: 128_000,
         max_file_size: 1_024,
         max_processes_and_or_threads: 30,
         enable_network: false,
