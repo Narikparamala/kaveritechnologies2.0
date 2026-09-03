@@ -308,14 +308,18 @@ async function judgeCodeGoJudge(
         cmd: [{
           args: ['/usr/bin/python3', '-I', 'solution.py'],
           env: ['PATH=/usr/bin:/bin', 'PYTHONIOENCODING=utf-8'],
-          stdin: test.input_data ?? '',
-          stdout: 65536,
-          stderr: 65536,
+          files: [
+            { content: test.input_data ?? '' },
+            { name: 'stdout', max: 65_536 },
+            { name: 'stderr', max: 65_536 },
+          ],
           cpuLimit: 2_000_000_000,
           clockLimit: 5_000_000_000,
           memoryLimit: 134_217_728,
           procLimit: 30,
-          copyIn: { 'solution.py': code },
+          copyIn: {
+            'solution.py': { content: code },
+          },
           copyOut: ['stdout', 'stderr'],
         }],
       }),
@@ -332,10 +336,11 @@ async function judgeCodeGoJudge(
   }
 
   const payload: unknown = await response.json();
-  if (!Array.isArray(payload) || !payload[0] || typeof payload[0] !== 'object') {
+  const resultCandidate = Array.isArray(payload) ? payload[0] : payload;
+  if (!resultCandidate || typeof resultCandidate !== 'object') {
     throw new Error('RUNNER_INVALID_RESPONSE');
   }
-  const result = payload[0] as Record<string, unknown>;
+  const result = resultCandidate as Record<string, unknown>;
   const files = result.files as { stdout?: unknown; stderr?: unknown } | undefined;
   const status = String(result.status ?? '');
   const stdout = normalizeOutput(typeof files?.stdout === 'string' ? files.stdout : '');
