@@ -14,8 +14,12 @@ export function formatDate(date: string | Date, fmt = 'MMM d, yyyy') {
   });
 }
 
-export function formatRelativeTime(date: string | Date): string {
+export function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (!date) return 'Not submitted';
+
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return 'Invalid date';
+
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -30,7 +34,7 @@ export function formatRelativeTime(date: string | Date): string {
 }
 
 export function truncate(text: string, maxLen = 100): string {
-  return text.length <= maxLen ? text : text.slice(0, maxLen).trimEnd() + '…';
+  return text.length <= maxLen ? text : text.slice(0, maxLen).trimEnd() + '\u2026';
 }
 
 export function slugify(text: string): string {

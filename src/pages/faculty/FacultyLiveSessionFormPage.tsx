@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Video, Calendar, Clock, Users, Link, Save, Loader2, AlertCircle,
@@ -22,6 +22,9 @@ export default function FacultyLiveSessionFormPage() {
   const { success, error: showError } = useToast();
   const navigate = useNavigate();
   const isEdit = Boolean(sessionId);
+  const requestedCourseId = searchParams.get('courseId');
+  const requestedLessonId = searchParams.get('lessonId');
+  const prefillCompleted = useRef(false);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -61,14 +64,6 @@ export default function FacultyLiveSessionFormPage() {
       setGoogleLoading(false);
     }
   }, [profile]);
-
-  useEffect(() => {
-    loadCourses();
-    checkGoogleConnection();
-    if (isEdit && sessionId) {
-      loadSession();
-    }
-  }, [sessionId]);
 
   // Handle OAuth callback: ?google_connected=1&google_email=...
   useEffect(() => {
@@ -114,6 +109,42 @@ export default function FacultyLiveSessionFormPage() {
     setLessons((data ?? []) as Lesson[]);
   };
 
+  const prefillFromLesson = async () => {
+    setLoading(true);
+    try {
+      let requestedLesson: Lesson | null = null;
+      if (requestedLessonId) {
+        const { data, error } = await supabase
+          .from('lessons')
+          .select('*')
+          .eq('id', requestedLessonId)
+          .maybeSingle();
+        if (error) throw error;
+        requestedLesson = data as Lesson | null;
+      }
+
+      const courseId = requestedLesson?.course_id || requestedCourseId || '';
+      const chapterId = requestedLesson?.chapter_id || '';
+      if (courseId) await loadChapters(courseId);
+      if (chapterId) await loadLessons(chapterId);
+
+      setForm(current => ({
+        ...current,
+        course_id: courseId,
+        chapter_id: chapterId,
+        lesson_id: requestedLesson?.id || '',
+        title: current.title || (requestedLesson ? `${requestedLesson.title} - Live Class` : ''),
+        description: current.description || requestedLesson?.explanation || '',
+        duration_minutes: requestedLesson?.duration_minutes || current.duration_minutes,
+      }));
+    } catch (err: any) {
+      console.error('Failed to prefill live session:', err);
+      showError(err.message || 'Could not load the selected lesson.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadSession = async () => {
     if (!profile || !sessionId) return;
     setLoading(true);
@@ -144,6 +175,18 @@ export default function FacultyLiveSessionFormPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!profile) return;
+    loadCourses();
+    checkGoogleConnection();
+    if (isEdit && sessionId) {
+      loadSession();
+    } else if (!prefillCompleted.current && (requestedCourseId || requestedLessonId)) {
+      prefillCompleted.current = true;
+      prefillFromLesson();
+    }
+  }, [profile?.id, sessionId, requestedCourseId, requestedLessonId]);
 
   const handleConnectGoogle = async () => {
     if (!profile) return;
@@ -240,6 +283,13 @@ export default function FacultyLiveSessionFormPage() {
 
       if (isEdit && sessionId) {
         await updateSession(sessionId, input);
+
+        // Recover sessions that were saved before their generated Meet link
+        // could be persisted. Saving the edit generates and stores the link.
+        if (googleConnected && !form.google_meet_url.trim()) {
+          await handleGenerateMeet(sessionId);
+        }
+
         success('Session updated successfully!');
         navigate('/faculty/live-classes');
       } else {

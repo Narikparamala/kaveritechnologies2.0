@@ -3,6 +3,7 @@ import type {
   Course, Chapter, Lesson, Assignment, Quiz, QuizQuestion, QuizOption, Project,
   AssignmentSubmission, ProjectSubmission, QuizAttempt, Profile, CourseEnrollment, LessonProgress,
   LessonTopic, LessonSubtopic, LessonPracticeQuestion, LessonResource, LessonResourceType, LiveSession, AssignmentTestCase,
+  ProjectMilestone, ProjectRubricItem, ProjectStarterFile, ProjectSubmissionMode, ProjectType,
 } from '../types/database';
 
 // ============================================================
@@ -79,6 +80,8 @@ export async function createLesson(input: {
   notes_markdown?: string;
   code_example?: string;
   explanation?: string;
+  teaching_mode?: 'live_class' | 'recorded_video';
+  enable_coding_playground?: boolean;
   duration_minutes?: number;
   order_index?: number;
   is_published?: boolean;
@@ -89,10 +92,12 @@ export async function createLesson(input: {
     ...input,
     order_index: nextOrder,
     is_published: input.is_published ?? false,
-  duration_minutes: input.duration_minutes ?? 10,
-  xp_reward: 10,
-  slug: input.slug,
-  video_url: null,
+    teaching_mode: input.teaching_mode ?? 'live_class',
+    enable_coding_playground: input.enable_coding_playground ?? false,
+    duration_minutes: input.duration_minutes ?? 10,
+    xp_reward: 10,
+    slug: input.slug,
+    video_url: null,
     is_free_preview: false,
   }).select().single();
   if (error) throw error;
@@ -326,9 +331,16 @@ export async function getQuizAttempts(quizId: string): Promise<(QuizAttempt & { 
 
 export async function getFacultyProjects(facultyId: string): Promise<(Project & { course: Course | null })[]> {
   const courseIds = await getFacultyCourseIds(facultyId);
-  if (!courseIds.length) return [];
-  const { data, error } = await supabase
-    .from('projects').select('*, course:courses(*)').in('course_id', courseIds).order('created_at', { ascending: false });
+  let query = supabase
+    .from('projects')
+    .select('*, course:courses(*)')
+    .order('created_at', { ascending: false });
+
+  query = courseIds.length
+    ? query.or(`created_by.eq.${facultyId},course_id.in.(${courseIds.join(',')})`)
+    : query.eq('created_by', facultyId);
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as any;
 }
@@ -342,6 +354,15 @@ export async function createProject(input: {
   tech_tags?: string[];
   requirements?: string;
   starter_code?: string;
+  project_type?: ProjectType;
+  objectives?: string;
+  instructions?: string;
+  submission_mode?: ProjectSubmissionMode;
+  max_marks?: number;
+  due_at?: string | null;
+  allow_late_submissions?: boolean;
+  repository_required?: boolean;
+  live_demo_required?: boolean;
   course_id?: string | null;
   is_published?: boolean;
   created_by: string;
@@ -355,6 +376,15 @@ export async function createProject(input: {
     tech_tags: input.tech_tags ?? [],
     requirements: input.requirements ?? null,
     starter_code: input.starter_code ?? null,
+    project_type: input.project_type ?? 'python',
+    objectives: input.objectives ?? null,
+    instructions: input.instructions ?? null,
+    submission_mode: input.submission_mode ?? 'github_and_live',
+    max_marks: input.max_marks ?? 100,
+    due_at: input.due_at ?? null,
+    allow_late_submissions: input.allow_late_submissions ?? false,
+    repository_required: input.repository_required ?? true,
+    live_demo_required: input.live_demo_required ?? false,
     course_id: input.course_id ?? null,
     is_published: input.is_published ?? false,
     created_by: input.created_by,
@@ -373,19 +403,86 @@ export async function deleteProject(projectId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function getProjectBuilderData(projectId: string): Promise<{
+  project: Project;
+  milestones: ProjectMilestone[];
+  rubric: ProjectRubricItem[];
+  starterFiles: ProjectStarterFile[];
+}> {
+  const [projectResult, milestoneResult, rubricResult, starterFileResult] = await Promise.all([
+    supabase.from('projects').select('*').eq('id', projectId).single(),
+    supabase.from('project_milestones').select('*').eq('project_id', projectId).order('order_index'),
+    supabase.from('project_rubric_items').select('*').eq('project_id', projectId).order('order_index'),
+    supabase.from('project_starter_files').select('*').eq('project_id', projectId).order('order_index'),
+  ]);
+
+  if (projectResult.error) throw projectResult.error;
+  if (milestoneResult.error) throw milestoneResult.error;
+  if (rubricResult.error) throw rubricResult.error;
+  if (starterFileResult.error) throw starterFileResult.error;
+
+  return {
+    project: projectResult.data as Project,
+    milestones: (milestoneResult.data ?? []) as ProjectMilestone[],
+    rubric: (rubricResult.data ?? []) as ProjectRubricItem[],
+    starterFiles: (starterFileResult.data ?? []) as ProjectStarterFile[],
+  };
+}
+
+export async function saveProjectStructure(
+  projectId: string,
+  input: {
+    milestones: Array<Pick<ProjectMilestone, 'title' | 'description' | 'max_marks'>>;
+    rubric: Array<Pick<ProjectRubricItem, 'title' | 'description' | 'max_marks'>>;
+    starterFiles: Array<Pick<ProjectStarterFile, 'file_path' | 'content' | 'language'>>;
+  },
+): Promise<void> {
+  const { error } = await supabase.rpc('save_project_structure', {
+    p_project_id: projectId,
+    p_milestones: input.milestones.map(item => ({
+      title: item.title,
+      description: item.description || null,
+      max_marks: Number(item.max_marks) || 0,
+    })),
+    p_rubric: input.rubric.map(item => ({
+      title: item.title,
+      description: item.description || null,
+      max_marks: Number(item.max_marks) || 1,
+    })),
+    p_starter_files: input.starterFiles.map(item => ({
+      file_path: item.file_path,
+      content: item.content,
+      language: item.language || 'text',
+    })),
+  });
+  if (error) throw error;
+}
+
 export async function getProjectSubmissions(projectId: string): Promise<(ProjectSubmission & { student: Profile })[]> {
   const { data, error } = await supabase
     .from('project_submissions')
-    .select('*, student:profiles!project_submissions_student_id_fkey(full_name, email)')
+    .select('*, student:profiles!project_submissions_student_id_fkey(full_name, email), files:project_submission_files(*)')
     .eq('project_id', projectId)
+    .neq('status', 'draft')
     .order('submitted_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as any;
 }
 
-export async function gradeProjectSubmission(submissionId: string, status: 'approved' | 'rejected' | 'reviewed', feedback: string): Promise<void> {
-  const { error } = await supabase.from('project_submissions').update({ status, feedback }).eq('id', submissionId);
+export async function gradeProjectSubmission(
+  submissionId: string,
+  status: 'approved' | 'rejected' | 'reviewed',
+  score: number,
+  feedback: string,
+): Promise<ProjectSubmission> {
+  const { data, error } = await supabase.rpc('review_project_submission', {
+    p_submission_id: submissionId,
+    p_status: status,
+    p_score: score,
+    p_feedback: feedback || null,
+  });
   if (error) throw error;
+  return data as ProjectSubmission;
 }
 
 // ============================================================
@@ -771,11 +868,11 @@ export async function grantEnrollment(input: {
     throw new Error('Student already has active enrollment in this course');
   }
   if (existing) {
-    const { error } = await supabase.from('course_enrollments').update({
-      access_status: 'active', enrollment_source: 'admin_grant',
-      granted_by: input.granted_by, granted_at: new Date().toISOString(),
-      revoked_by: null, revoked_at: null, notes: input.notes ?? null,
-    }).eq('id', (existing as any).id);
+    const { error } = await supabase.rpc('admin_set_enrollment_access', {
+      p_enrollment_id: (existing as { id: string }).id,
+      p_access_status: 'active',
+      p_notes: input.notes ?? null,
+    });
     if (error) throw error;
   } else {
     const { error } = await supabase.from('course_enrollments').insert({
@@ -792,9 +889,11 @@ export async function grantEnrollment(input: {
 }
 
 export async function revokeEnrollment(input: { enrollment_id: string; revoked_by: string }): Promise<void> {
-  const { error } = await supabase.from('course_enrollments').update({
-    access_status: 'revoked', revoked_by: input.revoked_by, revoked_at: new Date().toISOString(),
-  }).eq('id', input.enrollment_id);
+  const { error } = await supabase.rpc('admin_set_enrollment_access', {
+    p_enrollment_id: input.enrollment_id,
+    p_access_status: 'revoked',
+    p_notes: null,
+  });
   if (error) throw error;
   await logActivity(input.revoked_by, 'revoke_enrollment', 'course_enrollments', input.enrollment_id);
 }

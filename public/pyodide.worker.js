@@ -13,8 +13,6 @@ let loading = false;
 const RESTRICTED_PATTERNS = [
   /\bimport\s+os\b/,
   /\bfrom\s+os\b/,
-  /\bimport\s+sys\b/,
-  /\bfrom\s+sys\b/,
   /\bimport\s+subprocess\b/,
   /\bfrom\s+subprocess\b/,
   /\bimport\s+socket\b/,
@@ -50,7 +48,6 @@ const RESTRICTED_PATTERNS = [
   /\bdelattr\s*\(/,
   /\bbreakpoint\s*\(/,
   /\bhelp\s*\(/,
-  /\binput\s*\(/,
 ];
 
 const MAX_CODE_LENGTH = 20000;

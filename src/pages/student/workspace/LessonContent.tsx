@@ -250,7 +250,8 @@ export function LessonContent() {
                     <button
                       onClick={() => setExpandedTopics(prev => {
                         const n = new Set(prev);
-                        n.has(topic.id) ? n.delete(topic.id) : n.add(topic.id);
+                        if (n.has(topic.id)) n.delete(topic.id);
+                        else n.add(topic.id);
                         return n;
                       })}
                       className="w-full p-4 flex items-center gap-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -291,7 +292,7 @@ export function LessonContent() {
                     </div>
                     {q.hint && (
                       <button
-                        onClick={() => setExpandedHints(prev => { const n = new Set(prev); n.has(q.id) ? n.delete(q.id) : n.add(q.id); return n; })}
+                        onClick={() => setExpandedHints(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n; })}
                         className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 mb-2 ml-9"
                       >
                         <Lightbulb size={11} /> {expandedHints.has(q.id) ? 'Hide Hint' : 'Show Hint'}
@@ -309,7 +310,7 @@ export function LessonContent() {
                     {q.show_solution && q.sample_solution && (
                       <div className="ml-9 mt-3">
                         <button
-                          onClick={() => setShowSolutions(prev => { const n = new Set(prev); n.has(q.id) ? n.delete(q.id) : n.add(q.id); return n; })}
+                          onClick={() => setShowSolutions(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n; })}
                           className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1"
                         >
                           {showSolutions.has(q.id) ? <EyeOff size={11} /> : <Eye size={11} />}

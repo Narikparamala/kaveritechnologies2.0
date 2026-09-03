@@ -286,8 +286,8 @@ export default function JobsPage() {
                           <span className="text-emerald-600 font-medium">Offer: {app.offer_ctc} LPA</span>
                         )}
                       </div>
-                      {app.feedback && (
-                        <p className="text-xs text-slate-500 mt-2 bg-slate-50 dark:bg-slate-800 rounded-lg p-2 italic">"{app.feedback}"</p>
+                      {app.interview_notes && (
+                        <p className="text-xs text-slate-500 mt-2 bg-slate-50 dark:bg-slate-800 rounded-lg p-2 italic">"{app.interview_notes}"</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">

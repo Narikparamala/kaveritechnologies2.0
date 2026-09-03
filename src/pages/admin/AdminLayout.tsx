@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Video, Link2, FileText,
   ClipboardList, HelpCircle, FolderKanban, Award, Megaphone, Bell,
-  BarChart2, Trophy, HardDrive, Settings, Shield, User, Building2, DollarSign, UserCheck, Briefcase
+  BarChart2, Trophy, Settings, User, Building2, DollarSign, UserCheck, Briefcase
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -10,7 +10,7 @@ import { Sidebar } from '../../components/common/Sidebar';
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'Company Overview', icon: Building2, to: '/company-overview' },
-  { label: 'Users', icon: Users, to: '/users' },
+  { label: 'Users & Permissions', icon: Users, to: '/users' },
   { label: 'Students', icon: GraduationCap, to: '/student-management' },
   { label: 'Enrollments', icon: UserCheck, to: '/enrollments' },
   { label: 'Faculty', icon: UserCheck, to: '/faculty-management' },
@@ -30,9 +30,7 @@ const NAV_ITEMS = [
   { label: 'Placements', icon: Briefcase, to: '/placements' },
   { label: 'Analytics', icon: BarChart2, to: '/analytics' },
   { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
-  { label: 'Storage', icon: HardDrive, to: '/storage' },
   { label: 'Platform Settings', icon: Settings, to: '/settings' },
-  { label: 'Roles & Permissions', icon: Shield, to: '/roles' },
   { label: 'Profile', icon: User, to: '/profile' },
 ];
 

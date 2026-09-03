@@ -189,18 +189,14 @@ export interface Assignment {
   title: string;
   description: string | null;
   instructions: string | null;
-  problem_statement: string | null;
-  input_format: string | null;
-  output_format: string | null;
-  constraints_text: string | null;
-  starter_code: string | null;
-  hints: string[];
-  sample_solution: string | null;
-  sample_solution_visibility: 'always' | 'after_submission' | 'after_grading' | 'never';
+  assignment_type: 'coding' | 'written' | 'mixed';
+  status: 'draft' | 'published' | 'closed';
+  start_date: string | null;
+  due_date: string | null;
+  allow_late_submission: boolean;
   max_submissions: number | null;
   passing_score: number | null;
   order_index: number;
-  due_date: string | null;
   max_marks: number;
   difficulty: string;
   allow_resubmit: boolean;
@@ -210,9 +206,29 @@ export interface Assignment {
   updated_at: string;
 }
 
+export interface AssignmentQuestion {
+  id: string;
+  assignment_id: string;
+  title: string;
+  problem_statement: string | null;
+  instructions: string | null;
+  input_format: string | null;
+  output_format: string | null;
+  constraints_text: string | null;
+  starter_code: string | null;
+  hints: string[];
+  question_type: 'coding' | 'short_answer' | 'long_answer';
+  difficulty: string;
+  marks: number;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AssignmentTestCase {
   id: string;
   assignment_id: string;
+  question_id: string | null;
   input_data: string | null;
   expected_output: string;
   is_hidden: boolean;
@@ -226,22 +242,28 @@ export interface AssignmentSubmission {
   id: string;
   assignment_id: string;
   student_id: string;
-  submission_text: string | null;
-  github_url: string | null;
-  project_url: string | null;
-  file_url: string | null;
-  submitted_code: string | null;
-  language: string;
-  execution_output: string | null;
-  visible_tests_passed: number;
-  visible_tests_total: number;
-  submission_number: number;
   status: 'draft' | 'submitted' | 'graded' | 'returned';
   score: number | null;
   feedback: string | null;
   graded_by: string | null;
   graded_at: string | null;
   submitted_at: string;
+  updated_at: string;
+  submission_number: number;
+}
+
+export interface AssignmentQuestionSubmission {
+  id: string;
+  submission_id: string;
+  question_id: string;
+  submitted_code: string | null;
+  submitted_text: string | null;
+  execution_output: string | null;
+  passed_test_cases: number;
+  total_test_cases: number;
+  marks_awarded: number | null;
+  feedback: string | null;
+  created_at: string;
   updated_at: string;
 }
 
@@ -308,9 +330,78 @@ export interface Project {
   tech_tags: string[];
   requirements: string | null;
   starter_code: string | null;
+  project_type: ProjectType;
+  objectives: string | null;
+  instructions: string | null;
+  submission_mode: ProjectSubmissionMode;
+  max_marks: number;
+  due_at: string | null;
+  allow_late_submissions: boolean;
+  repository_required: boolean;
+  live_demo_required: boolean;
   course_id: string | null;
   is_published: boolean;
   created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProjectType =
+  | 'python'
+  | 'html_css_js'
+  | 'selenium_python'
+  | 'selenium_java'
+  | 'python_fullstack'
+  | 'java_fullstack'
+  | 'mern'
+  | 'csharp_fullstack'
+  | 'genai'
+  | 'n8n'
+  | 'custom';
+
+export type ProjectSubmissionMode = 'github' | 'github_and_live' | 'file_upload' | 'external_url';
+
+export interface ProjectMilestone {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  order_index: number;
+  max_marks: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRubricItem {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  order_index: number;
+  max_marks: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectStarterFile {
+  id: string;
+  project_id: string;
+  file_path: string;
+  content: string;
+  language: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectWorkspaceFile {
+  id: string;
+  project_id: string;
+  student_id: string;
+  file_path: string;
+  content: string;
+  language: string;
+  order_index: number;
   created_at: string;
   updated_at: string;
 }
@@ -321,10 +412,27 @@ export interface ProjectSubmission {
   student_id: string;
   github_url: string | null;
   live_url: string | null;
+  external_url: string | null;
   description: string | null;
-  status: 'submitted' | 'reviewed' | 'approved' | 'rejected';
+  status: 'draft' | 'submitted' | 'reviewed' | 'approved' | 'rejected';
   feedback: string | null;
-  submitted_at: string;
+  score: number | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  submitted_at: string | null;
+  updated_at: string;
+  files?: ProjectSubmissionFile[];
+}
+
+export interface ProjectSubmissionFile {
+  id: string;
+  submission_id: string;
+  student_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number;
+  created_at: string;
 }
 
 export interface Certificate {
@@ -369,20 +477,42 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade';
+  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support';
   is_read: boolean;
+  read_at: string | null;
   reference_id: string | null;
   reference_type: string | null;
+  action_url: string | null;
+  archived_at: string | null;
+  aggregation_key: string | null;
+  event_count: number;
+  last_event_at: string;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 
+export interface NotificationPreferences {
+  user_id: string;
+  assignment_submission_notifications_enabled: boolean;
+  assignment_submission_threshold: number;
+  created_at: string;
+  updated_at: string;
+}
 export interface Announcement {
   id: string;
   course_id: string | null;
+  batch_id: string | null;
   title: string;
   content: string;
   author_id: string | null;
   is_global: boolean;
+  audience_type: 'platform' | 'all_students' | 'course' | 'batch';
+  status: 'draft' | 'published' | 'scheduled' | 'archived';
+  priority: 'normal' | 'important' | 'urgent';
+  publish_at: string | null;
+  published_at: string | null;
+  expires_at: string | null;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -608,6 +738,73 @@ export interface BatchAnnouncement {
   is_pinned: boolean;
   created_at: string;
   author?: Profile;
+}
+
+// Faculty teaching work types. Delivery mode is intentionally independent from
+// Lesson.teaching_mode so faculty can switch between live, recorded, and hybrid.
+export type TeachingWorkMode = 'live_class' | 'recorded_video' | 'hybrid';
+export type TeachingWorkStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+export type TeachingWorkSource = 'faculty' | 'admin';
+export type FacultyWorkRequestType = 'new_assignment' | 'schedule_swap' | 'availability' | 'assistant' | 'capacity';
+export type FacultyWorkRequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+
+export interface FacultyTeachingWork {
+  id: string;
+  faculty_id: string;
+  batch_id: string | null;
+  course_id: string | null;
+  chapter_id: string | null;
+  lesson_id: string | null;
+  live_session_id: string | null;
+  title: string;
+  description: string | null;
+  scheduled_date: string;
+  start_time: string;
+  end_time: string;
+  delivery_mode: TeachingWorkMode;
+  status: TeachingWorkStatus;
+  source: TeachingWorkSource;
+  recording_url: string | null;
+  notes: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  batch?: Batch;
+  course?: Course;
+  lesson?: Lesson;
+}
+
+export interface FacultyWorkPreference {
+  faculty_id: string;
+  daily_workload_limit_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FacultyWorkRequest {
+  id: string;
+  faculty_id: string;
+  batch_id: string | null;
+  course_id: string | null;
+  request_type: FacultyWorkRequestType;
+  details: string;
+  requested_date: string | null;
+  status: FacultyWorkRequestStatus;
+  reviewed_by: string | null;
+  response_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  batch?: Batch;
+  course?: Course;
+}
+
+export interface FacultyBatchAssignment extends BatchFaculty {
+  batch: Batch & { course?: Course };
+  student_count: number;
+  faculty_count: number;
+  schedules: BatchSchedule[];
 }
 
 // Placement & Jobs types

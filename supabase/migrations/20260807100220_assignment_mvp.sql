@@ -1,0 +1,15 @@
+-- Historical migration version preserved intentionally.
+--
+-- The original file was a standalone development-preview bootstrap that
+-- recreated tables already established by earlier migrations, installed
+-- unrestricted preview RLS policies, and inserted preview identities.
+--
+-- It could not be replayed safely on a clean database. The original text is
+-- retained for audit at:
+-- docs/historical-migrations/20260807100220_assignment_mvp.preview.sql.txt
+--
+-- Legitimate trigger and index deltas are recreated idempotently by:
+-- 20260901090000_repair_assignment_mvp_history.sql
+--
+-- This version is already recorded remotely, so this file must remain present.
+select 1;

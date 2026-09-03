@@ -1,6 +1,15 @@
 import { supabase } from '../lib/supabase';
 import type { Lesson, LessonProgress, LessonNote, LessonBookmark, LessonResource } from '../types/database';
 
+export interface LessonCompletionResult {
+  progress: LessonProgress;
+  courseProgress: number;
+  xpAwarded: number;
+  totalXp: number;
+  level: number;
+  certificateIssued: boolean;
+}
+
 export async function getLessonById(lessonId: string) {
   const { data, error } = await supabase
     .from('lessons')
@@ -21,20 +30,27 @@ export async function getLessonProgress(lessonId: string, studentId: string) {
   return data as LessonProgress | null;
 }
 
-export async function markLessonComplete(lessonId: string, courseId: string, studentId: string) {
-  const { data, error } = await supabase
-    .from('lesson_progress')
-    .upsert({
-      student_id: studentId,
-      lesson_id: lessonId,
-      course_id: courseId,
-      completed: true,
-      completed_at: new Date().toISOString(),
-    }, { onConflict: 'student_id,lesson_id' })
-    .select()
-    .maybeSingle();
+export async function markLessonComplete(lessonId: string): Promise<LessonCompletionResult> {
+  const { data, error } = await supabase.rpc('complete_lesson', { p_lesson_id: lessonId });
   if (error) throw error;
-  return data as LessonProgress | null;
+  if (!data || typeof data !== 'object') throw new Error('Lesson completion did not return a result.');
+
+  const result = data as {
+    progress: LessonProgress;
+    course_progress: number | string;
+    xp_awarded: number;
+    total_xp: number;
+    level: number;
+    certificate_issued: boolean;
+  };
+  return {
+    progress: result.progress,
+    courseProgress: Number(result.course_progress),
+    xpAwarded: result.xp_awarded,
+    totalXp: result.total_xp,
+    level: result.level,
+    certificateIssued: result.certificate_issued,
+  };
 }
 
 export async function getLessonNotes(lessonId: string, studentId: string) {

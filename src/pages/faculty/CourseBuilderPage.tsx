@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   BookOpen, Plus, Trash2, Edit2, ChevronDown, ChevronRight, Eye, EyeOff,
   ArrowLeft, Users, Settings, ExternalLink, GripVertical, FileText, Clock,
-  ArrowUp, ArrowDown, AlertCircle,
+  ArrowUp, ArrowDown, AlertCircle, Video, PlayCircle, Code2,
 } from 'lucide-react';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,12 +17,26 @@ import {
   createLesson, updateLesson, deleteLesson, deleteCourseWithContent,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
-import type { Course, Chapter, Lesson } from '../../types/database';
+import type { Course, Chapter, Lesson, TeachingMode } from '../../types/database';
 
 type ChapterWithLessons = Chapter & { lessons: Lesson[] };
 
+type LessonFormState = {
+  title: string;
+  slug: string;
+  notes_markdown: string;
+  code_example: string;
+  explanation: string;
+  teaching_mode: TeachingMode;
+  enable_coding_playground: boolean;
+  duration_minutes: number;
+  is_published: boolean;
+};
+
 export default function CourseBuilderPage() {
   const { courseId } = useParams<{ courseId: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedLessonId = searchParams.get('lessonId');
   const { profile } = useAuth();
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
@@ -47,7 +61,11 @@ export default function CourseBuilderPage() {
 
   // Forms
   const [chapterForm, setChapterForm] = useState({ title: '', description: '' });
-  const [lessonForm, setLessonForm] = useState({ title: '', slug: '', notes_markdown: '', code_example: '', explanation: '', duration_minutes: 10, is_published: false });
+  const [lessonForm, setLessonForm] = useState<LessonFormState>({
+    title: '', slug: '', notes_markdown: '', code_example: '', explanation: '',
+    teaching_mode: 'live_class', enable_coding_playground: false,
+    duration_minutes: 60, is_published: false,
+  });
   const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', is_published: false, is_featured: false });
 
   const loadData = useCallback(async () => {
@@ -73,12 +91,20 @@ export default function CourseBuilderPage() {
         chs.map(async ch => ({ ...ch, lessons: await getChapterLessonsAll(ch.id) }))
       );
       setChapters(withLessons);
-      if (withLessons.length > 0) setExpandedChapters(new Set([withLessons[0].id]));
+      const requestedLesson = requestedLessonId
+        ? withLessons.flatMap(chapter => chapter.lessons).find(lesson => lesson.id === requestedLessonId)
+        : null;
+      if (requestedLesson) {
+        setSelectedLessonId(requestedLesson.id);
+        setExpandedChapters(previous => new Set([...previous, requestedLesson.chapter_id]));
+      } else if (withLessons.length > 0) {
+        setExpandedChapters(previous => previous.size > 0 ? previous : new Set([withLessons[0].id]));
+      }
     } catch (e: any) {
       toastError('Error', e.message);
     }
     setLoading(false);
-  }, [courseId, profile]);
+  }, [courseId, profile, requestedLessonId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -136,8 +162,9 @@ export default function CourseBuilderPage() {
     setSaving(true);
     try {
       const slug = lessonForm.slug || slugify(lessonForm.title);
+      let savedLessonId = lessonModal.lesson?.id ?? null;
       if (lessonModal.mode === 'create') {
-        await createLesson({
+        const createdLesson = await createLesson({
           chapter_id: lessonModal.chapterId,
           course_id: courseId,
           title: lessonForm.title,
@@ -145,16 +172,21 @@ export default function CourseBuilderPage() {
           notes_markdown: lessonForm.notes_markdown,
           code_example: lessonForm.code_example,
           explanation: lessonForm.explanation,
+          teaching_mode: lessonForm.teaching_mode,
+          enable_coding_playground: lessonForm.enable_coding_playground,
           duration_minutes: Number(lessonForm.duration_minutes) || 10,
           is_published: lessonForm.is_published,
         });
-        success('Lesson created');
+        savedLessonId = createdLesson.id;
+        success('Lesson created. Complete its delivery content in the lesson tabs.');
       } else if (lessonModal.lesson) {
         await updateLesson(lessonModal.lesson.id, {
           title: lessonForm.title, slug,
           notes_markdown: lessonForm.notes_markdown,
           code_example: lessonForm.code_example,
           explanation: lessonForm.explanation,
+          teaching_mode: lessonForm.teaching_mode,
+          enable_coding_playground: lessonForm.enable_coding_playground,
           duration_minutes: Number(lessonForm.duration_minutes) || 10,
           is_published: lessonForm.is_published,
         });
@@ -162,6 +194,10 @@ export default function CourseBuilderPage() {
       }
       setLessonModal(null);
       await loadData();
+      if (savedLessonId) {
+        setSelectedLessonId(savedLessonId);
+        setExpandedChapters(previous => new Set([...previous, lessonModal.chapterId]));
+      }
     } catch (e: any) { toastError('Error', e.message); }
     setSaving(false);
   };
@@ -240,15 +276,34 @@ export default function CourseBuilderPage() {
 
   const openCreateChapter = () => { setChapterForm({ title: '', description: '' }); setChapterModal({ mode: 'create' }); };
   const openEditChapter = (ch: Chapter) => { setChapterForm({ title: ch.title, description: ch.description ?? '' }); setChapterModal({ mode: 'edit', chapter: ch }); };
-  const openCreateLesson = (chapterId: string) => { setLessonForm({ title: '', slug: '', notes_markdown: '', code_example: '', explanation: '', duration_minutes: 10, is_published: false }); setLessonModal({ mode: 'create', chapterId }); };
+  const openCreateLesson = (chapterId: string) => {
+    setLessonForm({
+      title: '', slug: '', notes_markdown: '', code_example: '', explanation: '',
+      teaching_mode: 'live_class', enable_coding_playground: false,
+      duration_minutes: 60, is_published: false,
+    });
+    setLessonModal({ mode: 'create', chapterId });
+  };
   const openEditLesson = (chapterId: string, lesson: Lesson) => {
     setLessonForm({
       title: lesson.title, slug: lesson.slug,
       notes_markdown: lesson.notes_markdown ?? '', code_example: lesson.code_example ?? '',
-      explanation: lesson.explanation ?? '', duration_minutes: lesson.duration_minutes,
+      explanation: lesson.explanation ?? '',
+      teaching_mode: lesson.teaching_mode ?? 'live_class',
+      enable_coding_playground: lesson.enable_coding_playground ?? false,
+      duration_minutes: lesson.duration_minutes,
       is_published: lesson.is_published,
     });
     setLessonModal({ mode: 'edit', chapterId, lesson });
+  };
+  const chooseTeachingMode = (teachingMode: TeachingMode) => {
+    setLessonForm(form => ({
+      ...form,
+      teaching_mode: teachingMode,
+      duration_minutes: lessonModal?.mode === 'create'
+        ? (teachingMode === 'live_class' ? 60 : 20)
+        : form.duration_minutes,
+    }));
   };
   const openEditCourse = () => {
     if (!course) return;
@@ -410,6 +465,37 @@ export default function CourseBuilderPage() {
             <textarea className="input min-h-[60px] resize-none" placeholder="Brief overview of the lesson..." value={lessonForm.explanation} onChange={e => setLessonForm(f => ({ ...f, explanation: e.target.value }))} />
           </div>
           <div>
+            <label className="label">Delivery Method</label>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => chooseTeachingMode('live_class')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${lessonForm.teaching_mode === 'live_class'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-primary-300'}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Video size={18} className="text-primary-600" />
+                  <span className="font-semibold text-slate-900 dark:text-white">Live Class</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Schedule a Google Meet or paste a meeting link after creating the lesson.</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseTeachingMode('recorded_video')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${lessonForm.teaching_mode === 'recorded_video'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-primary-300'}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <PlayCircle size={18} className="text-primary-600" />
+                  <span className="font-semibold text-slate-900 dark:text-white">Recorded Video</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Upload a recording or paste a video link after creating the lesson.</p>
+              </button>
+            </div>
+          </div>
+          <div>
             <label className="label">Notes (Markdown)</label>
             <textarea className="input min-h-[100px] resize-none font-mono text-sm" placeholder="Lesson content in markdown..." value={lessonForm.notes_markdown} onChange={e => setLessonForm(f => ({ ...f, notes_markdown: e.target.value }))} />
           </div>
@@ -417,13 +503,18 @@ export default function CourseBuilderPage() {
             <label className="label">Starter Python Code</label>
             <textarea className="input min-h-[80px] resize-none font-mono text-sm bg-slate-900 text-slate-100" placeholder="# Starter code..." value={lessonForm.code_example} onChange={e => setLessonForm(f => ({ ...f, code_example: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Duration (minutes)</label>
-              <input type="number" className="input" value={lessonForm.duration_minutes} onChange={e => setLessonForm(f => ({ ...f, duration_minutes: Number(e.target.value) }))} />
+              <input type="number" min="1" className="input" value={lessonForm.duration_minutes} onChange={e => setLessonForm(f => ({ ...f, duration_minutes: Number(e.target.value) }))} />
             </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 cursor-pointer pb-3">
+            <div className="space-y-3 sm:pt-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 rounded" checked={lessonForm.enable_coding_playground} onChange={e => setLessonForm(f => ({ ...f, enable_coding_playground: e.target.checked }))} />
+                <Code2 size={15} className="text-primary-600" />
+                <span className="text-sm text-slate-700 dark:text-slate-300">Enable coding playground</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 rounded" checked={lessonForm.is_published} onChange={e => setLessonForm(f => ({ ...f, is_published: e.target.checked }))} />
                 <span className="text-sm text-slate-700 dark:text-slate-300">Publish immediately</span>
               </label>

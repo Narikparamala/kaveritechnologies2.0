@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import {
-  LayoutDashboard, BookOpen, Video, BookPlus, FileText, ClipboardList, HelpCircle,
+  LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
   MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
@@ -10,13 +10,14 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
-  { label: 'Course Builder', icon: BookPlus, to: '/courses' },
+
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
+  { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
   { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
-  { label: 'Batches', icon: Users, to: '/batches' },
+  { label: 'My Batches & Work', icon: Users, to: '/batches' },
   { label: 'My Students', icon: Users, to: '/students' },
   { label: 'Support Records', icon: AlertTriangle, to: '/support-records' },
   { label: 'Announcements', icon: Megaphone, to: '/announcements' },
