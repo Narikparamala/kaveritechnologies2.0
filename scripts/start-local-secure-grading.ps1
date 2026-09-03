@@ -54,6 +54,40 @@ function Read-ErrorResponseBody {
     }
 }
 
+function Read-Judge0ConfValue {
+    param(
+        [Parameter(Mandatory)][string]$Container,
+        [Parameter(Mandatory)][string]$Key
+    )
+
+    $confContent = $null
+    try {
+        $confContent = docker exec $Container cat /judge0.conf 2>$null
+    }
+    catch {
+        return $null
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $confContent) { return $null }
+
+    $pattern = '^\s*' + [regex]::Escape($Key) + '\s*=\s*(.*)$'
+    foreach ($line in ($confContent -split "`n")) {
+        if ($line -match $pattern) {
+            $val = $matches[1].Trim()
+            if ($val.Length -ge 2 -and
+                (($val.StartsWith('"') -and $val.EndsWith('"')) -or
+                 ($val.StartsWith("'") -and $val.EndsWith("'")))) {
+                $val = $val.Substring(1, $val.Length - 2)
+            }
+            else {
+                $hashIndex = $val.IndexOf(' #')
+                if ($hashIndex -ge 0) { $val = $val.Substring(0, $hashIndex).Trim() }
+            }
+            return $val
+        }
+    }
+    return $null
+}
+
 $runningDatabase = docker ps `
     --filter "name=^/$DbContainer$" `
     --filter "status=running" `
@@ -100,16 +134,47 @@ foreach ($entry in $judge0Inspect[0].Config.Env) {
 }
 
 $judge0AuthnHeader = [string]$judge0Environment["AUTHN_HEADER"]
-if ([string]::IsNullOrWhiteSpace($judge0AuthnHeader)) { $judge0AuthnHeader = "X-Auth-Token" }
-$judge0AuthnToken = [string]$judge0Environment["AUTHN_TOKEN"]
+$judge0AuthnToken  = [string]$judge0Environment["AUTHN_TOKEN"]
 $judge0AuthzHeader = [string]$judge0Environment["AUTHZ_HEADER"]
+$judge0AuthzToken  = [string]$judge0Environment["AUTHZ_TOKEN"]
+
+$authnTokenSource = "docker-env"
+$authzTokenSource = "docker-env"
+
+if ([string]::IsNullOrWhiteSpace($judge0AuthnHeader)) {
+    $judge0AuthnHeader = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHN_HEADER"
+}
+if ([string]::IsNullOrWhiteSpace($judge0AuthnToken)) {
+    $judge0AuthnToken = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHN_TOKEN"
+    if (-not [string]::IsNullOrWhiteSpace($judge0AuthnToken)) { $authnTokenSource = "container-config" }
+}
+if ([string]::IsNullOrWhiteSpace($judge0AuthzHeader)) {
+    $judge0AuthzHeader = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHZ_HEADER"
+}
+if ([string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
+    $judge0AuthzToken = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHZ_TOKEN"
+    if (-not [string]::IsNullOrWhiteSpace($judge0AuthzToken)) { $authzTokenSource = "container-config" }
+}
+
+if ([string]::IsNullOrWhiteSpace($judge0AuthnHeader)) { $judge0AuthnHeader = "X-Auth-Token" }
 if ([string]::IsNullOrWhiteSpace($judge0AuthzHeader)) { $judge0AuthzHeader = "X-Auth-User" }
-$judge0AuthzToken = [string]$judge0Environment["AUTHZ_TOKEN"]
+
+if ([string]::IsNullOrWhiteSpace($judge0AuthnToken)) {
+    throw "Judge0 AUTHN_TOKEN was not found in the container environment or /judge0.conf. Cannot proceed without authentication."
+}
+
+Write-Host "AUTHN_TOKEN source: $authnTokenSource" -ForegroundColor DarkGray
+Write-Host "AUTHN_TOKEN: PRESENT, length: $($judge0AuthnToken.Length)" -ForegroundColor DarkGray
+Write-Host "AUTHZ_TOKEN source: $authzTokenSource" -ForegroundColor DarkGray
+if ([string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
+    Write-Host "AUTHZ_TOKEN: MISSING (authorization header will not be sent)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "AUTHZ_TOKEN: PRESENT, length: $($judge0AuthzToken.Length)" -ForegroundColor DarkGray
+}
 
 $judge0RequestHeaders = @{}
-if (-not [string]::IsNullOrWhiteSpace($judge0AuthnToken)) {
-    $judge0RequestHeaders[$judge0AuthnHeader] = $judge0AuthnToken
-}
+$judge0RequestHeaders[$judge0AuthnHeader] = $judge0AuthnToken
 if (-not [string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
     $judge0RequestHeaders[$judge0AuthzHeader] = $judge0AuthzToken
 }
