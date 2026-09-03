@@ -199,12 +199,27 @@ if (-not $judge0Languages -or $judge0Languages.Count -eq 0) {
     throw "Judge0 did not expose its installed languages on http://127.0.0.1:2358."
 }
 
-$judge0Python = $judge0Languages |
+$judge0FlatLanguages = @()
+foreach ($lang in $judge0Languages) {
+    if ($lang -and $lang.PSObject.Properties['name'] -and $lang.PSObject.Properties['id']) {
+        $judge0FlatLanguages += $lang
+    }
+}
+
+$judge0Python = $judge0FlatLanguages |
     Where-Object { $_.name -match '^Python \(3\.' } |
     Select-Object -First 1
 
 if (-not $judge0Python) {
     throw "Judge0 is running but no Python 3 runtime is installed."
+}
+
+$judge0PythonId = 0
+$rawId = $judge0Python.id
+if ($rawId -is [array]) { $rawId = $rawId[0] }
+try { $judge0PythonId = [int]$rawId } catch { $judge0PythonId = 0 }
+if ($judge0PythonId -le 0) {
+    throw "Judge0 Python 3 language id could not be resolved to a positive integer."
 }
 
 $judge0Networks = @($judge0Inspect[0].NetworkSettings.Networks.PSObject.Properties.Name)
@@ -321,7 +336,7 @@ try {
         kind = "practice"
         questionId = $questionId
         code = $referenceSolution
-        languageId = [int]$judge0Python.id
+        languageId = $judge0PythonId
     } | ConvertTo-Json -Depth 5
 
     $gradingResult = $null
@@ -363,7 +378,7 @@ try {
             kind = "sample"
             questionId = $questionId
             code = $referenceSolution
-            languageId = [int]$judge0Python.id
+            languageId = $judge0PythonId
         } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 30
 
