@@ -19,11 +19,6 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      // The inherited prototype contains extensive Supabase response casts and
-      // unused visual imports. Keep reporting them while allowing functional
-      // correctness gates to focus on real runtime/type failures.
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': 'warn',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

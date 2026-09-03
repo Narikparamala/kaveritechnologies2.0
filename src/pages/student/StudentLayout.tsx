@@ -12,7 +12,6 @@ const NAV_ITEMS = [
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
   { label: 'Learning Roadmap', icon: Map, to: '/roadmap' },
   { label: 'Code Playground', icon: Terminal, to: '/playground' },
-  { label: 'Coding Practice', icon: Terminal, to: '/coding-practice' },
   { label: 'Assignments', icon: FileText, to: '/assignments' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },

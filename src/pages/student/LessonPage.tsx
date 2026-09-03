@@ -16,6 +16,7 @@ import {
   getLessonById, getLessonProgress, markLessonComplete,
   getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources
 } from '../../services/lessons';
+import { updateCourseProgress } from '../../services/courses';
 import { runPython, onRuntimeStatus, type RuntimeStatus } from '../../services/pythonExecution';
 import type {
   Lesson, Chapter, Course, LessonProgress, LessonNote, LessonResource,
@@ -26,7 +27,7 @@ const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ defa
 
 export default function LessonPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
-  const { profile, refreshProfile } = useAuth();
+  const { profile } = useAuth();
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
 
@@ -115,13 +116,18 @@ export default function LessonPage() {
     if (!lesson || !profile || progress?.completed) return;
     setMarkingComplete(true);
     try {
-      const result = await markLessonComplete(lesson.id);
-      setProgress(result.progress);
-      await refreshProfile();
-      success(
-        'Lesson complete!',
-        result.xpAwarded > 0 ? `+${result.xpAwarded} XP earned` : 'Progress saved',
-      );
+      const prog = await markLessonComplete(lesson.id, lesson.course_id, profile.id);
+      setProgress(prog);
+      await updateCourseProgress(lesson.course_id, profile.id);
+      await supabase.from('profiles').update({ xp_points: (profile.xp_points ?? 0) + lesson.xp_reward }).eq('id', profile.id);
+      await supabase.from('xp_transactions').insert({
+        student_id: profile.id,
+        amount: lesson.xp_reward,
+        reason: `Completed lesson: ${lesson.title}`,
+        reference_id: lesson.id,
+        reference_type: 'lesson',
+      });
+      success('Lesson complete!', `+${lesson.xp_reward} XP earned`);
     } catch {
       toastError('Error', 'Could not mark lesson complete. Please try again.');
     }

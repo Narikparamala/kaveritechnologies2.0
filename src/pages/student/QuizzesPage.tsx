@@ -21,9 +21,7 @@ export default function QuizzesPage() {
   const { success } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const practiceMode = searchParams.get('practice') === '1';
-  const requestedQuizId = searchParams.get('quizId');
-  const returnTo = searchParams.get('returnTo') ?? '/faculty/quizzes';
+  const returnTo = searchParams.get('returnTo');
   const [quizzes, setQuizzes] = useState<QuizWithCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeQuiz, setActiveQuiz] = useState<QuizWithCourse | null>(null);
@@ -42,24 +40,6 @@ export default function QuizzesPage() {
   useEffect(() => {
     if (!profile) return;
     const load = async () => {
-      if (practiceMode && requestedQuizId) {
-        const { data, error } = await supabase
-          .from('quizzes')
-          .select('*, course:courses(*)')
-          .eq('id', requestedQuizId)
-          .eq('is_published', true)
-          .maybeSingle();
-        if (error) {
-          console.error(error);
-          setQuizzes([]);
-          setLoading(false);
-          return;
-        }
-        setQuizzes(data ? [data as QuizWithCourse] : []);
-        setLoading(false);
-        return;
-      }
-
       const { data: enrData } = await supabase.from('course_enrollments').select('course_id').eq('student_id', profile.id);
       const courseIds = (enrData ?? []).map((e: any) => e.course_id);
       if (!courseIds.length) { setLoading(false); return; }
@@ -70,7 +50,7 @@ export default function QuizzesPage() {
       setLoading(false);
     };
     load();
-  }, [profile, practiceMode, requestedQuizId]);
+  }, [profile]);
 
   const startQuiz = async (quiz: QuizWithCourse) => {
     const { data: qData } = await supabase.from('quiz_questions').select('*, options:quiz_options(*)').eq('quiz_id', quiz.id).order('order_index');
@@ -172,11 +152,6 @@ export default function QuizzesPage() {
     const timeTaken = activeQuiz.time_limit_minutes && timeLeft !== null
       ? activeQuiz.time_limit_minutes * 60 - timeLeft : null;
 
-    if (practiceMode) {
-      success(`Practice complete: ${Math.round(pct)}%. No attempt, XP, or progress was recorded.`);
-      return;
-    }
-
     await supabase.from('quiz_attempts').insert({
       quiz_id: activeQuiz.id, student_id: profile.id, score: pct,
       max_score: totalPoints, passed: pct >= activeQuiz.pass_percentage,
@@ -184,7 +159,7 @@ export default function QuizzesPage() {
     });
 
     if (pct >= activeQuiz.pass_percentage) success(`Quiz passed! +${activeQuiz.xp_reward} XP`);
-  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success, practiceMode]);
+  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success]);
 
   useEffect(() => { submitQuizRef.current = submitQuiz; }, [submitQuiz]);
 
@@ -194,30 +169,24 @@ export default function QuizzesPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      {practiceMode && (
+      {returnTo && (
         <button onClick={() => navigate(returnTo)} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 mb-4 transition-colors">
-          <ArrowLeft size={14} /> Back to Faculty Quizzes
+          <ArrowLeft size={14} /> Back to Workspace
         </button>
       )}
-      {practiceMode && (
-        <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-100">
-          <strong>Faculty Practice Mode</strong>
-          <p className="mt-1">Answer and submit this quiz exactly as a student would. No attempt, grade, XP, or progress will be recorded.</p>
-        </div>
-      )}
-      <PageHeader title="Quizzes" subtitle={practiceMode ? 'Try this quiz exactly as a student would' : 'Test your Python knowledge and earn XP'} icon={HelpCircle} />
+      <PageHeader title="Quizzes" subtitle="Test your Python knowledge and earn XP" icon={HelpCircle} />
 
       {loading ? (
         <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-20 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
       ) : quizzes.length === 0 ? (
-        <EmptyState icon={HelpCircle} title="No quizzes available" description={practiceMode ? 'This quiz is unavailable or not published.' : 'Enroll in courses to access quizzes.'} />
+        <EmptyState icon={HelpCircle} title="No quizzes available" description="Enroll in courses to access quizzes." />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {quizzes.map(quiz => (
             <div key={quiz.id} className="card-hover p-5">
               <div className="flex items-start justify-between gap-2 mb-3">
                 <h3 className="font-bold text-slate-900 dark:text-white">{quiz.title}</h3>
-                <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{practiceMode ? 'Practice' : `+${quiz.xp_reward} XP`}</span>
+                <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium flex-shrink-0">+{quiz.xp_reward} XP</span>
               </div>
               <p className="text-xs text-primary-600 dark:text-primary-400 mb-2">{quiz.course?.title}</p>
               {quiz.description && <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{quiz.description}</p>}
@@ -225,7 +194,7 @@ export default function QuizzesPage() {
                 {quiz.time_limit_minutes && <span className="flex items-center gap-1"><Clock size={11} /> {quiz.time_limit_minutes}m</span>}
                 <span>Pass: {quiz.pass_percentage}%</span>
               </div>
-              <button onClick={() => startQuiz(quiz)} className="btn-primary w-full text-sm py-2">{practiceMode ? 'Practice Quiz' : 'Start Quiz'}</button>
+              <button onClick={() => startQuiz(quiz)} className="btn-primary w-full text-sm py-2">Start Quiz</button>
             </div>
           ))}
         </div>

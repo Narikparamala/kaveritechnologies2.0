@@ -64,8 +64,8 @@ export default function AdminBatchesPage() {
       const batchData = (batchRes.data ?? []) as (Batch & { course?: Course })[];
       const batchIds = batchData.map(b => b.id);
 
-      const studentCounts: Record<string, number> = {};
-      const facultyCounts: Record<string, number> = {};
+      let studentCounts: Record<string, number> = {};
+      let facultyCounts: Record<string, number> = {};
 
       if (batchIds.length > 0) {
         const [sRes, fRes] = await Promise.all([

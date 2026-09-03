@@ -10,6 +10,7 @@ export async function getPublishedCourses() {
   if (error) throw error;
   return (data ?? []) as Course[];
 }
+
 export async function getCourseBySlug(slug: string) {
   const { data, error } = await supabase
     .from('courses')
@@ -66,12 +67,7 @@ export async function getStudentEnrollments(studentId: string) {
 export async function enrollStudent(courseId: string, studentId: string) {
   const { data, error } = await supabase
     .from('course_enrollments')
-    .insert({
-      course_id: courseId,
-      student_id: studentId,
-      enrollment_source: 'free_enrollment',
-      access_status: 'active',
-    })
+    .insert({ course_id: courseId, student_id: studentId })
     .select()
     .maybeSingle();
   if (error) {
@@ -89,4 +85,54 @@ export async function getEnrollment(courseId: string, studentId: string) {
     .eq('student_id', studentId)
     .maybeSingle();
   return data as CourseEnrollment | null;
+}
+
+export async function updateCourseProgress(courseId: string, studentId: string) {
+  // Calculate real progress from lesson_progress table
+  const [{ data: totalLessons }, { data: completedLessons }] = await Promise.all([
+    supabase.from('lessons').select('id', { count: 'exact' }).eq('course_id', courseId).eq('is_published', true),
+    supabase.from('lesson_progress').select('id', { count: 'exact' }).eq('course_id', courseId).eq('student_id', studentId).eq('completed', true),
+  ]);
+  const total = totalLessons?.length ?? 0;
+  const completed = completedLessons?.length ?? 0;
+  const pct = total > 0 ? (completed / total) * 100 : 0;
+
+  await supabase
+    .from('course_enrollments')
+    .update({ progress_percentage: pct, ...(pct >= 100 ? { completed_at: new Date().toISOString() } : {}) })
+    .eq('course_id', courseId)
+    .eq('student_id', studentId);
+
+  if (pct >= 100) {
+    await issueCertificateIfEligible(courseId, studentId);
+  }
+
+  return pct;
+}
+
+async function issueCertificateIfEligible(courseId: string, studentId: string) {
+  const { data: course } = await supabase
+    .from('courses')
+    .select('certificate_eligible')
+    .eq('id', courseId)
+    .maybeSingle();
+
+  if (!course?.certificate_eligible) return;
+
+  const { data: existing } = await supabase
+    .from('certificates')
+    .select('id')
+    .eq('course_id', courseId)
+    .eq('student_id', studentId)
+    .maybeSingle();
+
+  if (existing) return;
+
+  const uid = `CERT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  await supabase.from('certificates').insert({
+    course_id: courseId,
+    student_id: studentId,
+    certificate_uid: uid,
+  });
 }

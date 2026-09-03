@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   HelpCircle, Plus, Edit2, Trash2, Eye, EyeOff, Clock, Trophy, ChevronDown,
-  ChevronRight, Check, X, Copy, ArrowUp, ArrowDown, Code, Image, Play,
+  ChevronRight, Check, X, Copy, ArrowUp, ArrowDown, Code, Image,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -18,7 +17,6 @@ import {
 import type { Course, Quiz, QuizQuestion, QuizOption, QuizAttempt, Profile } from '../../types/database';
 
 type QuestionWithOptions = QuizQuestion & { options: QuizOption[] };
-type QuestionType = QuizQuestion['question_type'];
 
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'Multiple Choice' },
@@ -33,75 +31,8 @@ const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 
 const typeLabel = (t: string) => QUESTION_TYPES.find(q => q.value === t)?.label ?? t;
 
-type QuestionValidationInput = {
-  question_text: string;
-  question_type: string;
-  points: number;
-  correct_answer_text?: string | null;
-  enable_playground?: boolean;
-  time_limit_seconds?: string | number | null;
-  options?: Array<{ option_text: string; is_correct: boolean }>;
-};
-
-const validateQuestion = (question: QuestionValidationInput): string | null => {
-  if (!question.question_text.trim()) return 'Enter the question text.';
-  if (!Number.isFinite(Number(question.points)) || Number(question.points) < 1) {
-    return 'Points must be at least 1.';
-  }
-
-  if (
-    question.time_limit_seconds !== undefined &&
-    question.time_limit_seconds !== null &&
-    question.time_limit_seconds !== '' &&
-    Number(question.time_limit_seconds) <= 0
-  ) {
-    return 'Question time must be greater than 0 seconds.';
-  }
-
-  const options = (question.options ?? [])
-    .map(option => ({ ...option, option_text: option.option_text.trim() }))
-    .filter(option => option.option_text.length > 0);
-
-  if (['mcq', 'multiple_select', 'true_false'].includes(question.question_type)) {
-    if (options.length < 2) return 'Add at least two answer options.';
-
-    const normalizedOptions = options.map(option => option.option_text.toLowerCase());
-    if (new Set(normalizedOptions).size !== normalizedOptions.length) {
-      return 'Answer options cannot be repeated.';
-    }
-
-    const correctCount = options.filter(option => option.is_correct).length;
-    if (question.question_type === 'multiple_select') {
-      if (correctCount < 2) return 'Multiple Select needs at least two correct answers.';
-    } else if (correctCount !== 1) {
-      return 'Choose exactly one correct answer.';
-    }
-
-    if (question.question_type === 'true_false') {
-      const values = [...normalizedOptions].sort();
-      if (options.length !== 2 || values[0] !== 'false' || values[1] !== 'true') {
-        return 'True / False questions must contain exactly True and False.';
-      }
-    }
-  }
-
-  if (
-    ['fill_in_blank', 'code_output'].includes(question.question_type) &&
-    !question.correct_answer_text?.trim()
-  ) {
-    return 'Enter the expected correct answer.';
-  }
-
-  if (question.question_type === 'coding' && !question.enable_playground) {
-    return 'Enable the Python Playground for a coding question.';
-  }
-
-  return null;
-};
-
 export default function FacultyQuizzesPage() {
   const { profile } = useAuth();
-  const navigate = useNavigate();
   const { success, error: toastError } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<(Quiz & { course: Course })[]>([]);
@@ -124,7 +55,7 @@ export default function FacultyQuizzesPage() {
   // Question CRUD
   const [questionModal, setQuestionModal] = useState<{ mode: 'create' | 'edit'; question?: QuestionWithOptions } | null>(null);
   const [qForm, setQForm] = useState({
-    question_text: '', question_type: 'mcq' as QuestionType, explanation: '',
+    question_text: '', question_type: 'mcq' as string, explanation: '',
     points: 1, difficulty: 'medium', code_snippet: '', image_url: '',
     enable_playground: false, correct_answer_text: '', time_limit_seconds: '',
     options: [] as { id?: string; option_text: string; is_correct: boolean }[],
@@ -161,18 +92,10 @@ export default function FacultyQuizzesPage() {
           description: quizForm.description,
           pass_percentage: Number(quizForm.pass_percentage) || 70,
           time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null,
-          is_published: false, created_by: profile.id,
+          is_published: quizForm.is_published, created_by: profile.id,
         });
-        success('Quiz created as a draft. Add valid questions before publishing.');
+        success('Quiz created');
       } else if (quizModal.quiz) {
-        if (quizForm.is_published && !quizModal.quiz.is_published) {
-          const quizQuestions = await getQuizQuestions(quizModal.quiz.id);
-          if (quizQuestions.length === 0) throw new Error('Add at least one question before publishing.');
-          for (let index = 0; index < quizQuestions.length; index++) {
-            const validationError = validateQuestion(quizQuestions[index]);
-            if (validationError) throw new Error(`Question ${index + 1}: ${validationError}`);
-          }
-        }
         await updateQuiz(quizModal.quiz.id, {
           title: quizForm.title, description: quizForm.description,
           pass_percentage: Number(quizForm.pass_percentage) || 70,
@@ -189,22 +112,6 @@ export default function FacultyQuizzesPage() {
 
   const handleTogglePublish = async (q: Quiz) => {
     try {
-      if (!q.is_published) {
-        const quizQuestions = await getQuizQuestions(q.id);
-        if (quizQuestions.length === 0) {
-          toastError('Add at least one question before publishing.');
-          return;
-        }
-
-        for (let index = 0; index < quizQuestions.length; index++) {
-          const validationError = validateQuestion(quizQuestions[index]);
-          if (validationError) {
-            toastError(`Question ${index + 1}: ${validationError}`);
-            return;
-          }
-        }
-      }
-
       await updateQuiz(q.id, { is_published: !q.is_published });
       success(q.is_published ? 'Unpublished' : 'Published');
       await loadData();
@@ -267,7 +174,7 @@ export default function FacultyQuizzesPage() {
     setQuestionModal({ mode, question });
   };
 
-  const handleQTypeChange = (type: QuestionType) => {
+  const handleQTypeChange = (type: string) => {
     if (type === 'true_false') {
       setQForm(f => ({ ...f, question_type: type, options: [
         { option_text: 'True', is_correct: true },
@@ -290,19 +197,12 @@ export default function FacultyQuizzesPage() {
 
   const handleSaveQuestion = async () => {
     if (!questionModal || !manageQuiz) return;
-
-    const validationError = validateQuestion(qForm);
-    if (validationError) {
-      toastError(validationError);
-      return;
-    }
-
     setSaving(true);
     try {
       const base = {
         question_text: qForm.question_text,
         question_type: qForm.question_type,
-        explanation: qForm.explanation || undefined,
+        explanation: qForm.explanation || null,
         points: qForm.points,
         difficulty: qForm.difficulty,
         code_snippet: qForm.code_snippet || null,
@@ -392,25 +292,8 @@ export default function FacultyQuizzesPage() {
   };
 
   const handleToggleCorrect = async (opt: QuizOption) => {
-    const question = questions.find(item => item.options.some(option => option.id === opt.id));
-    if (!question) return;
-
-    try {
-      if (['mcq', 'true_false'].includes(question.question_type)) {
-        if (opt.is_correct) {
-          toastError('This question must always have one correct answer.');
-          return;
-        }
-        await Promise.all(
-          question.options.map(option =>
-            updateOption(option.id, { is_correct: option.id === opt.id })
-          )
-        );
-      } else {
-        await updateOption(opt.id, { is_correct: !opt.is_correct });
-      }
-      if (manageQuiz) await refreshQuestions(manageQuiz);
-    } catch (e: any) { toastError(e.message); }
+    try { await updateOption(opt.id, { is_correct: !opt.is_correct }); if (manageQuiz) await refreshQuestions(manageQuiz); }
+    catch (e: any) { toastError(e.message); }
   };
 
   const handleSaveOption = async () => {
@@ -488,12 +371,6 @@ export default function FacultyQuizzesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => navigate(`/faculty/practice/quizzes?practice=1&quizId=${q.id}&returnTo=${encodeURIComponent('/faculty/quizzes')}`)}
-                    className="btn-secondary text-xs flex items-center gap-1"
-                  >
-                    <Play size={13} /> Practice
-                  </button>
                   <button onClick={() => openManage(q)} className="btn-secondary text-xs">Manage Questions</button>
                   <button onClick={() => openAttempts(q)} className="btn-secondary text-xs">Attempts</button>
                   <button onClick={() => handleTogglePublish(q)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
@@ -664,7 +541,7 @@ export default function FacultyQuizzesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="label">Type</label>
-              <select className="input" value={qForm.question_type} onChange={e => handleQTypeChange(e.target.value as QuestionType)}>
+              <select className="input" value={qForm.question_type} onChange={e => handleQTypeChange(e.target.value)}>
                 {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
@@ -826,4 +703,3 @@ export default function FacultyQuizzesPage() {
     </div>
   );
 }
-

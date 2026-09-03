@@ -36,9 +36,7 @@ export default function FacultyStudentsPage() {
         .select('course_id, course:courses(*)')
         .eq('faculty_id', faculty!.id);
 
-      const courses = (courseFaculty ?? [])
-        .map(cf => cf.course as unknown as Course | null)
-        .filter((course): course is Course => Boolean(course));
+      const courses = (courseFaculty ?? []).map(cf => cf.course as Course);
       setAssignedCourses(courses);
       const courseIds = courses.map(c => c.id);
 

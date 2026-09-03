@@ -39,7 +39,6 @@ function SessionCard({
   const isCompleted = session.status === 'completed';
   const isCancelled = session.status === 'cancelled';
   const isScheduled = session.status === 'scheduled';
-  const hasMeetLink = Boolean(session.google_meet_url && isValidGoogleMeetUrl(session.google_meet_url));
 
   const statusConfig: Record<string, { bg: string; text: string }> = {
     live: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400' },
@@ -97,68 +96,6 @@ function SessionCard({
               </span>
             </div>
           )}
-
-          {/* Primary session actions should be visible, not hidden in the menu. */}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {(isScheduled || isLive) && hasMeetLink && (
-              <a
-                href={session.google_meet_url!}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors ${
-                  isLive ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'
-                }`}
-              >
-                <ExternalLink size={13} />
-                {isLive ? 'Join Live Class' : 'Open Google Meet'}
-              </a>
-            )}
-
-            {isScheduled && hasMeetLink && (
-              <button
-                type="button"
-                onClick={() => onStart(session.id)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-              >
-                <Play size={13} />
-                Start Class
-              </button>
-            )}
-
-            {isLive && (
-              <button
-                type="button"
-                onClick={() => onComplete(session.id)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-              >
-                <CheckCircle size={13} />
-                Complete Class
-              </button>
-            )}
-
-            <Link
-              to={`/faculty/live-classes/${session.id}/attendance`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <Users size={13} />
-              {isCompleted ? 'View Attendance' : 'Attendance'}
-            </Link>
-
-            {isScheduled && !hasMeetLink && (
-              <>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-                  <AlertCircle size={13} />
-                  Meet link not generated
-                </span>
-                <Link
-                  to={`/faculty/live-classes/${session.id}/edit`}
-                  className="text-xs font-semibold text-primary-600 hover:underline dark:text-primary-400"
-                >
-                  Edit session
-                </Link>
-              </>
-            )}
-          </div>
         </div>
 
         {/* Actions dropdown */}

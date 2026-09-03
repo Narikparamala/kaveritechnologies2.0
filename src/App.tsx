@@ -25,7 +25,6 @@ import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import AuthRedirectPage from './pages/auth/AuthRedirectPage';
-import DeveloperRolePage from './pages/auth/DeveloperRolePage';
 
 // Layouts (keep eager so shell renders immediately)
 import StudentLayout from './pages/student/StudentLayout';
@@ -39,10 +38,8 @@ const LessonPage = lazy(() => import('./pages/student/LessonPage'));
 const RoadmapPage = lazy(() => import('./pages/student/RoadmapPage'));
 const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
-const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
-const ProjectWorkspacePage = lazy(() => import('./pages/shared/ProjectWorkspacePage'));
 const LeaderboardPage = lazy(() => import('./pages/student/LeaderboardPage'));
 const CertificatesPage = lazy(() => import('./pages/student/CertificatesPage'));
 const DownloadsPage = lazy(() => import('./pages/student/DownloadsPage'));
@@ -70,17 +67,9 @@ const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStude
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
 const FacultyAssignmentsPage = lazy(() => import('./pages/faculty/FacultyAssignmentsPage'));
-const FacultyQuestionBankPage = lazy(() => import('./pages/faculty/FacultyQuestionBankPage'));
-const FacultyAssignmentBuilderPage = lazy(() => import('./pages/faculty/FacultyAssignmentBuilderPage'));
 const FacultyQuizzesPage = lazy(() => import('./pages/faculty/FacultyQuizzesPage'));
 const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPage'));
-const FacultyProjectBuilderPage = lazy(() => import('./pages/faculty/FacultyProjectBuilderPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
-const FacultyBatchesPage = lazy(() => import('./pages/faculty/FacultyBatchesPage'));
-const FacultyCalendarPage = lazy(() => import('./pages/faculty/FacultyCalendarPage'));
-const FacultyNotificationsPage = lazy(() => import('./pages/faculty/FacultyNotificationsPage'));
-const FacultyProfilePage = lazy(() => import('./pages/faculty/FacultyProfilePage'));
-const FacultySettingsPage = lazy(() => import('./pages/faculty/FacultySettingsPage'));
 
 // Lazy-loaded admin pages
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -182,7 +171,6 @@ export default function App() {
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route path="/auth/redirect" element={<AuthRedirectPage />} />
-                  <Route path="/developer-role" element={<DeveloperRolePage />} />
 
                   {/* Demo routes - lazy loaded */}
                   <Route path="/demo/student" element={<DemoStudentLayout />}>
@@ -211,13 +199,6 @@ export default function App() {
                       <CourseWorkspace />
                     </RoleGuard>
                   } />
-                  <Route path="/student/coding-practice/:questionId" element={
-                    <RoleGuard allowedRoles={['student']}>
-                      <CodingPracticePage />
-                    </RoleGuard>
-                  } />
-                  <Route path="/student/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['student']}><ProjectWorkspacePage mode="student" /></RoleGuard>} />
-                  <Route path="/faculty/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['faculty', 'super_admin']}><ProjectWorkspacePage mode="faculty" /></RoleGuard>} />
 
                   {/* Student routes */}
                   <Route path="/student" element={
@@ -235,7 +216,6 @@ export default function App() {
                     <Route path="playground" element={<PlaygroundPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
-                    <Route path="coding-practice" element={<CodingPracticePage />} />
                     <Route path="quizzes" element={<QuizzesPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
                     <Route path="jobs" element={<JobsPage />} />
@@ -263,7 +243,7 @@ export default function App() {
                     <Route path="live-classes/create" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/edit" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/attendance" element={<FacultySessionAttendancePage />} />
-                    <Route path="batches" element={<FacultyBatchesPage />} />
+                    <Route path="batches" element={<ComingSoon title="My Batches" />} />
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />
@@ -271,25 +251,15 @@ export default function App() {
                     <Route path="courses/:courseId/builder" element={<CourseBuilderPage />} />
                     <Route path="lessons" element={<FacultyLessonsPage />} />
                     <Route path="assignments" element={<FacultyAssignmentsPage />} />
-                    <Route path="question-bank" element={<FacultyQuestionBankPage />} />
-                    <Route path="question-bank/editor/:questionId" element={<FacultyQuestionBankPage />} />
-                    <Route path="assignments/new" element={<FacultyAssignmentBuilderPage />} />
-                    <Route path="assignments/builder/:assignmentId" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="submissions" element={<SubmissionsPage />} />
                     <Route path="quizzes" element={<FacultyQuizzesPage />} />
                     <Route path="projects" element={<FacultyProjectsPage />} />
-                    <Route path="projects/new" element={<FacultyProjectBuilderPage />} />
-                    <Route path="projects/:projectId/builder" element={<FacultyProjectBuilderPage />} />
-                    <Route path="practice/assignments/:assignmentId" element={<AssignmentsPage />} />
-                    <Route path="practice/quizzes" element={<QuizzesPage />} />
-                    <Route path="practice/projects" element={<ProjectsPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="progress" element={<StudentProgressPage />} />
-                    <Route path="student-progress" element={<Navigate to="/faculty/progress" replace />} />
-                    <Route path="calendar" element={<FacultyCalendarPage />} />
-                    <Route path="notifications" element={<FacultyNotificationsPage />} />
-                    <Route path="profile" element={<FacultyProfilePage />} />
-                    <Route path="settings" element={<FacultySettingsPage />} />
+                    <Route path="calendar" element={<CalendarPage />} />
+                    <Route path="notifications" element={<NotificationsPage />} />
+                    <Route path="profile" element={<ProfilePage />} />
+                    <Route path="settings" element={<SettingsPage />} />
                   </Route>
 
                   {/* Admin routes */}
@@ -328,9 +298,9 @@ export default function App() {
                     <Route path="placements" element={<AdminPlacementsPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
-                    <Route path="storage" element={<Navigate to="/admin/settings" replace />} />
+                    <Route path="storage" element={<ComingSoon title="Storage Manager" />} />
                     <Route path="settings" element={<PlatformSettingsPage />} />
-                    <Route path="roles" element={<Navigate to="/admin/users" replace />} />
+                    <Route path="roles" element={<ComingSoon title="Roles & Permissions" />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>
 

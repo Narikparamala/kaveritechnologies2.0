@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { LiveSession, SessionAttendance, SessionResource } from '../types/database';
 
-export interface SessionWithDetails extends Omit<LiveSession, 'course' | 'faculty'> {
+export interface SessionWithDetails extends LiveSession {
   course?: { id: string; title: string; slug: string };
   faculty?: { id: string; full_name: string | null; avatar_url: string | null };
   attendance?: SessionAttendance;
@@ -100,16 +100,6 @@ export async function createGoogleMeet(params: {
 
 // Student: Get all sessions for enrolled courses
 export async function getStudentSessions(studentId: string): Promise<SessionWithDetails[]> {
-  const { data: enrollmentRows, error: enrollmentError } = await supabase
-    .from('course_enrollments')
-    .select('course_id')
-    .eq('student_id', studentId)
-    .eq('access_status', 'active');
-
-  if (enrollmentError) throw enrollmentError;
-  const courseIds = Array.from(new Set((enrollmentRows ?? []).map(enrollment => enrollment.course_id)));
-  if (!courseIds.length) return [];
-
   const { data, error } = await supabase
     .from('live_sessions')
     .select(`
@@ -118,7 +108,11 @@ export async function getStudentSessions(studentId: string): Promise<SessionWith
       created_by,
       faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
     `)
-    .in('course_id', courseIds)
+    .in('course_id', (
+      supabase.from('course_enrollments')
+        .select('course_id')
+        .eq('student_id', studentId)
+    ))
     .order('session_date', { ascending: true });
 
   if (error) throw error;
@@ -191,34 +185,44 @@ export async function registerForSession(sessionId: string, studentId: string): 
 
 // Faculty: Get sessions for assigned courses
 export async function getFacultySessions(facultyId: string): Promise<SessionWithDetails[]> {
-  // Supabase .in() accepts an array, not another query builder.
-  // Load the faculty's course IDs first, then fetch sessions for those courses.
-  const { data: facultyCourses, error: facultyCoursesError } = await supabase
-    .from('course_faculty')
-    .select('course_id')
-    .eq('faculty_id', facultyId);
-
-  if (facultyCoursesError) throw facultyCoursesError;
-
-  const courseIds = Array.from(
-    new Set((facultyCourses || []).map(course => course.course_id).filter(Boolean)),
-  );
-
-  if (!courseIds.length) return [];
-
-  // The course relation is backed by live_sessions.course_id.
-  // Avoid requiring a created_by -> profiles relation while preview mode has no real auth.
-  const { data: sessions, error: sessionsError } = await supabase
+  const { data, error } = await supabase
     .from('live_sessions')
     .select(`
       *,
-      course:courses(id, title, slug)
+      course:courses(id, title, slug),
+      faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
     `)
-    .in('course_id', courseIds)
+    .in('course_id', (
+      supabase.from('course_faculty')
+        .select('course_id')
+        .eq('faculty_id', facultyId)
+    ))
     .order('session_date', { ascending: true });
 
-  if (sessionsError) throw sessionsError;
-  return (sessions || []) as SessionWithDetails[];
+  if (error) {
+    // If the nested query fails, try a simpler approach
+    const { data: facultyCourses } = await supabase
+      .from('course_faculty')
+      .select('course_id')
+      .eq('faculty_id', facultyId);
+
+    if (!facultyCourses?.length) return [];
+
+    const courseIds = facultyCourses.map(fc => fc.course_id);
+    const { data: sessions } = await supabase
+      .from('live_sessions')
+      .select(`
+        *,
+        course:courses(id, title, slug),
+        faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
+      `)
+      .in('course_id', courseIds)
+      .order('session_date', { ascending: true });
+
+    return (sessions || []) as SessionWithDetails[];
+  }
+
+  return (data || []) as SessionWithDetails[];
 }
 
 // Faculty: Create a new session
@@ -447,9 +451,7 @@ export async function getSessionStats(): Promise<{
 }
 
 // Check if session is joinable (live or within 15 minutes of start)
-type SessionTiming = Pick<LiveSession, 'session_date' | 'duration_minutes' | 'status'>;
-
-export function isSessionJoinable(session: SessionTiming): boolean {
+export function isSessionJoinable(session: LiveSession): boolean {
   const now = new Date();
   const sessionStart = new Date(session.session_date);
   const sessionEnd = new Date(sessionStart.getTime() + session.duration_minutes * 60000);
@@ -463,7 +465,7 @@ export function isSessionJoinable(session: SessionTiming): boolean {
 }
 
 // Get relative time until session
-export function getTimeUntilSession(session: Pick<LiveSession, 'session_date'>): string {
+export function getTimeUntilSession(session: LiveSession): string {
   const now = new Date();
   const sessionDate = new Date(session.session_date);
   const diff = sessionDate.getTime() - now.getTime();

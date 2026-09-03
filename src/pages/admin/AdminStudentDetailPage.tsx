@@ -206,7 +206,7 @@ export default function AdminStudentDetailPage() {
                 {submissions.slice(0, 5).map(s => (
                   <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
                     <div>
-                      <p className="text-sm text-slate-900 dark:text-white">Assignment submission #{s.submission_number}</p>
+                      <p className="text-sm text-slate-900 dark:text-white">{s.submission_text?.slice(0, 50) || 'No description'}</p>
                       <p className="text-xs text-slate-500">{new Date(s.submitted_at).toLocaleDateString()}</p>
                     </div>
                     <Badge className={s.status === 'graded' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>

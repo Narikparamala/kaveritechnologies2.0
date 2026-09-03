@@ -135,7 +135,7 @@ export default function AnalyticsPage() {
                 <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} />
                 <Tooltip
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
-                  formatter={(value, name) => [value, name === 'students' ? 'Students' : 'Completion %']}
+                  formatter={(v: any, name: string) => [v, name === 'students' ? 'Students' : 'Completion %']}
                 />
                 <Bar dataKey="students" fill="#2563EB" radius={[6, 6, 0, 0]} name="Students" />
               </BarChart>

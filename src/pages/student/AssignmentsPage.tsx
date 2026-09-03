@@ -1,173 +1,101 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useCallback, lazy, Suspense, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Calendar,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Info,
-  Loader2,
-  Play,
-  Save,
-  Send,
-  XCircle,
+  FileText, Calendar, CheckCircle, AlertCircle, Play, RotateCcw,
+  ChevronRight, ChevronLeft, Eye, EyeOff, Info, Lock,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { runPython } from '../../services/pythonExecution';
-import { securelyGradeAssignment } from '../../services/secureGrading';
+import { runPython, onRuntimeStatus, type RuntimeStatus } from '../../services/pythonExecution';
 import { formatDate } from '../../lib/utils';
-import {
-  createSubmission,
-  getAssignmentById,
-  getAssignmentQuestions,
-  getQuestionSubmissions,
-  getStudentAssignments,
-  getStudentSubmission,
-  getTestCases,
-  saveQuestionSubmission,
-  submitAssignment,
-} from '../../services/assignments';
-import type {
-  Assignment,
-  AssignmentQuestion,
-  AssignmentQuestionSubmission,
-  AssignmentSubmission,
-  AssignmentTestCase,
-  Course,
-} from '../../types/database';
+import type { Assignment, AssignmentSubmission, AssignmentTestCase, Course } from '../../types/database';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(module => ({ default: module.default })));
+const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
 
-type AssignmentListItem = Assignment & {
-  course: Course;
-  submission: AssignmentSubmission | null;
-};
+type AssignmentWithDetails = Assignment & { course: Course; submission: AssignmentSubmission | null };
+type TestResult = { input: string | null; expected: string; actual: string; passed: boolean };
+type MobileTab = 'question' | 'code' | 'output' | 'submit';
 
-type AssignmentDetails = Assignment & { course: Course };
-
-type TestResult = {
-  input: string | null;
-  expected: string;
-  actual: string;
-  passed: boolean;
-  hidden: boolean;
-};
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String(error.message);
-  }
-  return 'Something went wrong';
-}
-
-function normalizeOutput(value: string) {
-  return value.replace(/\r\n/g, '\n').trim();
-}
-
-async function executeTest(code: string, testCase: AssignmentTestCase): Promise<TestResult> {
-  const testCode = testCase.input_data
-    ? `import sys\nfrom io import StringIO\nsys.stdin = StringIO(${JSON.stringify(testCase.input_data)})\n${code}`
-    : code;
-  const result = await runPython(testCode);
-  const actual = result.success
-    ? normalizeOutput(result.output ?? '')
-    : `Error: ${result.error || 'Execution failed'}`;
-  const expected = normalizeOutput(testCase.expected_output);
-
-  return {
-    input: testCase.input_data,
-    expected,
-    actual,
-    passed: result.success && actual === expected,
-    hidden: testCase.is_hidden,
-  };
-}
-
+// ============================================================
+// Router shell
+// ============================================================
 export default function AssignmentsPage() {
   const { assignmentId } = useParams<{ assignmentId?: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get('returnTo');
-  const practiceMode = searchParams.get('practice') === '1';
-  const listPath = returnTo ?? (practiceMode ? '/faculty/assignments' : '/student/assignments');
-
   if (assignmentId) {
-    return (
-      <AssignmentWorkspace
-        assignmentId={assignmentId}
-        practiceMode={practiceMode}
-        onBack={() => navigate(listPath)}
-        onSubmitted={() => navigate(listPath)}
-      />
-    );
+    return <AssignmentWorkspace assignmentId={assignmentId} onBack={() => navigate(returnTo ?? '/student/assignments')} returnTo={returnTo} />;
   }
-
-  return (
-    <AssignmentList
-      onOpen={id => navigate(`/student/assignments/${id}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`)}
-    />
-  );
+  return <AssignmentList onOpen={(id) => navigate(`/student/assignments/${id}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`)} />;
 }
 
+// ============================================================
+// Assignment list
+// ============================================================
 function AssignmentList({ onOpen }: { onOpen: (id: string) => void }) {
   const { profile } = useAuth();
-  const { error: toastError } = useToast();
-  const [assignments, setAssignments] = useState<AssignmentListItem[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!profile) return;
-    let active = true;
-    getStudentAssignments(profile.id)
-      .then(items => { if (active) setAssignments(items); })
-      .catch(error => toastError('Could not load assignments', errorMessage(error)))
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [profile, toastError]);
+    (async () => {
+      const { data: enrData } = await supabase.from('course_enrollments')
+        .select('course_id').eq('student_id', profile.id).eq('access_status', 'active');
+      const courseIds = (enrData ?? []).map((e: any) => e.course_id);
+      if (!courseIds.length) { setLoading(false); return; }
+      const [{ data: asgData }, { data: subData }] = await Promise.all([
+        supabase.from('assignments').select('*, course:courses(*)').in('course_id', courseIds).eq('is_published', true).order('due_date', { ascending: true }),
+        supabase.from('assignment_submissions').select('*').eq('student_id', profile.id),
+      ]);
+      const subMap = new Map((subData ?? []).map((s: any) => [s.assignment_id, s]));
+      setAssignments((asgData ?? []).map((a: any) => ({ ...a, submission: subMap.get(a.id) ?? null })) as any);
+      setLoading(false);
+    })();
+  }, [profile]);
 
-  const statusBadge = (assignment: AssignmentListItem) => {
-    const submission = assignment.submission;
-    if (!submission) return <Badge variant="default">Not Started</Badge>;
-    if (submission.status === 'draft') return <Badge variant="warning">Draft Saved</Badge>;
-    if (submission.status === 'submitted') return <Badge variant="info">Submitted</Badge>;
-    if (submission.status === 'graded') return <Badge variant="success">Graded</Badge>;
-    return <Badge variant="default">{submission.status}</Badge>;
+  const getStatus = (sub: AssignmentSubmission | null, dueDate: string | null) => {
+    if (!sub) return dueDate && new Date(dueDate) < new Date()
+      ? <span className="badge text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Overdue</span>
+      : <span className="badge text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Pending</span>;
+    const v: Record<string, string> = { submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', graded: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', returned: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', draft: 'bg-slate-100 text-slate-400' };
+    return <span className={`badge text-xs capitalize ${v[sub.status] ?? 'bg-slate-100 text-slate-400'}`}>{sub.status}</span>;
   };
 
   return (
-    <div className="mx-auto max-w-7xl animate-fade-in p-6 lg:p-8">
-      <PageHeader title="Assignments" subtitle="Solve coding questions and submit your work" icon={FileText} />
+    <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
+      <PageHeader title="Assignments" subtitle="View and submit your Python coding assignments" icon={FileText} />
       {loading ? (
-        <div className="grid gap-4">
-          {[1, 2, 3].map(item => <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />)}
-        </div>
+        <div className="space-y-4">{[1,2,3].map(i=><div key={i} className="h-24 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
       ) : assignments.length === 0 ? (
-        <EmptyState icon={FileText} title="No assignments yet" description="Published assignments will appear here." />
+        <EmptyState icon={FileText} title="No assignments yet" description="Enroll in courses to see your assignments here." />
       ) : (
-        <div className="grid gap-4">
-          {assignments.map(assignment => (
-            <button key={assignment.id} onClick={() => onOpen(assignment.id)} className="card flex w-full items-start gap-4 p-5 text-left transition hover:border-primary-400 hover:shadow-lg">
-              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 dark:bg-primary-900/30">
-                <FileText size={19} className="text-primary-600" />
+        <div className="space-y-3">
+          {assignments.map(asg => (
+            <button key={asg.id} onClick={() => onOpen(asg.id)} className="card p-5 flex items-start gap-4 w-full text-left hover:shadow-md transition-shadow">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                <FileText size={18} className="text-primary-600 dark:text-primary-400" />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-900 dark:text-white">{assignment.title}</span>
-                  {statusBadge(assignment)}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-semibold text-slate-900 dark:text-white">{asg.title}</span>
+                  {getStatus(asg.submission, asg.due_date)}
                 </div>
-                <p className="mb-1 text-xs text-primary-600">{assignment.course?.title}</p>
-                <p className="line-clamp-1 text-sm text-slate-500">{assignment.description || 'Coding assignment'}</p>
+                <p className="text-xs text-primary-600 dark:text-primary-400 mb-1">{asg.course?.title}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1">{asg.problem_statement ?? asg.description}</p>
+                {asg.submission?.score != null && <p className="text-sm text-emerald-600 font-medium mt-1">Score: {asg.submission.score}/{asg.max_marks}</p>}
+                {asg.submission?.feedback && <p className="text-xs text-slate-500 italic mt-0.5 line-clamp-1">Feedback: {asg.submission.feedback}</p>}
               </div>
-              <div className="flex flex-shrink-0 flex-col items-end gap-2">
-                {assignment.due_date && <span className="flex items-center gap-1 text-xs text-slate-400"><Calendar size={12} />{formatDate(assignment.due_date)}</span>}
-                <span className="flex items-center gap-1 text-xs text-primary-600">Start Coding <ChevronRight size={13} /></span>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                {asg.due_date && <span className="text-xs text-slate-400 flex items-center gap-1"><Calendar size={11} />{formatDate(asg.due_date)}</span>}
+                <span className="text-xs text-slate-400">Max: {asg.max_marks}</span>
+                <span className="text-primary-600 dark:text-primary-400 text-xs flex items-center gap-1">Python Coding <ChevronRight size={12} /></span>
               </div>
             </button>
           ))}
@@ -177,337 +105,638 @@ function AssignmentList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function AssignmentWorkspace({
-  assignmentId,
-  practiceMode,
-  onBack,
-  onSubmitted,
-}: {
-  assignmentId: string;
-  practiceMode: boolean;
-  onBack: () => void;
-  onSubmitted: () => void;
-}) {
+// ============================================================
+// Workspace — detects desktop vs mobile and renders accordingly
+// ============================================================
+function AssignmentWorkspace({ assignmentId, onBack, returnTo }: { assignmentId: string; onBack: () => void; returnTo?: string | null }) {
   const { profile } = useAuth();
   const { success, error: toastError } = useToast();
-  const [assignment, setAssignment] = useState<AssignmentDetails | null>(null);
-  const [questions, setQuestions] = useState<AssignmentQuestion[]>([]);
-  const [questionIndex, setQuestionIndex] = useState(0);
+
+  // Shared state
+  const [asg, setAsg] = useState<AssignmentWithDetails | null>(null);
+  const [testCases, setTestCases] = useState<AssignmentTestCase[]>([]);
   const [submission, setSubmission] = useState<AssignmentSubmission | null>(null);
-  const [answers, setAnswers] = useState<Record<string, Partial<AssignmentQuestionSubmission>>>({});
-  const [visibleTests, setVisibleTests] = useState<Record<string, AssignmentTestCase[]>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [code, setCode] = useState('');
+  const [output, setOutput] = useState('');
   const [running, setRunning] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>('idle');
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [showHints, setShowHints] = useState(false);
+  const [showSolution, setShowSolution] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
-  const [customInput, setCustomInput] = useState('');
-  const [consoleText, setConsoleText] = useState('');
-  const [runResults, setRunResults] = useState<TestResult[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
 
-  const currentQuestion = questions[questionIndex];
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
-  const loadWorkspace = useCallback(async () => {
+  useEffect(() => {
+    const unsub = onRuntimeStatus(setRuntimeStatus);
+    return unsub;
+  }, []);
+
+  const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-    try {
-      const [assignmentData, questionData, submissionData] = await Promise.all([
-        getAssignmentById(assignmentId),
-        getAssignmentQuestions(assignmentId),
-        practiceMode ? Promise.resolve(null) : getStudentSubmission(assignmentId, profile.id),
-      ]);
-      if (!assignmentData) throw new Error('Assignment not found');
+    const [{ data: asgData }, { data: tcData }, { data: subData }] = await Promise.all([
+      supabase.from('assignments').select('*, course:courses(*)').eq('id', assignmentId).maybeSingle(),
+      supabase.from('assignment_test_cases').select('*').eq('assignment_id', assignmentId).eq('is_hidden', false).order('order_index'),
+      supabase.from('assignment_submissions').select('*').eq('assignment_id', assignmentId).eq('student_id', profile.id).maybeSingle(),
+    ]);
+    const a = asgData as any;
+    setAsg(a);
+    setTestCases((tcData ?? []) as AssignmentTestCase[]);
+    setSubmission(subData as any);
+    setCode((subData as any)?.submitted_code ?? a?.starter_code ?? '# Write your Python solution here\n');
+    setLoading(false);
+  }, [assignmentId, profile]);
 
-      setAssignment(assignmentData);
-      setQuestions(questionData);
-      setSubmission(submissionData);
+  useEffect(() => { load(); }, [load]);
 
-      if (submissionData) {
-        const savedAnswers = await getQuestionSubmissions(submissionData.id);
-        setAnswers(Object.fromEntries(savedAnswers.map(answer => [answer.question_id, answer])));
-      }
-
-      const entries = await Promise.all(
-        questionData.map(async question => [question.id, await getTestCases(assignmentId, question.id, false)] as const),
-      );
-      setVisibleTests(Object.fromEntries(entries));
-    } catch (error) {
-      toastError('Could not open assignment', errorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [assignmentId, practiceMode, profile, toastError]);
-
-  useEffect(() => {
-    void loadWorkspace();
-  }, [loadWorkspace]);
-
-  const updateCode = (value: string) => {
-    if (!currentQuestion) return;
-    setAnswers(current => ({
-      ...current,
-      [currentQuestion.id]: {
-        ...current[currentQuestion.id],
-        submitted_code: value,
-      },
-    }));
-  };
-
-  const ensureSubmission = async () => {
-    if (submission) return submission;
-    if (!profile || !assignment) throw new Error('Student or assignment is missing');
-    const created = await createSubmission(assignment.id, profile.id);
-    setSubmission(created);
-    return created;
-  };
-
-  const saveCurrentDraft = async () => {
-    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
-    setSaving(true);
-    try {
-      const currentSubmission = await ensureSubmission();
-      await saveQuestionSubmission({
-        ...answers[currentQuestion.id],
-        submission_id: currentSubmission.id,
-        question_id: currentQuestion.id,
-      });
-    } catch (error) {
-      toastError('Autosave failed', errorMessage(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
-    const timer = window.setTimeout(() => { void saveCurrentDraft(); }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [answers, currentQuestion?.id, practiceMode]);
-
-  const runVisibleTests = async () => {
-    if (!currentQuestion) return;
-    const code = answers[currentQuestion.id]?.submitted_code ?? currentQuestion.starter_code ?? '';
-    if (!code.trim()) {
-      toastError('No code', 'Write some Python code before running it.');
-      return;
-    }
-
+  const runCode = async () => {
+    if (!code.trim()) return;
     setRunning(true);
-    setRunResults([]);
-    setConsoleText('Running your code...');
+    setOutput('Running...');
+    setTestResults([]);
     try {
-      const tests = visibleTests[currentQuestion.id] ?? [];
-      if (tests.length === 0) {
-        const result = await runPython(code);
-        setConsoleText(result.success ? result.output || '(no output)' : `Error: ${result.error}`);
-        return;
+      const result = await runPython(code);
+      setOutput(result.output || result.error || '(no output)');
+      if (testCases.length > 0) {
+        const results: TestResult[] = [];
+        for (const tc of testCases) {
+          let testCode = code;
+          if (tc.input_data) {
+            testCode = `import sys\nfrom io import StringIO\nsys.stdin = StringIO(${JSON.stringify(tc.input_data)})\n${code}`;
+          }
+          const res = await runPython(testCode);
+          const actual = (res.output ?? '').trim();
+          const expected = tc.expected_output.trim();
+          results.push({ input: tc.input_data, expected, actual, passed: actual === expected });
+        }
+        setTestResults(results);
       }
-
-      const results: TestResult[] = [];
-      for (const test of tests) results.push(await executeTest(code, test));
-      setRunResults(results);
-      const passed = results.filter(result => result.passed).length;
-      setConsoleText(`${passed} of ${results.length} visible test cases passed. You can change your code and run it again.`);
-    } catch (error) {
-      setConsoleText(`Error: ${errorMessage(error)}`);
-    } finally {
-      setRunning(false);
-    }
+    } catch (e: any) { setOutput(`Error: ${e.message}`); }
+    setRunning(false);
   };
 
-  const runWithCustomInput = async () => {
-    if (!currentQuestion) return;
-    const code = answers[currentQuestion.id]?.submitted_code ?? currentQuestion.starter_code ?? '';
-    if (!code.trim()) {
-      toastError('No code', 'Write some Python code before running it.');
-      return;
-    }
-
-    setRunning(true);
-    setRunResults([]);
-    setConsoleText('Running with your custom input...');
-    try {
-      const runnableCode = customInput.length > 0
-        ? `import sys\nfrom io import StringIO\nsys.stdin = StringIO(${JSON.stringify(customInput)})\n${code}`
-        : code;
-      const result = await runPython(runnableCode);
-      const actualOutput = result.success
-        ? result.output || '(no output)'
-        : `Error: ${result.error || 'Execution failed'}`;
-      setConsoleText(
-        `CUSTOM RUN\n\nInput:\n${customInput || '(no input)'}\n\nYour Output:\n${actualOutput}`,
-      );
-    } catch (error) {
-      setConsoleText(`Custom run error: ${errorMessage(error)}`);
-    } finally {
-      setRunning(false);
-    }
+  const resetCode = () => {
+    setCode(asg?.starter_code ?? '# Write your Python solution here\n');
+    setOutput('');
+    setTestResults([]);
   };
 
-  const evaluateAndSubmit = async () => {
-    if (!assignment || !profile) return;
+  const handleSubmit = async () => {
+    if (!profile || !asg) return;
     setSubmitting(true);
     setConfirmSubmit(false);
-    setRunResults([]);
-    setConsoleText('Checking visible test cases before submission...');
-
     try {
-      const currentSubmission = await ensureSubmission();
-      let totalTests = 0;
-      let passedTests = 0;
-      let firstFailedQuestion = -1;
+      const passedCount = testResults.filter(r => r.passed).length;
+      const submissionNum = (submission?.submission_number ?? 0) + 1;
+      const { data: existing } = await supabase.from('assignment_submissions')
+        .select('id').eq('assignment_id', assignmentId).eq('student_id', profile.id).maybeSingle();
 
-      for (let index = 0; index < questions.length; index += 1) {
-        const question = questions[index];
-        const code = answers[question.id]?.submitted_code ?? question.starter_code ?? '';
-        const tests = await getTestCases(assignment.id, question.id, false);
-        const results: TestResult[] = [];
-
-        if (code.trim()) {
-          for (const test of tests) results.push(await executeTest(code, test));
-        }
-
-        const questionPassed = results.filter(result => result.passed).length;
-        totalTests += tests.length;
-        passedTests += questionPassed;
-        if ((tests.length === 0 || questionPassed !== tests.length) && firstFailedQuestion === -1) {
-          firstFailedQuestion = index;
-        }
-
-        if (currentSubmission) {
-          await saveQuestionSubmission({
-            ...answers[question.id],
-            submission_id: currentSubmission.id,
-            question_id: question.id,
-            submitted_code: code,
-            execution_output: JSON.stringify(results),
-            passed_test_cases: questionPassed,
-            total_test_cases: tests.length,
-          });
-        }
-      }
-
-      if (totalTests === 0) {
-        toastError('Cannot submit', 'This assignment does not have test cases yet.');
-        setConsoleText('Submission stopped: no test cases are configured.');
-        return;
-      }
-
-      if (passedTests !== totalTests) {
-        if (firstFailedQuestion >= 0) setQuestionIndex(firstFailedQuestion);
-        setConsoleText(`SUBMISSION FAILED\n${passedTests} of ${totalTests} test cases passed.\nFix your code and submit again.`);
-        toastError('Tests failed', `${totalTests - passedTests} test case(s) failed. Your assignment was not submitted.`);
-        return;
-      }
-
-      if (currentSubmission) {
-        await submitAssignment(currentSubmission.id);
-        try {
-          const verified = await securelyGradeAssignment(currentSubmission.id);
-          setConsoleText(
-            `VERIFIED SUBMISSION\n${verified.passed} of ${verified.total} final tests passed.\nVerified score: ${verified.score}/${assignment.max_marks}`,
-          );
-          success('Assignment securely graded!', `Verified score: ${verified.score}/${assignment.max_marks}. Faculty may review the result.`);
-        } catch (gradingError) {
-          setConsoleText(
-            `SUBMITTED FOR FACULTY REVIEW\nVisible tests passed, but secure automatic grading is unavailable.\n${errorMessage(gradingError)}`,
-          );
-          success('Assignment submitted!', 'Your work is safe and available for faculty review.');
-        }
-        window.setTimeout(onSubmitted, 1200);
+      if (existing) {
+        const { error } = await supabase.from('assignment_submissions').update({
+          submitted_code: code, submission_text: null, language: 'python',
+          execution_output: output, visible_tests_passed: passedCount,
+          visible_tests_total: testCases.length, status: 'submitted',
+          submitted_at: new Date().toISOString(), submission_number: submissionNum,
+          updated_at: new Date().toISOString(), score: null, feedback: null,
+          graded_by: null, graded_at: null,
+        }).eq('id', (existing as any).id);
+        if (error) throw error;
       } else {
-        setConsoleText(`PRACTICE COMPLETE\nAll ${totalTests} visible test cases passed. No student submission or grade was created.`);
-        success('Practice complete!', 'All visible test cases passed. Nothing was submitted or graded.');
+        const { error } = await supabase.from('assignment_submissions').insert({
+          assignment_id: assignmentId, student_id: profile.id, submitted_code: code,
+          language: 'python', execution_output: output,
+          visible_tests_passed: passedCount, visible_tests_total: testCases.length,
+          status: 'submitted', submitted_at: new Date().toISOString(), submission_number: submissionNum,
+        });
+        if (error) throw error;
       }
-    } catch (error) {
-      toastError('Submission failed', errorMessage(error));
-      setConsoleText(`Submission error: ${errorMessage(error)}`);
-    } finally {
-      setSubmitting(false);
+      await supabase.from('notifications').insert({
+        user_id: asg.created_by, title: 'New Assignment Submission',
+        message: `${profile.full_name} submitted ${asg.title}`, type: 'assignment_submission',
+      }).then(() => {});
+      success('Assignment submitted!', `${passedCount}/${testCases.length} visible tests passed`);
+      await load();
+    } catch (e: any) { toastError('Submit failed', e.message); }
+    setSubmitting(false);
+  };
+
+  const canShowSolution = () => {
+    if (!asg?.sample_solution) return false;
+    const vis = asg.sample_solution_visibility ?? 'never';
+    if (vis === 'always') return true;
+    if (vis === 'after_submission' && submission) return true;
+    if (vis === 'after_grading' && submission?.status === 'graded') return true;
+    return false;
+  };
+
+  const canResubmit = !submission || (submission.status !== 'graded' && asg?.allow_resubmit);
+  const passedCount = testResults.filter(r => r.passed).length;
+
+  if (loading) return <div className="p-8 text-center text-slate-400">Loading assignment...</div>;
+  if (!asg) return <div className="p-8 text-center text-slate-400">Assignment not found.</div>;
+
+  const sharedProps = {
+    asg, testCases, submission, code, setCode, output, running, runtimeStatus,
+    testResults, showHints, setShowHints, showSolution, setShowSolution,
+    canShowSolution: canShowSolution(), canResubmit, passedCount,
+    confirmSubmit, setConfirmSubmit, submitting, onBack,
+    runCode, resetCode, handleSubmit,
+  };
+
+  return (
+    <>
+      {isDesktop
+        ? <DesktopWorkspace {...sharedProps} />
+        : <MobileWorkspace {...sharedProps} />
+      }
+    </>
+  );
+}
+
+// ============================================================
+// Shared sub-components
+// ============================================================
+function ProblemPanel({ asg, testCases, testResults, showHints, setShowHints, showSolution, setShowSolution, canShowSolution }: any) {
+  return (
+    <div className="p-4 space-y-4 text-sm">
+      {asg.problem_statement && (
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-white mb-2">Problem Statement</p>
+          <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{asg.problem_statement}</p>
+        </div>
+      )}
+      {asg.instructions && (
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-white mb-2">Instructions</p>
+          <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{asg.instructions}</p>
+        </div>
+      )}
+      {asg.input_format && (
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+          <p className="font-medium text-slate-700 dark:text-slate-300 mb-1 text-xs uppercase tracking-wide">Input Format</p>
+          <p className="text-slate-600 dark:text-slate-400 text-xs">{asg.input_format}</p>
+        </div>
+      )}
+      {asg.output_format && (
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+          <p className="font-medium text-slate-700 dark:text-slate-300 mb-1 text-xs uppercase tracking-wide">Output Format</p>
+          <p className="text-slate-600 dark:text-slate-400 text-xs">{asg.output_format}</p>
+        </div>
+      )}
+      {asg.constraints_text && (
+        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+          <p className="font-medium text-amber-700 dark:text-amber-400 mb-1 text-xs uppercase tracking-wide">Constraints</p>
+          <p className="text-amber-700 dark:text-amber-400 text-xs">{asg.constraints_text}</p>
+        </div>
+      )}
+      {testCases.length > 0 && (
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-white mb-2">Examples</p>
+          <div className="space-y-2">
+            {testCases.map((tc: AssignmentTestCase, idx: number) => (
+              <div key={tc.id} className="rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden text-xs">
+                <div className="bg-slate-50 dark:bg-slate-800 px-3 py-1.5 font-medium text-slate-600 dark:text-slate-400">Test Case {idx + 1}</div>
+                <div className="p-3 space-y-2">
+                  {tc.input_data && <div><span className="text-slate-400">Input:</span><pre className="font-mono mt-0.5">{tc.input_data}</pre></div>}
+                  <div><span className="text-slate-400">Expected:</span><pre className="font-mono mt-0.5 text-emerald-700 dark:text-emerald-400">{tc.expected_output}</pre></div>
+                  {testResults[idx] && (
+                    <div className={`flex items-center gap-1 font-medium ${testResults[idx].passed ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {testResults[idx].passed ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                      {testResults[idx].passed ? 'Passed' : `Failed — Got: ${testResults[idx].actual}`}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Lock size={9} /> Hidden test cases graded by faculty after submission.</p>
+        </div>
+      )}
+      {asg.hints?.length > 0 && (
+        <div>
+          <button onClick={() => setShowHints(!showHints)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+            {showHints ? <EyeOff size={11} /> : <Eye size={11} />} {showHints ? 'Hide Hints' : `Show Hints (${asg.hints.length})`}
+          </button>
+          {showHints && (
+            <div className="mt-2 space-y-1">
+              {asg.hints.map((h: string, i: number) => (
+                <p key={i} className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">Hint {i + 1}: {h}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {canShowSolution && (
+        <div>
+          <button onClick={() => setShowSolution(!showSolution)} className="text-xs text-emerald-600 hover:underline flex items-center gap-1">
+            {showSolution ? <EyeOff size={11} /> : <Eye size={11} />} {showSolution ? 'Hide Solution' : 'Show Sample Solution'}
+          </button>
+          {showSolution && <pre className="mt-2 text-xs bg-slate-900 text-slate-100 rounded-xl p-3 font-mono overflow-x-auto">{asg.sample_solution}</pre>}
+        </div>
+      )}
+      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 space-y-1 text-xs text-slate-500">
+        <p>Max marks: <strong>{asg.max_marks}</strong></p>
+        {asg.passing_score && <p>Passing score: <strong>{asg.passing_score}</strong></p>}
+        {asg.due_date && <p>Due: <strong>{formatDate(asg.due_date)}</strong></p>}
+        <p>Resubmission: <strong>{asg.allow_resubmit ? 'Allowed' : 'Not allowed'}</strong></p>
+      </div>
+    </div>
+  );
+}
+
+function SubmissionPanel({ submission, asg }: any) {
+  return (
+    <div className="p-4 space-y-4 text-sm">
+      {!submission ? (
+        <p className="text-slate-400 text-center py-8">No submission yet. Write your code and submit.</p>
+      ) : (
+        <>
+          <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className={`badge capitalize text-xs ${submission.status === 'graded' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>{submission.status}</span>
+              <span className="text-xs text-slate-400">#{submission.submission_number} · {formatDate(submission.submitted_at)}</span>
+            </div>
+            {submission.visible_tests_total > 0 && (
+              <p className="text-xs text-slate-600 dark:text-slate-400">Visible tests: {submission.visible_tests_passed}/{submission.visible_tests_total} passed</p>
+            )}
+            {submission.score != null && <p className="text-sm font-bold text-emerald-600">Score: {submission.score}/{asg.max_marks}</p>}
+            {submission.feedback && <p className="text-xs text-slate-600 dark:text-slate-300 italic">{submission.feedback}</p>}
+          </div>
+          {submission.submitted_code && (
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-white mb-2 text-xs">Submitted Code</p>
+              <pre className="text-xs bg-slate-900 text-slate-100 rounded-xl p-3 font-mono overflow-x-auto max-h-60">{submission.submitted_code}</pre>
+            </div>
+          )}
+          {submission.execution_output && (
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-white mb-2 text-xs">Output at Submission</p>
+              <pre className="text-xs bg-slate-50 dark:bg-slate-800 rounded-xl p-3 font-mono overflow-x-auto">{submission.execution_output}</pre>
+            </div>
+          )}
+          <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-700 dark:text-blue-400 flex items-start gap-2">
+            <Info size={12} className="flex-shrink-0 mt-0.5" />
+            Hidden test-case grading requires a secure server-side execution service. Faculty review is currently enabled.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function EditorPanel({ code, setCode, output, running, runtimeStatus, runCode, resetCode, passedCount, testCases, testResults, canResubmit, submitting, submission, setConfirmSubmit, height = '100%', outputHeight = 160, showControls = true }: any) {
+  return (
+    <div className="flex flex-col h-full overflow-hidden bg-slate-900">
+      <div className="flex-1 overflow-hidden min-h-0">
+        <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
+          <MonacoEditor
+            height={height}
+            language="python"
+            theme="vs-dark"
+            value={code}
+            onChange={(v: any) => setCode(v ?? '')}
+            options={{
+              fontSize: 14, fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              minimap: { enabled: false }, scrollBeyondLastLine: false,
+              lineNumbers: 'on', wordWrap: 'on', automaticLayout: true,
+            }}
+          />
+        </Suspense>
+      </div>
+      {showControls && (
+        <div className="bg-slate-800 border-t border-slate-700 px-3 py-2 flex items-center gap-2 flex-shrink-0 flex-wrap">
+          <button onClick={runCode} disabled={running || runtimeStatus === 'loading'} className="btn-primary text-sm flex items-center gap-1.5 py-1.5 disabled:opacity-50">
+            {running || runtimeStatus === 'loading' ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Play size={13} />}
+            {runtimeStatus === 'loading' ? 'Loading...' : running ? 'Running...' : 'Run Code'}
+          </button>
+          <button onClick={resetCode} className="btn-ghost text-sm flex items-center gap-1.5 py-1.5 text-slate-300">
+            <RotateCcw size={13} /> Reset
+          </button>
+          {testCases.length > 0 && testResults.length > 0 && (
+            <span className={`text-sm font-medium ${passedCount === testCases.length ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {passedCount}/{testCases.length} passed
+            </span>
+          )}
+          <div className="flex-1" />
+          {canResubmit && (
+            <button onClick={() => setConfirmSubmit(true)} disabled={submitting} className="btn-primary text-sm flex items-center gap-1.5 py-1.5 bg-emerald-600 hover:bg-emerald-700">
+              {submitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle size={13} />}
+              {submission ? 'Resubmit' : 'Submit'}
+            </button>
+          )}
+        </div>
+      )}
+      <div style={{ height: outputHeight }} className="bg-slate-950 border-t border-slate-700 overflow-auto flex-shrink-0">
+        <div className="px-4 py-2 text-xs text-slate-500 font-medium border-b border-slate-800">Output</div>
+        <pre className="px-4 py-3 text-sm text-slate-300 font-mono whitespace-pre-wrap" style={{ wordBreak: 'break-word' }}>
+          {running ? 'Running...' : output || 'Click "Run Code" to execute.'}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Desktop: resizable split panels
+// ============================================================
+const LS_WIDTH_KEY = 'kaveri_assignment_left_width';
+
+function DesktopWorkspace(props: any) {
+  const { asg, onBack, submission, setConfirmSubmit, confirmSubmit, submitting, handleSubmit,
+    code, setCode, output, running, runtimeStatus, runCode, resetCode, passedCount,
+    testCases, testResults, canResubmit, showHints, setShowHints, showSolution, setShowSolution,
+    canShowSolution } = props;
+
+  const [leftPct, setLeftPct] = useState<number>(() => {
+    const saved = localStorage.getItem(LS_WIDTH_KEY);
+    return saved ? parseFloat(saved) : 40;
+  });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const [activeLeftTab, setActiveLeftTab] = useState<'problem' | 'submission'>('problem');
+
+  const onMouseDown = () => { dragging.current = true; };
+  const onMouseMove = (e: MouseEvent) => {
+    if (!dragging.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const newPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const clamped = Math.min(60, Math.max(25, newPct));
+    setLeftPct(clamped);
+  };
+  const onMouseUp = () => {
+    if (dragging.current) {
+      dragging.current = false;
+      setLeftPct(prev => { localStorage.setItem(LS_WIDTH_KEY, String(prev)); return prev; });
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-400">Loading assignment...</div>;
-  if (!assignment || !currentQuestion) return <div className="p-8 text-center text-slate-400">Assignment is not available.</div>;
-
-  const code = answers[currentQuestion.id]?.submitted_code ?? currentQuestion.starter_code ?? '';
+  useEffect(() => {
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
+  }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-white dark:bg-slate-950">
-      <header className="z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={20} /></button>
-          <div><h1 className="text-sm font-semibold">{assignment.title}</h1><p className="text-[10px] uppercase tracking-wider text-slate-400">{assignment.course?.title}</p></div>
-        </div>
-        <div className="flex items-center gap-3">
-          {practiceMode ? (
-            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Faculty Practice</span>
-          ) : (
-            <span className={`flex items-center gap-1 text-xs ${saving ? 'text-amber-500' : 'text-emerald-500'}`}><Save size={12} />{saving ? 'Saving...' : 'Saved'}</span>
-          )}
-          <button className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs" disabled={submitting} onClick={() => setConfirmSubmit(true)}><Send size={14} /> {practiceMode ? 'Check Practice' : 'Submit'}</button>
-        </div>
-      </header>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <WorkspaceHeader asg={asg} submission={submission} onBack={onBack} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <section className="w-1/2 overflow-y-auto border-r border-slate-200 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-          <div className="mb-5 flex items-center justify-between"><Badge variant="info">Coding Question</Badge><span className="text-xs text-slate-400">Question {questionIndex + 1} of {questions.length}</span></div>
-          <h2 className="text-2xl font-bold">{currentQuestion.title}</h2>
-          <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{currentQuestion.problem_statement}</p>
-          {currentQuestion.instructions && <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300"><strong className="mb-1 flex items-center gap-1"><Info size={14} /> Instructions</strong>{currentQuestion.instructions}</div>}
-          <div className="mt-6 grid gap-4">
-            {currentQuestion.input_format && <div><h3 className="mb-2 text-xs font-bold uppercase text-slate-400">Input Format</h3><div className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 font-mono text-sm dark:bg-slate-800">{currentQuestion.input_format}</div></div>}
-            {currentQuestion.output_format && <div><h3 className="mb-2 text-xs font-bold uppercase text-slate-400">Output Format</h3><div className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 font-mono text-sm dark:bg-slate-800">{currentQuestion.output_format}</div></div>}
+      {/* Body */}
+      <div ref={containerRef} className="flex-1 flex overflow-hidden select-none">
+        {/* Left panel */}
+        <div style={{ width: `${leftPct}%`, minWidth: 300 }} className="flex flex-col overflow-hidden border-r border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <div className="flex border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+            <button onClick={() => setActiveLeftTab('problem')} className={`flex-1 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeLeftTab === 'problem' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Problem</button>
+            <button onClick={() => setActiveLeftTab('submission')} className={`flex-1 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeLeftTab === 'submission' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+              My Submission {submission && <span className="ml-1 text-xs opacity-60">#{submission.submission_number}</span>}
+            </button>
           </div>
-          <h3 className="mb-3 mt-6 text-xs font-bold uppercase text-slate-400">Examples</h3>
-          <div className="space-y-3">
-            {(visibleTests[currentQuestion.id] ?? []).map((test, index) => <div key={test.id} className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800"><div className="bg-slate-100 px-3 py-2 text-[10px] font-bold uppercase text-slate-500 dark:bg-slate-800">Example {index + 1}</div><div className="grid gap-3 p-4 font-mono text-xs md:grid-cols-2"><pre>Input:{'\n'}{test.input_data || '(none)'}</pre><pre className="text-emerald-500">Expected:{'\n'}{test.expected_output}</pre></div></div>)}
+          <div className="flex-1 overflow-y-auto">
+            {activeLeftTab === 'problem'
+              ? <ProblemPanel asg={asg} testCases={testCases} testResults={testResults} showHints={showHints} setShowHints={setShowHints} showSolution={showSolution} setShowSolution={setShowSolution} canShowSolution={canShowSolution} />
+              : <SubmissionPanel submission={submission} asg={asg} />
+            }
           </div>
-        </section>
+        </div>
 
-        <section className="flex w-1/2 flex-col bg-slate-950">
-          <div className="min-h-0 flex-1">
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading code editor...</div>}>
-              <MonacoEditor height="100%" language="python" theme="vs-dark" value={code} onChange={value => updateCode(value ?? '')} options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true }} />
-            </Suspense>
-          </div>
-          <div className="flex h-80 flex-col border-t border-slate-800 bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Input, Output & Test Results</span><button className="btn-secondary flex items-center gap-2 !px-3 !py-1.5 text-xs" disabled={running || submitting} onClick={runVisibleTests}>{running ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}Run Sample Tests</button></div>
-            <div className="flex items-end gap-3 border-b border-slate-800 p-3">
-              <div className="flex-1">
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom Input</label>
-                <textarea
-                  className="h-16 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 outline-none focus:border-primary-500"
-                  value={customInput}
-                  onChange={event => setCustomInput(event.target.value)}
-                  placeholder={'Example:\n10\n20'}
-                />
-              </div>
-              <button className="btn-primary flex items-center gap-2 !px-3 !py-2 text-xs" disabled={running || submitting} onClick={runWithCustomInput}>{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}Run Custom Input</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 text-xs">
-              {consoleText && <pre className="mb-4 whitespace-pre-wrap font-mono text-slate-300">{consoleText}</pre>}
-              <div className="space-y-3">
-                {runResults.map((result, index) => <div key={index} className={`rounded-xl border p-3 ${result.passed ? 'border-emerald-700/50 bg-emerald-900/20' : 'border-red-700/50 bg-red-900/20'}`}><div className={`mb-2 flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>{result.passed ? <CheckCircle2 size={14} /> : <XCircle size={14} />}Test Case {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}</div><div className="grid gap-2 font-mono text-slate-300 md:grid-cols-3"><pre>Input:{'\n'}{result.input || '(none)'}</pre><pre>Expected:{'\n'}{result.expected}</pre><pre className={result.passed ? 'text-emerald-300' : 'text-red-300'}>Your Output:{'\n'}{result.actual || '(no output)'}</pre></div></div>)}
-              </div>
-              {!consoleText && runResults.length === 0 && <span className="text-slate-500">Run your code to see its actual output and test results.</span>}
-            </div>
-          </div>
-          <footer className="flex h-14 items-center justify-between border-t border-slate-800 bg-slate-900 px-4">
-            <button className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30" disabled={questionIndex === 0} onClick={() => { setQuestionIndex(index => index - 1); setRunResults([]); setConsoleText(''); }}><ChevronLeft size={15} /> Previous</button>
-            <div className="flex gap-1.5">{questions.map((_, index) => <span key={index} className={`h-2 w-2 rounded-full ${index === questionIndex ? 'bg-primary-600' : 'bg-slate-700'}`} />)}</div>
-            {questionIndex < questions.length - 1 ? <button className="btn-secondary flex items-center gap-1 text-xs" onClick={() => { setQuestionIndex(index => index + 1); setRunResults([]); setConsoleText(''); }}>Next <ChevronRight size={15} /></button> : <button className="btn-primary flex items-center gap-2 text-xs" onClick={() => setConfirmSubmit(true)}>Review & Submit <Send size={14} /></button>}
-          </footer>
-        </section>
+        {/* Drag divider */}
+        <div
+          onMouseDown={onMouseDown}
+          className="w-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-primary-200 dark:hover:bg-primary-800/60 cursor-col-resize flex-shrink-0 transition-colors active:bg-primary-400"
+          title="Drag to resize"
+        />
+
+        {/* Right panel */}
+        <div style={{ flex: 1, minWidth: 420 }} className="flex flex-col overflow-hidden">
+          <EditorPanel
+            code={code} setCode={setCode} output={output} running={running} runtimeStatus={runtimeStatus}
+            runCode={runCode} resetCode={resetCode} passedCount={passedCount}
+            testCases={testCases} testResults={testResults} canResubmit={canResubmit}
+            submitting={submitting} submission={submission} setConfirmSubmit={setConfirmSubmit}
+            height="calc(100vh - 220px)" outputHeight={160} showControls
+          />
+        </div>
       </div>
 
-      <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title={practiceMode ? 'Check faculty practice' : 'Run final submission tests'}>
-        <div className="space-y-5">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{practiceMode ? 'This runs visible test cases only and does not create a grade, XP, or verified progress.' : 'Submitting runs visible test cases before sending your code for authoritative faculty review. Hidden tests are never downloaded to the browser.'}</p>
-          <div className="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-900"><div className="flex justify-between"><span>Questions</span><strong>{questions.length}</strong></div><div className="mt-2 flex justify-between"><span>Current status</span><strong>{practiceMode ? 'Practice only' : submission?.status === 'submitted' ? 'Submitted' : 'Draft'}</strong></div></div>
-          <div className="flex justify-end gap-3"><button className="btn-secondary" onClick={() => setConfirmSubmit(false)}>Keep Coding</button><button className="btn-primary flex items-center gap-2" disabled={submitting} onClick={evaluateAndSubmit}>{submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{practiceMode ? 'Run All Practice Tests' : 'Run Tests & Submit'}</button></div>
-        </div>
-      </Modal>
+      <ConfirmSubmitModal asg={asg} confirmSubmit={confirmSubmit} setConfirmSubmit={setConfirmSubmit} handleSubmit={handleSubmit} submitting={submitting} passedCount={passedCount} testCases={testCases} />
     </div>
+  );
+}
+
+// ============================================================
+// Mobile: tabbed workspace
+// ============================================================
+function MobileWorkspace(props: any) {
+  const { asg, onBack, submission, setConfirmSubmit, confirmSubmit, submitting, handleSubmit,
+    code, setCode, output, running, runtimeStatus, runCode, resetCode, passedCount,
+    testCases, testResults, canResubmit, showHints, setShowHints, showSolution, setShowSolution,
+    canShowSolution } = props;
+
+  const [tab, setTab] = useState<MobileTab>('question');
+
+  const tabBtn = (key: MobileTab, label: string) => (
+    <button
+      onClick={() => setTab(key)}
+      className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${tab === key ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="h-full flex flex-col">
+      <WorkspaceHeader asg={asg} submission={submission} onBack={onBack} />
+
+      {/* Tab bar */}
+      <div className="flex border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 overflow-x-auto">
+        {tabBtn('question', 'Question')}
+        {tabBtn('code', 'Code')}
+        {tabBtn('output', 'Output')}
+        {tabBtn('submit', 'Submit')}
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'question' && (
+          <ProblemPanel asg={asg} testCases={testCases} testResults={testResults} showHints={showHints} setShowHints={setShowHints} showSolution={showSolution} setShowSolution={setShowSolution} canShowSolution={canShowSolution} />
+        )}
+
+        {tab === 'code' && (
+          <div style={{ height: 'calc(100vh - 200px)' }} className="flex flex-col bg-slate-900">
+            <div className="flex-1 min-h-0">
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
+                <MonacoEditor
+                  height="100%"
+                  language="python"
+                  theme="vs-dark"
+                  value={code}
+                  onChange={(v: any) => setCode(v ?? '')}
+                  options={{
+                    fontSize: 14, fontFamily: "'JetBrains Mono', monospace",
+                    minimap: { enabled: false }, scrollBeyondLastLine: false,
+                    lineNumbers: 'on', wordWrap: 'on', automaticLayout: true,
+                  }}
+                />
+              </Suspense>
+            </div>
+            <div className="bg-slate-800 border-t border-slate-700 px-3 py-2 flex items-center gap-2 flex-shrink-0">
+              <button onClick={runCode} disabled={running || runtimeStatus === 'loading'} className="btn-primary text-sm flex items-center gap-1.5 py-2 px-4 disabled:opacity-50 flex-1 justify-center">
+                {running || runtimeStatus === 'loading' ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Play size={14} />}
+                {runtimeStatus === 'loading' ? 'Loading...' : running ? 'Running...' : 'Run Code'}
+              </button>
+              <button onClick={resetCode} className="btn-ghost text-sm flex items-center gap-1.5 py-2 text-slate-300">
+                <RotateCcw size={14} /> Reset
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'output' && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Output</p>
+            </div>
+            <pre className="text-sm text-slate-300 font-mono whitespace-pre-wrap bg-slate-900 rounded-xl p-4 min-h-[120px] overflow-x-auto" style={{ wordBreak: 'break-word' }}>
+              {output || 'Run your code to see output here.'}
+
+            </pre>
+            {testCases.length > 0 && testResults.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Test Results ({passedCount}/{testCases.length} passed)</p>
+                {testResults.map((r: TestResult, i: number) => (
+                  <div key={i} className={`p-3 rounded-xl border text-xs ${r.passed ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'}`}>
+                    <div className={`flex items-center gap-1 font-medium mb-1 ${r.passed ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {r.passed ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                      Test {i + 1}: {r.passed ? 'Passed' : 'Failed'}
+                    </div>
+                    {!r.passed && <p className="text-slate-500">Expected: <code className="font-mono">{r.expected}</code> — Got: <code className="font-mono">{r.actual}</code></p>}
+                  </div>
+                ))}
+                <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={9} /> Hidden tests are graded by faculty.</p>
+              </div>
+            )}
+            {testCases.length > 0 && testResults.length === 0 && (
+              <p className="text-xs text-slate-400">Run your code to see test results.</p>
+            )}
+          </div>
+        )}
+
+        {tab === 'submit' && (
+          <div className="p-4 space-y-4">
+            {submission && (
+              <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className={`badge capitalize text-xs ${submission.status === 'graded' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>{submission.status}</span>
+                  <span className="text-xs text-slate-400">#{submission.submission_number}</span>
+                </div>
+                {submission.visible_tests_total > 0 && (
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Visible tests: {submission.visible_tests_passed}/{submission.visible_tests_total} passed</p>
+                )}
+                {submission.score != null && (
+                  <p className="text-lg font-bold text-emerald-600">Score: {submission.score}/{asg.max_marks}</p>
+                )}
+                {submission.feedback && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+                    <p className="text-xs text-slate-400 mb-1">Faculty Feedback</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 italic">{submission.feedback}</p>
+                  </div>
+                )}
+              </div>
+            )}
+            {canResubmit && (
+              <div className="space-y-3">
+                {testCases.length > 0 && testResults.length > 0 && (
+                  <p className={`text-sm font-medium ${passedCount === testCases.length ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {passedCount}/{testCases.length} visible tests passing
+                  </p>
+                )}
+                <button onClick={() => setConfirmSubmit(true)} disabled={submitting} className="w-full btn-primary text-sm flex items-center justify-center gap-2 py-3">
+                  {submitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle size={16} />}
+                  {submission ? 'Resubmit Assignment' : 'Submit Assignment'}
+                </button>
+                <p className="text-xs text-slate-400 text-center">
+                  {asg.allow_resubmit ? 'You can resubmit if needed.' : 'This will be your final submission.'}
+                </p>
+              </div>
+            )}
+            {!canResubmit && submission && (
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-sm text-slate-500 text-center">
+                Submission finalized. Awaiting faculty review.
+              </div>
+            )}
+            <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-700 dark:text-blue-400 flex items-start gap-2">
+              <Info size={12} className="flex-shrink-0 mt-0.5" />
+              Hidden test-case grading requires a secure server-side execution service. Faculty review is currently enabled.
+            </div>
+          </div>
+        )}
+      </div>
+
+      <ConfirmSubmitModal asg={asg} confirmSubmit={confirmSubmit} setConfirmSubmit={setConfirmSubmit} handleSubmit={handleSubmit} submitting={submitting} passedCount={passedCount} testCases={testCases} />
+    </div>
+  );
+}
+
+// ============================================================
+// Shared workspace header
+// ============================================================
+function WorkspaceHeader({ asg, submission, onBack }: any) {
+  return (
+    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-3 flex-shrink-0">
+      <button onClick={onBack} className="btn-ghost py-1.5 px-3 text-sm flex items-center gap-1.5 flex-shrink-0">
+        <ChevronLeft size={14} /> <span className="hidden sm:inline">Assignments</span>
+      </button>
+      <div className="flex-1 min-w-0">
+        <h1 className="font-bold text-slate-900 dark:text-white truncate text-sm sm:text-base">{asg.title}</h1>
+        <p className="text-xs text-slate-400 truncate">{asg.course?.title}</p>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {submission && (
+          <span className={`badge text-xs capitalize ${submission.status === 'graded' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+            {submission.status}
+          </span>
+        )}
+        {submission?.score != null && <span className="text-sm font-bold text-emerald-600">{submission.score}/{asg.max_marks}</span>}
+        {asg.due_date && <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1"><Calendar size={11} />Due {formatDate(asg.due_date)}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Shared confirm submit modal
+// ============================================================
+function ConfirmSubmitModal({ asg, confirmSubmit, setConfirmSubmit, handleSubmit, submitting, passedCount, testCases }: any) {
+  return (
+    <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title="Submit Assignment" size="sm">
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Submit your current Python code for <strong>{asg.title}</strong>?
+        </p>
+        {testCases.length > 0 && (
+          <p className={`text-sm font-medium ${passedCount === testCases.length ? 'text-emerald-600' : 'text-amber-600'}`}>
+            {passedCount}/{testCases.length} visible tests currently passing.
+          </p>
+        )}
+        <p className="text-xs text-slate-400">
+          Hidden test cases will be reviewed by your faculty. {asg.allow_resubmit ? 'You can resubmit if needed.' : 'This submission is final.'}
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={() => setConfirmSubmit(false)} className="btn-secondary">Cancel</button>
+          <button onClick={handleSubmit} disabled={submitting} className="btn-primary flex items-center gap-2">
+            {submitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle size={14} />}
+            Submit
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
