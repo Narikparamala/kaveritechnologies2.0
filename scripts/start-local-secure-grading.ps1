@@ -200,11 +200,23 @@ if (-not $judge0Languages -or $judge0Languages.Count -eq 0) {
 }
 
 $judge0FlatLanguages = @()
-foreach ($lang in $judge0Languages) {
-    if ($lang -and $lang.PSObject.Properties['name'] -and $lang.PSObject.Properties['id']) {
-        $judge0FlatLanguages += $lang
+foreach ($entry in @($judge0Languages)) {
+    foreach ($candidate in @($entry)) {
+        if (
+            $candidate -and
+            $candidate.PSObject.Properties['name'] -and
+            $candidate.PSObject.Properties['id']
+        ) {
+            $judge0FlatLanguages += $candidate
+        }
     }
 }
+
+if ($judge0FlatLanguages.Count -eq 0) {
+    throw "Judge0 returned languages but no valid language records could be normalized from the response."
+}
+
+Write-Host "PASS: Judge0 normalized $($judge0FlatLanguages.Count) language runtime records." -ForegroundColor Green
 
 $judge0Python = $judge0FlatLanguages |
     Where-Object { $_.name -match '^Python \(3\.' } |
@@ -221,6 +233,8 @@ try { $judge0PythonId = [int]$rawId } catch { $judge0PythonId = 0 }
 if ($judge0PythonId -le 0) {
     throw "Judge0 Python 3 language id could not be resolved to a positive integer."
 }
+
+Write-Host "PASS: Python runtime selected: $([string]$judge0Python.name), id: $judge0PythonId" -ForegroundColor Green
 
 $judge0Networks = @($judge0Inspect[0].NetworkSettings.Networks.PSObject.Properties.Name)
 if ($judge0Networks -notcontains $supabaseNetwork) {
