@@ -200,7 +200,7 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="mx-auto max-w-7xl animate-fade-in p-6 lg:p-8">
       <PageHeader
         title="Coding Practice"
-        subtitle="Solve interview problems in any runtime installed on the Kaveri Judge0 server"
+        subtitle="Solve coding problems with instant feedback and secure, protected test results"
         icon={Code2}
       />
 
