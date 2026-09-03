@@ -15,6 +15,7 @@ import {
   GripVertical,
   Loader2,
   Play,
+  RefreshCw,
   Search,
   Send,
   Tag,
@@ -297,14 +298,71 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  const [graderError, setGraderError] = useState<string | null>(null);
+  const [checkingLanguages, setCheckingLanguages] = useState(false);
+  const attemptRef = useRef<{ submitted_code: string | null; language_id: number | null } | null>(null);
 
   useEffect(() => {
     let active = true;
 
+    const applyGraderLanguages = async (
+      loadedQuestion: CodingQuestion,
+      previousAttempt: { submitted_code: string | null; language_id: number | null } | null,
+      loadedTests: QuestionTestCase[],
+    ) => {
+      let judgeLanguages: JudgeLanguage[] = [];
+      try {
+        judgeLanguages = await getSecureJudgeLanguages();
+        if (judgeLanguages.length === 0) throw new Error('No grading languages were returned.');
+      } catch (error) {
+        // The grader is unavailable, but the question itself is fine: keep the
+        // problem readable and editable, with runs/submits disabled.
+        if (active) setGraderError(errorMessage(error));
+        if (active) setLanguages([]);
+        if (active) setSelectedLanguageId(null);
+        if (active) {
+          const pythonStarter = loadedQuestion.language.toLowerCase().startsWith('python')
+            ? loadedQuestion.starter_code ?? '# Write your Python solution here\n'
+            : loadedQuestion.starter_code ?? '';
+          setCode(previousAttempt?.submitted_code ?? pythonStarter);
+          setCodeByLanguage({});
+          setCustomInput(loadedTests.find(test => !test.is_hidden)?.input_data ?? '');
+        }
+        return;
+      }
+
+      const previousLanguage = judgeLanguages.find(language => language.id === previousAttempt?.language_id);
+      const preferredLanguage = previousLanguage
+        ?? judgeLanguages.find(language => language.name.toLowerCase().startsWith(loadedQuestion.language.toLowerCase()))
+        ?? judgeLanguages.find(language => /^Python \(3\./i.test(language.name))
+        ?? judgeLanguages[0];
+      if (!preferredLanguage) {
+        if (active) setGraderError('No compatible grading language is available.');
+        if (active) { setLanguages([]); setSelectedLanguageId(null); }
+        return;
+      }
+      if (!active) return;
+
+      setLanguages(judgeLanguages);
+      setSelectedLanguageId(preferredLanguage.id);
+      const initialCode = (previousLanguage && previousAttempt?.submitted_code)
+        || starterCodeFor(loadedQuestion, preferredLanguage);
+      setCode(initialCode);
+      setCodeByLanguage({ [preferredLanguage.id]: initialCode });
+      setCustomInput(loadedTests.find(test => !test.is_hidden)?.input_data ?? '');
+    };
+
     const load = async () => {
       setLoading(true);
+      setNotFound(false);
+      setQuestionError(null);
+      setGraderError(null);
       try {
-        const [questionResponse, testsResponse, judgeLanguages, attemptResponse] = await Promise.all([
+        // Phase 1 - safe question content. Only the safe RPC deciding there is
+        // no such question may produce a "Question not found" state.
+        const [questionResponse, testsResponse, attemptResponse] = await Promise.all([
           supabase.rpc('get_student_coding_questions', { p_question_id: questionId }),
           supabase
             .from('coding_question_test_cases')
@@ -312,7 +370,6 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             .eq('question_id', questionId)
             .eq('is_hidden', false)
             .order('order_index', { ascending: true }),
-          getSecureJudgeLanguages(),
           supabase
             .from('coding_question_attempts')
             .select('submitted_code,language_id')
@@ -325,28 +382,25 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
         if (attemptResponse.error) throw attemptResponse.error;
 
         const loadedQuestion = questionResponse.data?.[0] as CodingQuestion | undefined;
-        if (!loadedQuestion) throw new Error('Coding question is unavailable.');
+        if (!loadedQuestion) {
+          if (active) { setNotFound(true); setQuestion(null); }
+          return;
+        }
         const loadedTests = (testsResponse.data ?? []) as QuestionTestCase[];
         const previousAttempt = attemptResponse.data as { submitted_code: string | null; language_id: number | null } | null;
-        const previousLanguage = judgeLanguages.find(language => language.id === previousAttempt?.language_id);
-        const preferredLanguage = previousLanguage
-          ?? judgeLanguages.find(language => language.name.toLowerCase().startsWith(loadedQuestion.language.toLowerCase()))
-          ?? judgeLanguages.find(language => /^Python \(3\./i.test(language.name))
-          ?? judgeLanguages[0];
-        if (!preferredLanguage) throw new Error('Judge0 did not return any available languages.');
+        attemptRef.current = previousAttempt;
         if (!active) return;
 
         setQuestion(loadedQuestion);
         setTestCases(loadedTests);
-        setLanguages(judgeLanguages);
-        setSelectedLanguageId(preferredLanguage.id);
-        const initialCode = (previousLanguage && previousAttempt?.submitted_code)
-          || starterCodeFor(loadedQuestion, preferredLanguage);
-        setCode(initialCode);
-        setCodeByLanguage({ [preferredLanguage.id]: initialCode });
-        setCustomInput(loadedTests.find(test => !test.is_hidden)?.input_data ?? '');
+
+        // Phase 2 - grader/language discovery is best-effort and must never
+        // prevent the question itself from rendering.
+        await applyGraderLanguages(loadedQuestion, previousAttempt, loadedTests);
       } catch (error) {
-        toastError('Could not open question', errorMessage(error));
+        if (!active) return;
+        setQuestion(null);
+        setQuestionError(errorMessage(error));
       } finally {
         if (active) setLoading(false);
       }
@@ -355,6 +409,33 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     void load();
     return () => { active = false; };
   }, [questionId, toastError]);
+
+  const retryGrader = async () => {
+    if (!question || checkingLanguages) return;
+    setCheckingLanguages(true);
+    setGraderError(null);
+    try {
+      const judgeLanguages = await getSecureJudgeLanguages();
+      if (judgeLanguages.length === 0) throw new Error('No grading languages were returned.');
+      const previousAttempt = attemptRef.current;
+      const previousLanguage = judgeLanguages.find(language => language.id === previousAttempt?.language_id);
+      const preferredLanguage = previousLanguage
+        ?? judgeLanguages.find(language => language.name.toLowerCase().startsWith(question.language.toLowerCase()))
+        ?? judgeLanguages.find(language => /^Python \(3\./i.test(language.name))
+        ?? judgeLanguages[0];
+      if (!preferredLanguage) throw new Error('No compatible grading language is available.');
+      setLanguages(judgeLanguages);
+      setSelectedLanguageId(preferredLanguage.id);
+      // Keep whatever code the student already sees or typed.
+      setCodeByLanguage(current => ({ ...current, [preferredLanguage.id]: code }));
+    } catch (error) {
+      setGraderError(errorMessage(error));
+      setLanguages([]);
+      setSelectedLanguageId(null);
+    } finally {
+      setCheckingLanguages(false);
+    }
+  };
 
   useEffect(() => {
     if (!resizing) return;
@@ -383,7 +464,13 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
 
   const visibleTests = testCases.filter(test => !test.is_hidden);
   const selectedLanguage = languages.find(language => language.id === selectedLanguageId) ?? null;
-  const editorLanguage = languageDetails(selectedLanguage?.name ?? 'Plain Text');
+  // When the grader is unavailable we still render a Python workspace (the
+  // practice bank is Python) so the problem stays readable and editable.
+  const displayLanguage = selectedLanguage
+    ?? ((!languages.length && !!question && question.language.toLowerCase().startsWith('python'))
+      ? { id: 0, name: 'Python (3.x)' }
+      : null);
+  const editorLanguage = languageDetails(displayLanguage?.name ?? 'Plain Text');
 
   const changeLanguage = (nextLanguageId: number) => {
     if (!question || nextLanguageId === selectedLanguageId) return;
@@ -472,8 +559,26 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     return <div className="flex h-screen items-center justify-center bg-slate-950"><Loader2 className="animate-spin text-primary-500" /></div>;
   }
 
+  if (questionError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-950">
+        <EmptyState icon={AlertTriangle} title="Could not open question" description={questionError} />
+        <button onClick={onBack} className="btn-secondary">Back to Coding Practice</button>
+      </div>
+    );
+  }
+
   if (!question) {
-    return <div className="flex h-screen items-center justify-center"><EmptyState icon={XCircle} title="Question not found" description="Return to Coding Practice and select another question." /></div>;
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-950">
+        <EmptyState
+          icon={XCircle}
+          title={notFound ? 'Question not found' : 'Question unavailable'}
+          description={notFound ? 'This question may have been unpublished. Return to Coding Practice and select another question.' : 'Return to Coding Practice and select another question.'}
+        />
+        <button onClick={onBack} className="btn-secondary">Back to Coding Practice</button>
+      </div>
+    );
   }
 
   return (
@@ -485,7 +590,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           </button>
           <div className="min-w-0">
             <h1 className="truncate font-bold text-slate-900 dark:text-white">{question.title}</h1>
-            <p className="text-xs text-slate-500">{question.topic} · {question.difficulty} · Judge0 workspace</p>
+            <p className="text-xs text-slate-500">{question.topic} · {question.difficulty} · {editorLanguage.file}</p>
           </div>
         </div>
         <button disabled={submitting || running || !selectedLanguageId} onClick={() => void submitSolution()} className="btn-primary flex items-center gap-2 !px-4 !py-2 text-sm">
@@ -493,6 +598,25 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           Submit
         </button>
       </header>
+
+      {graderError && (
+        <div className="flex items-start gap-2.5 border-b border-amber-800/60 bg-amber-950/40 px-4 py-2.5 text-xs text-amber-200">
+          <AlertTriangle size={15} className="mt-0.5 flex-none text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Secure grading is currently unavailable.</p>
+            <p className="mt-0.5">You can still read the problem and edit your code, but running and submitting are disabled until grading is back.</p>
+            <p className="mt-0.5 break-words text-amber-300/80">{graderError}</p>
+          </div>
+          <button
+            onClick={() => void retryGrader()}
+            disabled={checkingLanguages}
+            className="flex flex-none items-center gap-1.5 rounded-lg border border-amber-700/60 px-2.5 py-1.5 font-semibold text-amber-200 transition hover:bg-amber-800/40 disabled:opacity-60"
+          >
+            {checkingLanguages ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Retry
+          </button>
+        </div>
+      )}
 
       <div
         ref={splitContainerRef}
@@ -578,6 +702,9 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
                 className="max-w-64 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-200 outline-none focus:border-primary-500"
                 aria-label="Programming language"
               >
+                {languages.length === 0 && (
+                  <option value="">{checkingLanguages ? 'Checking languages…' : graderError ? 'Grading unavailable' : 'Loading languages…'}</option>
+                )}
                 {languages.map(language => <option key={language.id} value={language.id}>{language.name}</option>)}
               </select>
             </label>
