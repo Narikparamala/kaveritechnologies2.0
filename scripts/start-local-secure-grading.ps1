@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$DbContainer = "supabase_db_kaverilmspracticeplayground",
-    [string]$Judge0Container = "judge0-v1131-server-1",
+    [string]$GoJudgeContainer = "kaveri-go-judge",
     [int]$FunctionStartupTimeoutSeconds = 90
 )
 
@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $functionEnvPath = Join-Path $repoRoot "supabase\functions\.env.local"
+$goJudgeLanguageId = 71
 
 function Write-Utf8WithoutBom {
     param(
@@ -41,48 +42,32 @@ function Read-ErrorResponseBody {
 
     if (-not $Exception.Response) { return $Exception.Message }
     try {
-        $stream = $Exception.Response.GetResponseStream()
-        $reader = New-Object System.IO.StreamReader($stream)
-        try { return $reader.ReadToEnd() }
-        finally {
-            $reader.Dispose()
-            $stream.Dispose()
+        if ($Exception.Response.PSObject.Methods.Name -contains "GetResponseStream") {
+            $stream = $Exception.Response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            try { return $reader.ReadToEnd() }
+            finally {
+                $reader.Dispose()
+                $stream.Dispose()
+            }
         }
     }
     catch {
         return $Exception.Message
     }
+    return $Exception.Message
 }
 
-function Read-Judge0ConfValue {
-    param(
-        [Parameter(Mandatory)][string]$Container,
-        [Parameter(Mandatory)][string]$Key
-    )
+function Get-GoJudgeToken {
+    param([Parameter(Mandatory)]$InspectRecord)
 
-    $confContent = $null
-    try {
-        $confContent = docker exec $Container cat /judge0.conf 2>$null
-    }
-    catch {
-        return $null
-    }
-    if ($LASTEXITCODE -ne 0 -or -not $confContent) { return $null }
-
-    $pattern = '^\s*' + [regex]::Escape($Key) + '\s*=\s*(.*)$'
-    foreach ($line in ($confContent -split "`n")) {
-        if ($line -match $pattern) {
-            $val = $matches[1].Trim()
-            if ($val.Length -ge 2 -and
-                (($val.StartsWith('"') -and $val.EndsWith('"')) -or
-                 ($val.StartsWith("'") -and $val.EndsWith("'")))) {
-                $val = $val.Substring(1, $val.Length - 2)
+    $command = @($InspectRecord.Config.Cmd)
+    for ($index = 0; $index -lt $command.Count - 1; $index += 1) {
+        if ([string]$command[$index] -eq "-auth-token") {
+            $token = [string]$command[$index + 1]
+            if (-not [string]::IsNullOrWhiteSpace($token)) {
+                return $token
             }
-            else {
-                $hashIndex = $val.IndexOf(' #')
-                if ($hashIndex -ge 0) { $val = $val.Substring(0, $hashIndex).Trim() }
-            }
-            return $val
         }
     }
     return $null
@@ -94,7 +79,7 @@ $runningDatabase = docker ps `
     --format "{{.Names}}"
 
 if ($LASTEXITCODE -ne 0 -or $runningDatabase -ne $DbContainer) {
-    throw "Docker container '$DbContainer' is not running. Keep Supabase running in its PowerShell window."
+    throw "Docker container '$DbContainer' is not running. Keep the local Supabase stack running."
 }
 
 $databaseInspect = docker inspect $DbContainer | ConvertFrom-Json
@@ -103,156 +88,94 @@ if (-not $supabaseNetwork) {
     throw "Could not determine the local Supabase Docker network."
 }
 
-Write-Host "`n--- STARTING SELF-HOSTED JUDGE0 ---" -ForegroundColor Cyan
+Write-Host "`n--- VERIFYING KAVERI GO-JUDGE RUNNER ---" -ForegroundColor Cyan
 
-$judge0Containers = @(
-    "judge0-v1131-db-1",
-    "judge0-v1131-redis-1",
-    "judge0-v1131-workers-1",
-    $Judge0Container
-)
+docker inspect $GoJudgeContainer *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "The Kaveri go-judge container '$GoJudgeContainer' does not exist. Start infrastructure\go-judge with its private GO_JUDGE_TOKEN first."
+}
 
-foreach ($containerName in $judge0Containers) {
-    docker inspect $containerName *> $null
+$runningGoJudge = docker ps `
+    --filter "name=^/$GoJudgeContainer$" `
+    --filter "status=running" `
+    --format "{{.Names}}"
+
+if ($runningGoJudge -ne $GoJudgeContainer) {
+    docker start $GoJudgeContainer *> $null
     if ($LASTEXITCODE -ne 0) {
-        throw "Judge0 container '$containerName' does not exist. Restore the local Judge0 v1.13.1 installation first."
+        throw "The Kaveri go-judge container could not start."
     }
 }
 
-docker start "judge0-v1131-db-1" "judge0-v1131-redis-1" *> $null
-if ($LASTEXITCODE -ne 0) { throw "Judge0 database or Redis could not start." }
+$goJudgeInspect = docker inspect $GoJudgeContainer | ConvertFrom-Json
+$goJudgeToken = Get-GoJudgeToken -InspectRecord $goJudgeInspect[0]
+if ([string]::IsNullOrWhiteSpace($goJudgeToken)) {
+    throw "The Kaveri go-judge authentication token could not be discovered from the existing container configuration. Recreate the runner with GO_JUDGE_TOKEN configured."
+}
 
-docker start "judge0-v1131-workers-1" $Judge0Container *> $null
-if ($LASTEXITCODE -ne 0) { throw "Judge0 server or workers could not start." }
+Write-Host "GO_JUDGE_TOKEN: PRESENT, length: $($goJudgeToken.Length)" -ForegroundColor DarkGray
 
-$judge0Inspect = docker inspect $Judge0Container | ConvertFrom-Json
-$judge0Environment = @{}
-foreach ($entry in $judge0Inspect[0].Config.Env) {
-    if ($entry -match '^([^=]+)=(.*)$') {
-        $judge0Environment[$matches[1]] = $matches[2]
+$goJudgeNetworks = @($goJudgeInspect[0].NetworkSettings.Networks.PSObject.Properties.Name)
+if ($goJudgeNetworks -notcontains $supabaseNetwork) {
+    docker network connect $supabaseNetwork $GoJudgeContainer
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not connect the Kaveri go-judge container to the local Supabase Docker network."
     }
 }
 
-$judge0AuthnHeader = [string]$judge0Environment["AUTHN_HEADER"]
-$judge0AuthnToken  = [string]$judge0Environment["AUTHN_TOKEN"]
-$judge0AuthzHeader = [string]$judge0Environment["AUTHZ_HEADER"]
-$judge0AuthzToken  = [string]$judge0Environment["AUTHZ_TOKEN"]
-
-$authnTokenSource = "docker-env"
-$authzTokenSource = "docker-env"
-
-if ([string]::IsNullOrWhiteSpace($judge0AuthnHeader)) {
-    $judge0AuthnHeader = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHN_HEADER"
+$goJudgeHeaders = @{
+    Authorization = "Bearer $goJudgeToken"
 }
-if ([string]::IsNullOrWhiteSpace($judge0AuthnToken)) {
-    $judge0AuthnToken = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHN_TOKEN"
-    if (-not [string]::IsNullOrWhiteSpace($judge0AuthnToken)) { $authnTokenSource = "container-config" }
-}
-if ([string]::IsNullOrWhiteSpace($judge0AuthzHeader)) {
-    $judge0AuthzHeader = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHZ_HEADER"
-}
-if ([string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
-    $judge0AuthzToken = Read-Judge0ConfValue -Container $Judge0Container -Key "AUTHZ_TOKEN"
-    if (-not [string]::IsNullOrWhiteSpace($judge0AuthzToken)) { $authzTokenSource = "container-config" }
-}
-
-if ([string]::IsNullOrWhiteSpace($judge0AuthnHeader)) { $judge0AuthnHeader = "X-Auth-Token" }
-if ([string]::IsNullOrWhiteSpace($judge0AuthzHeader)) { $judge0AuthzHeader = "X-Auth-User" }
-
-if ([string]::IsNullOrWhiteSpace($judge0AuthnToken)) {
-    throw "Judge0 AUTHN_TOKEN was not found in the container environment or /judge0.conf. Cannot proceed without authentication."
-}
-
-Write-Host "AUTHN_TOKEN source: $authnTokenSource" -ForegroundColor DarkGray
-Write-Host "AUTHN_TOKEN: PRESENT, length: $($judge0AuthnToken.Length)" -ForegroundColor DarkGray
-Write-Host "AUTHZ_TOKEN source: $authzTokenSource" -ForegroundColor DarkGray
-if ([string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
-    Write-Host "AUTHZ_TOKEN: MISSING (authorization header will not be sent)" -ForegroundColor DarkGray
-}
-else {
-    Write-Host "AUTHZ_TOKEN: PRESENT, length: $($judge0AuthzToken.Length)" -ForegroundColor DarkGray
-}
-
-$judge0RequestHeaders = @{}
-$judge0RequestHeaders[$judge0AuthnHeader] = $judge0AuthnToken
-if (-not [string]::IsNullOrWhiteSpace($judge0AuthzToken)) {
-    $judge0RequestHeaders[$judge0AuthzHeader] = $judge0AuthzToken
-}
-
-$judge0Languages = $null
-for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
-    try {
-        $judge0Languages = @(Invoke-RestMethod `
-            -Uri "http://127.0.0.1:2358/languages/" `
-            -Method Get `
-            -Headers $judge0RequestHeaders `
-            -TimeoutSec 5)
-        if ($judge0Languages.Count -gt 0) { break }
-    }
-    catch {
-        Start-Sleep -Seconds 2
-    }
-}
-
-if (-not $judge0Languages -or $judge0Languages.Count -eq 0) {
-    docker logs --tail 100 $Judge0Container
-    throw "Judge0 did not expose its installed languages on http://127.0.0.1:2358."
-}
-
-$judge0FlatLanguages = @()
-foreach ($entry in @($judge0Languages)) {
-    foreach ($candidate in @($entry)) {
-        if (
-            $candidate -and
-            $candidate.PSObject.Properties['name'] -and
-            $candidate.PSObject.Properties['id']
-        ) {
-            $judge0FlatLanguages += $candidate
+$probeBody = @{
+    cmd = @(
+        @{
+            args = @("/usr/bin/python3", "-I", "solution.py")
+            env = @("PATH=/usr/bin:/bin", "PYTHONIOENCODING=utf-8")
+            files = @(
+                @{ content = "" },
+                @{ name = "stdout"; max = 65536 },
+                @{ name = "stderr"; max = 65536 }
+            )
+            cpuLimit = 2000000000
+            clockLimit = 5000000000
+            memoryLimit = 134217728
+            procLimit = 30
+            copyIn = @{
+                "solution.py" = @{ content = 'print("Kaveri runner ready")' }
+            }
+            copyOut = @("stdout", "stderr")
         }
-    }
+    )
+} | ConvertTo-Json -Depth 10
+
+try {
+    $probeResponse = @(Invoke-RestMethod `
+        -Uri "http://127.0.0.1:5050/run" `
+        -Method Post `
+        -Headers $goJudgeHeaders `
+        -ContentType "application/json" `
+        -Body $probeBody `
+        -TimeoutSec 20)
+}
+catch {
+    throw "The Kaveri go-judge authentication/execution probe failed."
 }
 
-if ($judge0FlatLanguages.Count -eq 0) {
-    throw "Judge0 returned languages but no valid language records could be normalized from the response."
+$probeResult = @($probeResponse)[0]
+if (-not $probeResult -or [string]$probeResult.status -ne "Accepted") {
+    throw "The Kaveri go-judge runner did not accept the Python probe."
+}
+if (-not $probeResult.files -or [string]$probeResult.files.stdout -notmatch "Kaveri runner ready") {
+    throw "The Kaveri go-judge runner did not return the expected Python output."
 }
 
-Write-Host "PASS: Judge0 normalized $($judge0FlatLanguages.Count) language runtime records." -ForegroundColor Green
-
-$judge0Python = $judge0FlatLanguages |
-    Where-Object { $_.name -match '^Python \(3\.' } |
-    Select-Object -First 1
-
-if (-not $judge0Python) {
-    throw "Judge0 is running but no Python 3 runtime is installed."
-}
-
-$judge0PythonId = 0
-$rawId = $judge0Python.id
-if ($rawId -is [array]) { $rawId = $rawId[0] }
-try { $judge0PythonId = [int]$rawId } catch { $judge0PythonId = 0 }
-if ($judge0PythonId -le 0) {
-    throw "Judge0 Python 3 language id could not be resolved to a positive integer."
-}
-
-Write-Host "PASS: Python runtime selected: $([string]$judge0Python.name), id: $judge0PythonId" -ForegroundColor Green
-
-$judge0Networks = @($judge0Inspect[0].NetworkSettings.Networks.PSObject.Properties.Name)
-if ($judge0Networks -notcontains $supabaseNetwork) {
-    docker network connect --alias kaveri-judge0 $supabaseNetwork $Judge0Container
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not connect Judge0 to the Supabase Docker network."
-    }
-}
-
-Write-Host "PASS: Judge0 exposes $($judge0Languages.Count) installed language runtimes." -ForegroundColor Green
-Write-Host "PASS: Judge0 authentication was detected and kept server-side: $(-not [string]::IsNullOrWhiteSpace($judge0AuthnToken))" -ForegroundColor Green
+Write-Host "PASS: go-judge authenticated successfully." -ForegroundColor Green
+Write-Host "PASS: go-judge executed isolated Python successfully." -ForegroundColor Green
+Write-Host "PASS: go-judge is attached to the local Supabase Docker network." -ForegroundColor Green
 
 $functionEnv = @"
-JUDGE0_URL=http://${Judge0Container}:2358
-JUDGE0_AUTHN_HEADER=$judge0AuthnHeader
-JUDGE0_AUTHN_TOKEN=$judge0AuthnToken
-JUDGE0_AUTHZ_HEADER=$judge0AuthzHeader
-JUDGE0_AUTHZ_TOKEN=$judge0AuthzToken
+GO_JUDGE_URL=http://${GoJudgeContainer}:5050
+GO_JUDGE_TOKEN=$goJudgeToken
 LMS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 "@
 Write-Utf8WithoutBom -Path $functionEnvPath -Value $functionEnv
@@ -330,7 +253,7 @@ try {
         -c "select q.id::text || '|' || encode(convert_to(q.reference_solution, 'UTF8'), 'hex') from public.coding_questions q where q.is_published = true and nullif(trim(q.reference_solution), '') is not null and exists (select 1 from public.coding_question_test_cases t where t.question_id = q.id and t.is_hidden = false) and exists (select 1 from public.coding_question_test_cases t where t.question_id = q.id and t.is_hidden = true) order by q.frequency_score desc, q.created_at limit 1;"
 
     if ($LASTEXITCODE -ne 0 -or -not $questionRecord) {
-        throw "No published coding question with a reference solution and tests is available."
+        throw "No published coding question with a reference solution and visible/hidden tests is available."
     }
 
     $questionParts = ([string]$questionRecord).Trim() -split "\|", 2
@@ -350,7 +273,7 @@ try {
         kind = "practice"
         questionId = $questionId
         code = $referenceSolution
-        languageId = $judge0PythonId
+        languageId = $goJudgeLanguageId
     } | ConvertTo-Json -Depth 5
 
     $gradingResult = $null
@@ -392,12 +315,29 @@ try {
             kind = "sample"
             questionId = $questionId
             code = $referenceSolution
-            languageId = $judge0PythonId
+            languageId = $goJudgeLanguageId
         } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 30
 
     if (-not $sampleResult.executed -or -not $sampleResult.allPassed) {
         throw "The server-side sample test flow failed."
+    }
+
+    $customResult = Invoke-RestMethod `
+        -Uri $functionUrl `
+        -Method Post `
+        -Headers $requestHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            kind = "custom"
+            code = 'print("custom-ok")'
+            input = ""
+            languageId = $goJudgeLanguageId
+        } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 30
+
+    if (-not $customResult.executed -or -not $customResult.result.passed -or [string]$customResult.result.actual -ne "custom-ok") {
+        throw "The server-side custom-input execution flow failed."
     }
 
     $publicTests = @($gradingResult.tests)
@@ -441,8 +381,9 @@ try {
         throw "The verified grading audit row was not persisted."
     }
 
-    Write-Host "PASS: LMS Edge Function reached the isolated runner." -ForegroundColor Green
+    Write-Host "PASS: LMS Edge Function reached the Kaveri go-judge runner." -ForegroundColor Green
     Write-Host "PASS: The server-side Run Sample Tests flow passed." -ForegroundColor Green
+    Write-Host "PASS: The server-side custom-input flow passed." -ForegroundColor Green
     Write-Host "PASS: A real authenticated student solution passed hidden final tests." -ForegroundColor Green
     Write-Host "PASS: Visible comparisons were returned and hidden test data stayed private." -ForegroundColor Green
     Write-Host "PASS: The verified result and audit row were persisted." -ForegroundColor Green
