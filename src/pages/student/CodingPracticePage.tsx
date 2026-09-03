@@ -112,6 +112,20 @@ function starterCodeFor(question: CodingQuestion, language: JudgeLanguage) {
   return `${languageDetails(language.name).comment}Write your ${language.name} solution here\n`;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export default function CodingPracticePage() {
   const { questionId } = useParams<{ questionId?: string }>();
   const navigate = useNavigate();
@@ -314,7 +328,11 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     ) => {
       let judgeLanguages: JudgeLanguage[] = [];
       try {
-        judgeLanguages = await getSecureJudgeLanguages();
+        judgeLanguages = await withTimeout(
+          getSecureJudgeLanguages(),
+          8000,
+          'The grading service did not respond in time.',
+        );
         if (judgeLanguages.length === 0) throw new Error('No grading languages were returned.');
       } catch (error) {
         // The grader is unavailable, but the question itself is fine: keep the
@@ -415,7 +433,11 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     setCheckingLanguages(true);
     setGraderError(null);
     try {
-      const judgeLanguages = await getSecureJudgeLanguages();
+      const judgeLanguages = await withTimeout(
+        getSecureJudgeLanguages(),
+        8000,
+        'The grading service did not respond in time.',
+      );
       if (judgeLanguages.length === 0) throw new Error('No grading languages were returned.');
       const previousAttempt = attemptRef.current;
       const previousLanguage = judgeLanguages.find(language => language.id === previousAttempt?.language_id);
