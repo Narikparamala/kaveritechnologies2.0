@@ -104,7 +104,8 @@ export default function CourseDetailPage() {
   const toggleChapter = (chapterId: string) => {
     setOpenChapters(prev => {
       const next = new Set(prev);
-      next.has(chapterId) ? next.delete(chapterId) : next.add(chapterId);
+      if (next.has(chapterId)) next.delete(chapterId);
+      else next.add(chapterId);
       return next;
     });
   };

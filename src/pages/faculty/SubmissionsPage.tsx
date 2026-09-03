@@ -195,7 +195,7 @@ export default function SubmissionsPage() {
                       <div className="flex items-center gap-2">
                         <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold">{idx + 1}</span>
                         <h5 className="font-bold text-slate-900 dark:text-white">{q.title}</h5>
-                        <Badge variant="secondary" className="text-[10px] uppercase">{q.question_type}</Badge>
+                        <Badge variant="default" className="text-[10px] uppercase">{q.question_type}</Badge>
                       </div>
                       <span className="text-xs text-slate-400">Max Marks: {q.marks}</span>
                     </div>

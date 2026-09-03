@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { LiveSession, SessionAttendance, SessionResource } from '../types/database';
 
-export interface SessionWithDetails extends LiveSession {
+export interface SessionWithDetails extends Omit<LiveSession, 'course' | 'faculty'> {
   course?: { id: string; title: string; slug: string };
   faculty?: { id: string; full_name: string | null; avatar_url: string | null };
   attendance?: SessionAttendance;
@@ -100,6 +100,16 @@ export async function createGoogleMeet(params: {
 
 // Student: Get all sessions for enrolled courses
 export async function getStudentSessions(studentId: string): Promise<SessionWithDetails[]> {
+  const { data: enrollmentRows, error: enrollmentError } = await supabase
+    .from('course_enrollments')
+    .select('course_id')
+    .eq('student_id', studentId)
+    .eq('access_status', 'active');
+
+  if (enrollmentError) throw enrollmentError;
+  const courseIds = Array.from(new Set((enrollmentRows ?? []).map(enrollment => enrollment.course_id)));
+  if (!courseIds.length) return [];
+
   const { data, error } = await supabase
     .from('live_sessions')
     .select(`
@@ -108,11 +118,7 @@ export async function getStudentSessions(studentId: string): Promise<SessionWith
       created_by,
       faculty:profiles!live_sessions_created_by_fkey(id, full_name, avatar_url)
     `)
-    .in('course_id', (
-      supabase.from('course_enrollments')
-        .select('course_id')
-        .eq('student_id', studentId)
-    ))
+    .in('course_id', courseIds)
     .order('session_date', { ascending: true });
 
   if (error) throw error;
@@ -441,7 +447,9 @@ export async function getSessionStats(): Promise<{
 }
 
 // Check if session is joinable (live or within 15 minutes of start)
-export function isSessionJoinable(session: LiveSession): boolean {
+type SessionTiming = Pick<LiveSession, 'session_date' | 'duration_minutes' | 'status'>;
+
+export function isSessionJoinable(session: SessionTiming): boolean {
   const now = new Date();
   const sessionStart = new Date(session.session_date);
   const sessionEnd = new Date(sessionStart.getTime() + session.duration_minutes * 60000);
@@ -455,7 +463,7 @@ export function isSessionJoinable(session: LiveSession): boolean {
 }
 
 // Get relative time until session
-export function getTimeUntilSession(session: LiveSession): string {
+export function getTimeUntilSession(session: Pick<LiveSession, 'session_date'>): string {
   const now = new Date();
   const sessionDate = new Date(session.session_date);
   const diff = sessionDate.getTime() - now.getTime();

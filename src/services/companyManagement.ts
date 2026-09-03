@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { setPlatformUserRole } from './userAdministration';
 import type {
   FacultyEmployment, FacultyCompensationHistory, FacultyPerformanceReview,
   StudentSupportRecord, Profile, Course, CourseEnrollment, CourseFaculty,
@@ -52,20 +53,26 @@ export async function createFacultyEmployment(input: {
   return data as FacultyEmployment;
 }
 
-export async function updateFacultyEmployment(facultyId: string, input: Partial<{
-  employee_code: string;
-  employment_status: 'active' | 'probation' | 'on_leave' | 'inactive' | 'terminated';
-  joining_date: string;
-  department: string;
-  designation: string;
-  manager_id: string;
-  base_salary: number;
-  salary_currency: string;
-  payment_frequency: 'monthly' | 'bi_weekly' | 'weekly';
-  bank_details_masked: string;
-  benefits: Record<string, any>[];
-  notes: string;
-}>): Promise<FacultyEmployment> {
+type FacultyEmploymentUpdate = Partial<Pick<
+  FacultyEmployment,
+  | 'employee_code'
+  | 'employment_status'
+  | 'joining_date'
+  | 'department'
+  | 'designation'
+  | 'manager_id'
+  | 'base_salary'
+  | 'salary_currency'
+  | 'payment_frequency'
+  | 'bank_details_masked'
+  | 'benefits'
+  | 'notes'
+>>;
+
+export async function updateFacultyEmployment(
+  facultyId: string,
+  input: FacultyEmploymentUpdate,
+): Promise<FacultyEmployment> {
   const { data, error } = await supabase
     .from('faculty_employment')
     .update(input)
@@ -255,14 +262,22 @@ export async function getFacultyStats(facultyId: string): Promise<{
     .select('*', { count: 'exact', head: true })
     .in('course_id', courseIds);
 
-  // Count pending submissions for faculty's courses
+  // Supabase's .in() accepts values, not a nested query builder.
+  const { data: assignmentRows, error: assignmentError } = await supabase
+    .from('assignments')
+    .select('id')
+    .in('course_id', courseIds);
+
+  if (assignmentError) throw assignmentError;
+  const assignmentIds = (assignmentRows ?? []).map(assignment => assignment.id);
+
+  // Count pending submissions for faculty's courses.
+  // Avoid an empty .in(), which PostgREST cannot represent consistently.
   const { count: pendingSubmissions } = await supabase
     .from('assignment_submissions')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'submitted')
-    .in('assignment_id',
-      supabase.from('assignments').select('id').in('course_id', courseIds)
-    );
+    .in('assignment_id', assignmentIds.length ? assignmentIds : ['00000000-0000-0000-0000-000000000000']);
 
   // Count upcoming live sessions
   const { count: upcomingSessions } = await supabase
@@ -406,41 +421,9 @@ export async function removeFacultyFromCourse(courseId: string, facultyId: strin
 // ============================================================
 
 export async function promoteUserToFaculty(userId: string): Promise<Profile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ role: 'faculty' })
-    .eq('id', userId)
-    .select('*')
-    .single();
-  if (error) throw error;
-
-  // Create employment record if not exists
-  const { error: empError } = await supabase
-    .from('faculty_employment')
-    .insert({ faculty_id: userId, employment_status: 'active' });
-
-  // Ignore duplicate key error
-  if (empError && !empError.message.includes('duplicate')) {
-    throw empError;
-  }
-
-  return data as Profile;
+  return setPlatformUserRole(userId, 'faculty');
 }
 
 export async function demoteFacultyToStudent(facultyId: string): Promise<Profile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ role: 'student' })
-    .eq('id', facultyId)
-    .select('*')
-    .single();
-  if (error) throw error;
-
-  // Update employment status to inactive
-  await supabase
-    .from('faculty_employment')
-    .update({ employment_status: 'inactive' })
-    .eq('faculty_id', facultyId);
-
-  return data as Profile;
+  return setPlatformUserRole(facultyId, 'student');
 }

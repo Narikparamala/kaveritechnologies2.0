@@ -1,26 +1,41 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   Building2,
   CheckCircle2,
+  Clock3,
   Code2,
+  Cpu,
+  Eye,
+  EyeOff,
   Filter,
   Flame,
+  GripVertical,
   Loader2,
   Play,
   Search,
   Send,
   Tag,
+  Terminal,
   XCircle,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
-import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { runPython } from '../../services/pythonExecution';
+import {
+  getSecureJudgeLanguages,
+  securelyGradePractice,
+  securelyRunCustom,
+  securelyRunSamples,
+  type JudgeLanguage,
+  type SecureCustomResult,
+  type SecurePracticeResult,
+  type SecureTestResult,
+} from '../../services/secureGrading';
 
 const MonacoEditor = lazy(() =>
   import('@monaco-editor/react').then(module => ({ default: module.default })),
@@ -46,6 +61,7 @@ type CodingQuestion = {
   tags: string[];
   company_tags: string[];
   frequency_score: number;
+  language: string;
   default_marks: number;
   is_published: boolean;
 };
@@ -60,14 +76,7 @@ type QuestionTestCase = {
   order_index: number;
 };
 
-type TestResult = {
-  id: string;
-  input: string;
-  expected: string;
-  actual: string;
-  hidden: boolean;
-  passed: boolean;
-};
+type ResultTab = 'tests' | 'custom' | 'output';
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -77,42 +86,29 @@ function errorMessage(error: unknown) {
   return 'Something went wrong';
 }
 
-function normalizeOutput(value: string) {
-  return value.replace(/\r\n/g, '\n').trim();
+function languageDetails(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes('typescript')) return { monaco: 'typescript', file: 'main.ts', comment: '// ' };
+  if (normalized.includes('javascript')) return { monaco: 'javascript', file: 'main.js', comment: '// ' };
+  if (normalized.includes('python')) return { monaco: 'python', file: 'main.py', comment: '# ' };
+  if (normalized.includes('c++')) return { monaco: 'cpp', file: 'main.cpp', comment: '// ' };
+  if (/^c \(/.test(normalized)) return { monaco: 'c', file: 'main.c', comment: '// ' };
+  if (normalized.includes('c#')) return { monaco: 'csharp', file: 'Main.cs', comment: '// ' };
+  if (normalized.includes('java')) return { monaco: 'java', file: 'Main.java', comment: '// ' };
+  if (normalized.includes('kotlin')) return { monaco: 'kotlin', file: 'Main.kt', comment: '// ' };
+  if (normalized.includes('go ')) return { monaco: 'go', file: 'main.go', comment: '// ' };
+  if (normalized.includes('rust')) return { monaco: 'rust', file: 'main.rs', comment: '// ' };
+  if (normalized.includes('ruby')) return { monaco: 'ruby', file: 'main.rb', comment: '# ' };
+  if (normalized.includes('php')) return { monaco: 'php', file: 'main.php', comment: '// ' };
+  if (normalized.includes('swift')) return { monaco: 'swift', file: 'main.swift', comment: '// ' };
+  if (normalized.includes('bash')) return { monaco: 'shell', file: 'main.sh', comment: '# ' };
+  if (normalized.includes('sql')) return { monaco: 'sql', file: 'query.sql', comment: '-- ' };
+  return { monaco: 'plaintext', file: 'main.txt', comment: '// ' };
 }
 
-function codeWithInput(code: string, input: string) {
-  return `import sys\nfrom io import StringIO\nsys.stdin = StringIO(${JSON.stringify(input)})\n${code}`;
-}
-
-async function executeCode(code: string, input: string) {
-  const result = await runPython(codeWithInput(code, input));
-  if (!result.success) throw new Error(result.error || 'Code execution failed');
-  return normalizeOutput(result.output ?? '');
-}
-
-async function executeTest(code: string, testCase: QuestionTestCase): Promise<TestResult> {
-  try {
-    const actual = await executeCode(code, testCase.input_data ?? '');
-    const expected = normalizeOutput(testCase.expected_output);
-    return {
-      id: testCase.id,
-      input: testCase.input_data ?? '',
-      expected,
-      actual,
-      hidden: testCase.is_hidden,
-      passed: actual === expected,
-    };
-  } catch (error) {
-    return {
-      id: testCase.id,
-      input: testCase.input_data ?? '',
-      expected: normalizeOutput(testCase.expected_output),
-      actual: `Error: ${errorMessage(error)}`,
-      hidden: testCase.is_hidden,
-      passed: false,
-    };
-  }
+function starterCodeFor(question: CodingQuestion, language: JudgeLanguage) {
+  if (/^Python \(3\./i.test(language.name) && question.starter_code) return question.starter_code;
+  return `${languageDetails(language.name).comment}Write your ${language.name} solution here\n`;
 }
 
 export default function CodingPracticePage() {
@@ -189,7 +185,7 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="mx-auto max-w-7xl animate-fade-in p-6 lg:p-8">
       <PageHeader
         title="Coding Practice"
-        subtitle="Practice reusable Python questions and prepare for technical interviews"
+        subtitle="Solve interview problems in any runtime installed on the Kaveri Judge0 server"
         icon={Code2}
       />
 
@@ -282,14 +278,22 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
 }
 
 function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack: () => void }) {
-  const { profile } = useAuth();
   const { success, error: toastError } = useToast();
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [question, setQuestion] = useState<CodingQuestion | null>(null);
   const [testCases, setTestCases] = useState<QuestionTestCase[]>([]);
+  const [languages, setLanguages] = useState<JudgeLanguage[]>([]);
+  const [selectedLanguageId, setSelectedLanguageId] = useState<number | null>(null);
+  const [codeByLanguage, setCodeByLanguage] = useState<Record<number, string>>({});
   const [code, setCode] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [customOutput, setCustomOutput] = useState('');
-  const [results, setResults] = useState<TestResult[]>([]);
+  const [customResult, setCustomResult] = useState<SecureCustomResult | null>(null);
+  const [results, setResults] = useState<SecureTestResult[]>([]);
+  const [finalResult, setFinalResult] = useState<SecurePracticeResult | null>(null);
+  const [resultTab, setResultTab] = useState<ResultTab>('tests');
+  const [problemPaneWidth, setProblemPaneWidth] = useState(47);
+  const [resizing, setResizing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -300,7 +304,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     const load = async () => {
       setLoading(true);
       try {
-        const [questionResponse, testsResponse] = await Promise.all([
+        const [questionResponse, testsResponse, judgeLanguages, attemptResponse] = await Promise.all([
           supabase.rpc('get_student_coding_questions', { p_question_id: questionId }),
           supabase
             .from('coding_question_test_cases')
@@ -308,19 +312,38 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             .eq('question_id', questionId)
             .eq('is_hidden', false)
             .order('order_index', { ascending: true }),
+          getSecureJudgeLanguages(),
+          supabase
+            .from('coding_question_attempts')
+            .select('submitted_code,language_id')
+            .eq('question_id', questionId)
+            .maybeSingle(),
         ]);
 
         if (questionResponse.error) throw questionResponse.error;
         if (testsResponse.error) throw testsResponse.error;
+        if (attemptResponse.error) throw attemptResponse.error;
 
         const loadedQuestion = questionResponse.data?.[0] as CodingQuestion | undefined;
         if (!loadedQuestion) throw new Error('Coding question is unavailable.');
         const loadedTests = (testsResponse.data ?? []) as QuestionTestCase[];
+        const previousAttempt = attemptResponse.data as { submitted_code: string | null; language_id: number | null } | null;
+        const previousLanguage = judgeLanguages.find(language => language.id === previousAttempt?.language_id);
+        const preferredLanguage = previousLanguage
+          ?? judgeLanguages.find(language => language.name.toLowerCase().startsWith(loadedQuestion.language.toLowerCase()))
+          ?? judgeLanguages.find(language => /^Python \(3\./i.test(language.name))
+          ?? judgeLanguages[0];
+        if (!preferredLanguage) throw new Error('Judge0 did not return any available languages.');
         if (!active) return;
 
         setQuestion(loadedQuestion);
         setTestCases(loadedTests);
-        setCode(loadedQuestion.starter_code || '# Write your Python code here\n');
+        setLanguages(judgeLanguages);
+        setSelectedLanguageId(preferredLanguage.id);
+        const initialCode = (previousLanguage && previousAttempt?.submitted_code)
+          || starterCodeFor(loadedQuestion, preferredLanguage);
+        setCode(initialCode);
+        setCodeByLanguage({ [preferredLanguage.id]: initialCode });
         setCustomInput(loadedTests.find(test => !test.is_hidden)?.input_data ?? '');
       } catch (error) {
         toastError('Could not open question', errorMessage(error));
@@ -333,16 +356,70 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     return () => { active = false; };
   }, [questionId, toastError]);
 
+  useEffect(() => {
+    if (!resizing) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const container = splitContainerRef.current;
+      if (!container) return;
+      const bounds = container.getBoundingClientRect();
+      const nextWidth = ((event.clientX - bounds.left) / bounds.width) * 100;
+      setProblemPaneWidth(Math.min(70, Math.max(30, nextWidth)));
+    };
+    const stopResizing = () => setResizing(false);
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing, { once: true });
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+    };
+  }, [resizing]);
+
   const visibleTests = testCases.filter(test => !test.is_hidden);
+  const selectedLanguage = languages.find(language => language.id === selectedLanguageId) ?? null;
+  const editorLanguage = languageDetails(selectedLanguage?.name ?? 'Plain Text');
+
+  const changeLanguage = (nextLanguageId: number) => {
+    if (!question || nextLanguageId === selectedLanguageId) return;
+    const nextLanguage = languages.find(language => language.id === nextLanguageId);
+    if (!nextLanguage) return;
+
+    const nextCodes = selectedLanguageId == null
+      ? codeByLanguage
+      : { ...codeByLanguage, [selectedLanguageId]: code };
+    const nextCode = nextCodes[nextLanguageId] ?? starterCodeFor(question, nextLanguage);
+    setCodeByLanguage({ ...nextCodes, [nextLanguageId]: nextCode });
+    setSelectedLanguageId(nextLanguageId);
+    setCode(nextCode);
+    setResults([]);
+    setFinalResult(null);
+    setCustomOutput('');
+    setCustomResult(null);
+    setResultTab('tests');
+  };
 
   const runCustomInput = async () => {
-    if (!code.trim()) return;
+    if (!code.trim() || !selectedLanguageId) return;
     setRunning(true);
+    setFinalResult(null);
+    setCustomResult(null);
+    setResultTab('output');
     setCustomOutput('Running...');
     try {
-      const output = await executeCode(code, customInput);
+      const response = await securelyRunCustom(code, customInput, selectedLanguageId);
+      setCustomResult(response);
+      const output = response.result.passed
+        ? response.result.actual
+        : response.result.stderr || response.result.actual || statusLabel(response.result.status);
       setCustomOutput(output || '(Program finished without output)');
     } catch (error) {
+      setCustomResult(null);
       setCustomOutput(`Error: ${errorMessage(error)}`);
     } finally {
       setRunning(false);
@@ -350,90 +427,79 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   };
 
   const runSampleTests = async () => {
-    if (!code.trim()) return;
+    if (!question || !code.trim() || !selectedLanguageId) return;
     setRunning(true);
+    setFinalResult(null);
+    setCustomResult(null);
+    setResults([]);
+    setResultTab('tests');
     try {
-      setResults(await Promise.all(visibleTests.map(test => executeTest(code, test))));
+      const response = await securelyRunSamples(question.id, code, selectedLanguageId);
+      setResults(response.tests.filter(test => !test.hidden));
+    } catch (error) {
+      toastError('Sample tests could not run', errorMessage(error));
+      setCustomOutput(`Sample test error: ${errorMessage(error)}`);
+      setResultTab('output');
     } finally {
       setRunning(false);
     }
   };
 
   const submitSolution = async () => {
-    if (!question || !code.trim()) return;
+    if (!question || !code.trim() || !selectedLanguageId) return;
     setSubmitting(true);
+    setFinalResult(null);
+    setCustomResult(null);
+    setResultTab('tests');
     try {
-      const allResults = await Promise.all(testCases.map(test => executeTest(code, test)));
-      setResults(allResults.filter(result => !result.hidden));
-      const passed = allResults.filter(result => result.passed).length;
-      const visibleTestsPassed = passed === allResults.length && allResults.length > 0;
-
-      if (profile) {
-        const { data: previous } = await supabase
-          .from('coding_question_attempts')
-          .select('attempts_count, first_solved_at')
-          .eq('question_id', question.id)
-          .eq('student_id', profile.id)
-          .maybeSingle();
-
-        const { error } = await supabase.from('coding_question_attempts').upsert({
-          question_id: question.id,
-          student_id: profile.id,
-          submitted_code: code,
-          // Browser results are provisional. Verified solved status is reserved
-          // for the future isolated grading service or an authorised reviewer.
-          status: 'attempted',
-          attempts_count: Number(previous?.attempts_count ?? 0) + 1,
-          passed_test_cases: 0,
-          total_test_cases: 0,
-          last_execution_output: allResults.map(result => result.actual).join('\n---\n'),
-          first_solved_at: previous?.first_solved_at,
-          last_attempted_at: new Date().toISOString(),
-        }, { onConflict: 'question_id,student_id' });
-
-        if (error) throw error;
-      }
-
-      if (visibleTestsPassed) {
-        success('Visible tests passed!', 'Your practice attempt was saved. Verified grading will run securely later.');
+      const result = await securelyGradePractice(question.id, code, selectedLanguageId);
+      setFinalResult(result);
+      if (result.allPassed) {
+        success('Solution verified!', 'All visible and hidden tests passed securely.');
       } else {
-        toastError('Tests failed', `${allResults.length - passed} of ${allResults.length} test case(s) failed. Change your code and try again.`);
+        toastError('Final tests failed', `${result.total - result.passed} final test case(s) failed. Hidden test details remain protected.`);
       }
     } catch (error) {
-      toastError('Could not submit solution', errorMessage(error));
+      toastError('Could not securely grade solution', errorMessage(error));
+      setCustomOutput(`Secure grading error: ${errorMessage(error)}`);
+      setResultTab('output');
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return <div className="flex min-h-[500px] items-center justify-center"><Loader2 className="animate-spin text-primary-500" /></div>;
+    return <div className="flex h-screen items-center justify-center bg-slate-950"><Loader2 className="animate-spin text-primary-500" /></div>;
   }
 
   if (!question) {
-    return <EmptyState icon={XCircle} title="Question not found" description="Return to Coding Practice and select another question." />;
+    return <div className="flex h-screen items-center justify-center"><EmptyState icon={XCircle} title="Question not found" description="Return to Coding Practice and select another question." /></div>;
   }
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-950">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <header className="z-10 flex h-14 flex-none items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button onClick={onBack} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Back to question bank">
             <ArrowLeft size={19} />
           </button>
           <div className="min-w-0">
             <h1 className="truncate font-bold text-slate-900 dark:text-white">{question.title}</h1>
-            <p className="text-xs text-slate-500">{question.topic} · {question.difficulty}</p>
+            <p className="text-xs text-slate-500">{question.topic} · {question.difficulty} · Judge0 workspace</p>
           </div>
         </div>
-        <button disabled={submitting || running} onClick={() => void submitSolution()} className="btn-primary flex items-center gap-2">
+        <button disabled={submitting || running || !selectedLanguageId} onClick={() => void submitSolution()} className="btn-primary flex items-center gap-2 !px-4 !py-2 text-sm">
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           Submit
         </button>
       </header>
 
-      <div className="grid min-h-[calc(100vh-150px)] xl:grid-cols-2">
-        <section className="overflow-y-auto border-r border-slate-200 p-5 dark:border-slate-800 lg:p-7">
+      <div
+        ref={splitContainerRef}
+        style={{ '--problem-pane-width': `${problemPaneWidth}%` } as CSSProperties}
+        className="grid min-h-0 flex-1 grid-rows-[minmax(420px,auto)_minmax(720px,auto)] overflow-y-auto lg:grid-cols-[var(--problem-pane-width)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
+      >
+        <section className="overflow-y-auto p-5 lg:p-7">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant={question.difficulty === 'easy' ? 'success' : question.difficulty === 'medium' ? 'warning' : 'error'}>
               {question.difficulty}
@@ -477,68 +543,143 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           )}
         </section>
 
-        <section className="flex min-h-[700px] flex-col bg-slate-950">
-          <div className="border-b border-slate-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Python Editor</div>
-          <div className="min-h-[360px] flex-1">
+        <button
+          type="button"
+          role="separator"
+          aria-label="Resize problem and editor panes"
+          aria-orientation="vertical"
+          aria-valuemin={30}
+          aria-valuemax={70}
+          aria-valuenow={Math.round(problemPaneWidth)}
+          onPointerDown={() => setResizing(true)}
+          onKeyDown={event => {
+            if (event.key === 'ArrowLeft') setProblemPaneWidth(width => Math.max(30, width - 2));
+            if (event.key === 'ArrowRight') setProblemPaneWidth(width => Math.min(70, width + 2));
+          }}
+          className="group relative hidden cursor-col-resize items-center justify-center border-x border-slate-300 bg-slate-200 outline-none hover:bg-primary-500 focus-visible:bg-primary-500 dark:border-slate-700 dark:bg-slate-800 lg:flex"
+        >
+          <span className="absolute flex h-12 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm group-hover:border-primary-400 group-hover:text-primary-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400">
+            <GripVertical size={14} />
+          </span>
+        </button>
+
+        <section className="flex min-h-[720px] min-w-0 flex-col bg-slate-950 lg:min-h-0">
+          <div className="flex h-11 flex-none items-center justify-between border-b border-slate-800 px-4">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+              <Terminal size={14} className="text-primary-400" />
+              <span>{editorLanguage.file}</span>
+            </div>
+            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <span className="hidden sm:inline">Language</span>
+              <select
+                value={selectedLanguageId ?? ''}
+                disabled={!languages.length || running || submitting}
+                onChange={event => changeLanguage(Number(event.target.value))}
+                className="max-w-64 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-200 outline-none focus:border-primary-500"
+                aria-label="Programming language"
+              >
+                {languages.map(language => <option key={language.id} value={language.id}>{language.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="min-h-[320px] flex-1 lg:min-h-0">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading editor...</div>}>
               <MonacoEditor
                 height="100%"
-                language="python"
+                language={editorLanguage.monaco}
                 theme="vs-dark"
                 value={code}
                 onChange={value => setCode(value ?? '')}
-                options={{ minimap: { enabled: false }, fontSize: 14, automaticLayout: true, padding: { top: 14 } }}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  automaticLayout: true,
+                  padding: { top: 14 },
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                }}
               />
             </Suspense>
           </div>
 
-          <div className="border-t border-slate-800 bg-slate-900 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Input, output & tests</span>
+          <div className="flex h-[390px] min-h-[300px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%]">
+            <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+              <div className="flex items-center gap-1" role="tablist" aria-label="Code execution panels">
+                <PanelTab active={resultTab === 'tests'} onClick={() => setResultTab('tests')}>
+                  Test Results
+                  {(finalResult || results.length > 0) && (
+                    <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px]">
+                      {finalResult?.total ?? results.length}
+                    </span>
+                  )}
+                </PanelTab>
+                <PanelTab active={resultTab === 'custom'} onClick={() => setResultTab('custom')}>Input</PanelTab>
+                <PanelTab active={resultTab === 'output'} onClick={() => setResultTab('output')}>Output</PanelTab>
+              </div>
               <div className="flex gap-2">
-                <button disabled={running} onClick={() => void runSampleTests()} className="btn-secondary flex items-center gap-2 text-sm">
-                  {running ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Sample Tests
+                <button disabled={running || submitting || visibleTests.length === 0 || !selectedLanguageId} onClick={() => void runSampleTests()} className="btn-secondary flex items-center gap-2 !px-3 !py-1.5 text-xs">
+                  {running ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Run Sample Tests
                 </button>
-                <button disabled={running} onClick={() => void runCustomInput()} className="btn-primary flex items-center gap-2 text-sm">
-                  <Play size={14} /> Run Input
+                <button disabled={running || submitting || !selectedLanguageId} onClick={() => void runCustomInput()} className="btn-primary flex items-center gap-2 !px-3 !py-1.5 text-xs">
+                  {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run Input
                 </button>
               </div>
             </div>
 
-            <textarea
-              className="input min-h-20 w-full resize-y font-mono text-sm"
-              value={customInput}
-              onChange={event => setCustomInput(event.target.value)}
-              placeholder="Enter custom input here..."
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {resultTab === 'tests' && (
+                <TestResultsPanel
+                  finalResult={finalResult}
+                  sampleResults={results}
+                  running={running}
+                  submitting={submitting}
+                  maxScore={question.default_marks}
+                />
+              )}
 
-            {customOutput && (
-              <div className="mt-3 rounded-xl bg-slate-950 p-3">
-                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Your output</p>
-                <pre className="max-h-36 overflow-auto whitespace-pre-wrap text-sm text-slate-100">{customOutput}</pre>
-              </div>
-            )}
+              {resultTab === 'custom' && (
+                <div className="flex h-full min-h-48 flex-col gap-3">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400" htmlFor="practice-custom-input">
+                    Standard input
+                  </label>
+                  <textarea
+                    id="practice-custom-input"
+                    className="min-h-28 flex-1 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                    value={customInput}
+                    onChange={event => setCustomInput(event.target.value)}
+                    placeholder={'Enter input exactly as the program should receive it.\nExample:\n5\n7'}
+                  />
+                  <div className="flex justify-end">
+                    <button disabled={running || submitting || !selectedLanguageId} onClick={() => void runCustomInput()} className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs">
+                      {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                      Execute Code
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            {results.length > 0 && (
-              <div className="mt-3 space-y-2">
-                <p className="text-sm text-slate-300">{results.filter(result => result.passed).length} of {results.length} visible tests passed</p>
-                {results.map((result, index) => (
-                  <div key={result.id} className={`rounded-xl border p-3 text-sm ${result.passed ? 'border-emerald-800 bg-emerald-950/40' : 'border-red-800 bg-red-950/40'}`}>
-                    <div className={`mb-2 flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {result.passed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-                      Test {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}
+              {resultTab === 'output' && (
+                <div className="h-full rounded-lg border border-slate-800 bg-slate-950 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <Terminal size={13} /> Program output
                     </div>
-                    {!result.passed && (
-                      <div className="grid gap-3 text-xs sm:grid-cols-3">
-                        <ResultValue label="Input" value={result.input || '(no input)'} />
-                        <ResultValue label="Expected" value={result.expected} />
-                        <ResultValue label="Your output" value={result.actual} />
+                    {customResult && (
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                        <span className={customResult.result.passed ? 'text-emerald-400' : 'text-red-400'}>
+                          {statusLabel(customResult.result.status)}
+                        </span>
+                        {customResult.result.timeMs != null && <span>{customResult.result.timeMs} ms</span>}
+                        {customResult.result.memoryKb != null && <span>{customResult.result.memoryKb} KB</span>}
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
+                  <pre className="max-h-full overflow-auto whitespace-pre-wrap font-mono text-sm text-slate-100">
+                    {customOutput || 'Run with custom input to see stdout and errors here.'}
+                  </pre>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>
@@ -555,6 +696,243 @@ function InfoBlock({ title, content }: { title: string; content: string }) {
   );
 }
 
-function ResultValue({ label, value }: { label: string; value: string }) {
-  return <div><span className="text-slate-500">{label}</span><pre className="mt-1 whitespace-pre-wrap text-slate-200">{value}</pre></div>;
+function PanelTab({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${active ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TestResultsPanel({
+  finalResult,
+  sampleResults,
+  running,
+  submitting,
+  maxScore,
+}: {
+  finalResult: SecurePracticeResult | null;
+  sampleResults: SecureTestResult[];
+  running: boolean;
+  submitting: boolean;
+  maxScore: number;
+}) {
+  if (running || submitting) {
+    return (
+      <div className="flex h-full min-h-44 flex-col items-center justify-center gap-3 text-slate-400" role="status">
+        <Loader2 size={24} className="animate-spin text-primary-400" />
+        <p className="text-sm">{submitting ? 'Running visible and protected hidden tests…' : 'Running sample tests…'}</p>
+      </div>
+    );
+  }
+
+  if (finalResult) {
+    return <SecureFinalResults result={finalResult} maxScore={maxScore} />;
+  }
+
+  if (sampleResults.length > 0) {
+    const passed = sampleResults.filter(result => result.passed).length;
+    return (
+      <div className="space-y-3">
+        <ResultSummary
+          passed={passed}
+          total={sampleResults.length}
+          title={passed === sampleResults.length ? 'All sample tests passed' : 'Some sample tests failed'}
+          description="These are the visible examples from the question. Submit to run the complete protected test set."
+        />
+        {sampleResults.map((result, index) => (
+          <VisibleTestCard
+            key={result.id}
+            label={`Sample Test ${index + 1}`}
+            passed={result.passed}
+            input={result.input ?? ''}
+            expected={result.expected ?? ''}
+            actual={result.actual || result.stderr || ''}
+            status={result.status}
+            timeMs={result.timeMs}
+            memoryKb={result.memoryKb}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-44 flex-col items-center justify-center text-center text-slate-500">
+      <CheckCircle2 size={28} className="mb-3 text-slate-600" />
+      <p className="text-sm font-medium text-slate-300">No test run yet</p>
+      <p className="mt-1 max-w-sm text-xs leading-5">Run Sample Tests to compare expected and actual output, or Submit to run all visible and hidden tests securely.</p>
+    </div>
+  );
+}
+
+function SecureFinalResults({ result, maxScore }: { result: SecurePracticeResult; maxScore: number }) {
+  let visibleIndex = 0;
+  let hiddenIndex = 0;
+
+  return (
+    <div className="space-y-3" aria-live="polite">
+      <ResultSummary
+        passed={result.passed}
+        total={result.total}
+        title={result.allPassed ? 'All test cases passed' : 'Final test cases failed'}
+        description={result.allPassed
+          ? 'Your solution passed every visible and protected hidden test.'
+          : 'Review the visible results below. Hidden test data remains protected.'}
+      >
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <Metric label="Visible" value={`${result.visiblePassed}/${result.visibleTotal}`} />
+          <Metric label="Hidden" value={`${result.hiddenPassed}/${result.hiddenTotal}`} />
+          <Metric label="Score" value={`${result.score}/${maxScore}`} />
+          <Metric label="Peak time" value={`${result.maxTimeMs} ms`} />
+          <Metric label="Peak memory" value={`${result.maxMemoryKb} KB`} />
+        </div>
+      </ResultSummary>
+
+      {result.tests.map(test => {
+        const displayIndex = test.hidden ? ++hiddenIndex : ++visibleIndex;
+        return <SecureTestCard key={test.id} test={test} displayIndex={displayIndex} />;
+      })}
+    </div>
+  );
+}
+
+function ResultSummary({
+  passed,
+  total,
+  title,
+  description,
+  children,
+}: {
+  passed: number;
+  total: number;
+  title: string;
+  description: string;
+  children?: ReactNode;
+}) {
+  const allPassed = total > 0 && passed === total;
+  return (
+    <div className={`rounded-xl border p-3 ${allPassed ? 'border-emerald-700/60 bg-emerald-950/30' : 'border-red-700/60 bg-red-950/30'}`}>
+      <div className="flex items-start gap-3">
+        {allPassed
+          ? <CheckCircle2 size={20} className="mt-0.5 flex-none text-emerald-400" />
+          : <AlertTriangle size={20} className="mt-0.5 flex-none text-red-400" />}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={`font-semibold ${allPassed ? 'text-emerald-300' : 'text-red-300'}`}>{title}</p>
+            <span className="text-xs font-semibold text-slate-300">{passed} of {total} passed</span>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SecureTestCard({ test, displayIndex }: { test: SecureTestResult; displayIndex: number }) {
+  const label = test.hidden ? `Hidden Test ${displayIndex}` : `Visible Test ${displayIndex}`;
+  return (
+    <div className={`rounded-xl border p-3 ${test.passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className={`flex items-center gap-2 text-sm font-semibold ${test.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+          {test.hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+          {label}: {test.passed ? 'PASSED' : statusLabel(test.status)}
+        </div>
+        <div className="flex gap-3 text-[11px] text-slate-500">
+          {test.timeMs != null && <span className="flex items-center gap-1"><Clock3 size={11} />{test.timeMs} ms</span>}
+          {test.memoryKb != null && <span className="flex items-center gap-1"><Cpu size={11} />{test.memoryKb} KB</span>}
+        </div>
+      </div>
+
+      {test.hidden ? (
+        <p className="mt-2 text-xs text-slate-500">Input, expected output, and actual output are hidden to protect the final assessment.</p>
+      ) : (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <ResultValue label="Input" value={test.input || '(no input)'} />
+          <ResultValue label="Expected" value={test.expected || '(no output)'} />
+          <ResultValue label="Your Output" value={test.actual || test.stderr || '(no output)'} tone={test.passed ? 'success' : 'error'} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VisibleTestCard({
+  label,
+  passed,
+  input,
+  expected,
+  actual,
+  status,
+  timeMs,
+  memoryKb,
+}: {
+  label: string;
+  passed: boolean;
+  input: string;
+  expected: string;
+  actual: string;
+  status: SecureTestResult['status'];
+  timeMs: number | null;
+  memoryKb: number | null;
+}) {
+  return (
+    <div className={`rounded-xl border p-3 ${passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className={`flex items-center gap-2 text-sm font-semibold ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
+          {passed ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+          {label}: {passed ? 'PASSED' : statusLabel(status)}
+        </div>
+        <div className="flex gap-3 text-[11px] text-slate-500">
+          {timeMs != null && <span className="flex items-center gap-1"><Clock3 size={11} />{timeMs} ms</span>}
+          {memoryKb != null && <span className="flex items-center gap-1"><Cpu size={11} />{memoryKb} KB</span>}
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <ResultValue label="Input" value={input || '(no input)'} />
+        <ResultValue label="Expected" value={expected || '(no output)'} />
+        <ResultValue label="Your Output" value={actual || '(no output)'} tone={passed ? 'success' : 'error'} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-950/50 px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
+      <p className="mt-0.5 text-xs font-semibold text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function statusLabel(status: SecureTestResult['status']) {
+  return ({
+    accepted: 'PASSED',
+    wrong_answer: 'WRONG ANSWER',
+    time_limit: 'TIME LIMIT',
+    memory_limit: 'MEMORY LIMIT',
+    output_limit: 'OUTPUT LIMIT',
+    compile_error: 'COMPILATION ERROR',
+    runtime_error: 'RUNTIME ERROR',
+    internal_error: 'JUDGE ERROR',
+    execution_error: 'EXECUTION ERROR',
+  } as const)[status];
+}
+
+function ResultValue({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'success' | 'error' }) {
+  const toneClass = tone === 'success' ? 'text-emerald-300' : tone === 'error' ? 'text-red-300' : 'text-slate-200';
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+      <pre className={`mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-xs ${toneClass}`}>{value}</pre>
+    </div>
+  );
 }

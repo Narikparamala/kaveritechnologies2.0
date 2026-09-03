@@ -211,6 +211,11 @@ export default function App() {
                       <CourseWorkspace />
                     </RoleGuard>
                   } />
+                  <Route path="/student/coding-practice/:questionId" element={
+                    <RoleGuard allowedRoles={['student']}>
+                      <CodingPracticePage />
+                    </RoleGuard>
+                  } />
                   <Route path="/student/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['student']}><ProjectWorkspacePage mode="student" /></RoleGuard>} />
                   <Route path="/faculty/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['faculty', 'super_admin']}><ProjectWorkspacePage mode="faculty" /></RoleGuard>} />
 
@@ -231,7 +236,6 @@ export default function App() {
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
                     <Route path="coding-practice" element={<CodingPracticePage />} />
-                    <Route path="coding-practice/:questionId" element={<CodingPracticePage />} />
                     <Route path="quizzes" element={<QuizzesPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
                     <Route path="jobs" element={<JobsPage />} />
@@ -324,9 +328,9 @@ export default function App() {
                     <Route path="placements" element={<AdminPlacementsPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
-                    <Route path="storage" element={<ComingSoon title="Storage Manager" />} />
+                    <Route path="storage" element={<Navigate to="/admin/settings" replace />} />
                     <Route path="settings" element={<PlatformSettingsPage />} />
-                    <Route path="roles" element={<ComingSoon title="Roles & Permissions" />} />
+                    <Route path="roles" element={<Navigate to="/admin/users" replace />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>
 

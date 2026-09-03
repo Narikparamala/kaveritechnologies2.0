@@ -24,7 +24,7 @@ import {
   TEACHING_MODE_LABELS,
   TEACHING_STATUS_LABELS,
 } from '../../services/facultyTeachingWork';
-import type { Assignment, FacultyTeachingWork, LiveSession, Project } from '../../types/database';
+import type { Assignment, FacultyTeachingWork, Project } from '../../types/database';
 
 type EventType = 'live_session' | 'assignment' | 'project' | 'teaching_work';
 type EventFilter = 'all' | EventType | 'deadlines';
@@ -167,7 +167,8 @@ export default function FacultyCalendarPage() {
 
   const loadEvents = useCallback(async (isRefresh = false) => {
     if (!profile?.id) return;
-    isRefresh ? setRefreshing(true) : setLoading(true);
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
 
     try {
       const { data: courseRows, error: courseError } = await supabase
@@ -228,7 +229,7 @@ export default function FacultyCalendarPage() {
       const items: FacultyCalendarEvent[] = [];
       const sessionIds = new Set(sessions.map(session => session.id));
 
-      sessions.forEach((session: LiveSession) => {
+      sessions.forEach(session => {
         items.push({
           id: session.id,
           type: 'live_session',

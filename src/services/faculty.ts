@@ -868,11 +868,11 @@ export async function grantEnrollment(input: {
     throw new Error('Student already has active enrollment in this course');
   }
   if (existing) {
-    const { error } = await supabase.from('course_enrollments').update({
-      access_status: 'active', enrollment_source: 'admin_grant',
-      granted_by: input.granted_by, granted_at: new Date().toISOString(),
-      revoked_by: null, revoked_at: null, notes: input.notes ?? null,
-    }).eq('id', (existing as any).id);
+    const { error } = await supabase.rpc('admin_set_enrollment_access', {
+      p_enrollment_id: (existing as { id: string }).id,
+      p_access_status: 'active',
+      p_notes: input.notes ?? null,
+    });
     if (error) throw error;
   } else {
     const { error } = await supabase.from('course_enrollments').insert({
@@ -889,9 +889,11 @@ export async function grantEnrollment(input: {
 }
 
 export async function revokeEnrollment(input: { enrollment_id: string; revoked_by: string }): Promise<void> {
-  const { error } = await supabase.from('course_enrollments').update({
-    access_status: 'revoked', revoked_by: input.revoked_by, revoked_at: new Date().toISOString(),
-  }).eq('id', input.enrollment_id);
+  const { error } = await supabase.rpc('admin_set_enrollment_access', {
+    p_enrollment_id: input.enrollment_id,
+    p_access_status: 'revoked',
+    p_notes: null,
+  });
   if (error) throw error;
   await logActivity(input.revoked_by, 'revoke_enrollment', 'course_enrollments', input.enrollment_id);
 }

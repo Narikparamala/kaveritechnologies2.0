@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { markLessonComplete, getLessonProgress, getLessonNotes, getBookmark, getLessonResources, saveNote, toggleBookmark } from '../../../services/lessons';
-import { updateCourseProgress } from '../../../services/courses';
 import type { Course, Chapter, Lesson, LessonProgress, LessonNote, LessonResource, LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession } from '../../../types/database';
 
 export interface ChapterWithLessons extends Chapter {
@@ -56,7 +55,7 @@ export function useWorkspace() {
 }
 
 export function WorkspaceProvider({ courseId, children }: { courseId: string; children: ReactNode }) {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
@@ -186,21 +185,16 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
 
   const markComplete = useCallback(async () => {
     if (!currentLesson || !profile) return;
-    await markLessonComplete(currentLesson.id, courseId, profile.id);
+    const result = await markLessonComplete(currentLesson.id);
     setProgress(prev => {
       const next = new Map(prev);
       next.set(currentLesson.id, true);
       return next;
     });
-    setLessonProgress(prev => prev ? { ...prev, completed: true } : prev);
-    const pct = await updateCourseProgress(courseId, profile.id);
-    setCourseProgress(pct);
-
-    if (currentLesson.xp_reward > 0) {
-      await supabase.from('profiles').update({ xp_points: (profile.xp_points ?? 0) + currentLesson.xp_reward }).eq('id', profile.id);
-      await supabase.from('xp_transactions').insert({ student_id: profile.id, amount: currentLesson.xp_reward, reason: `Completed: ${currentLesson.title}`, reference_id: currentLesson.id, reference_type: 'lesson' });
-    }
-  }, [currentLesson, profile, courseId]);
+    setLessonProgress(result.progress);
+    setCourseProgress(result.courseProgress);
+    await refreshProfile();
+  }, [currentLesson, profile, refreshProfile]);
 
   const saveStudentNote = useCallback(async (content: string) => {
     if (!currentLesson || !profile) return;

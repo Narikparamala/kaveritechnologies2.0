@@ -102,13 +102,13 @@ export function CourseSidebar() {
                               'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
                             }`}>{lesson.title}</p>
                             {lesson.teaching_mode === 'live_class' && (
-                              <Monitor size={10} className="text-blue-500 flex-shrink-0" title="Live Class" />
+                              <Monitor size={10} className="text-blue-500 flex-shrink-0" aria-label="Live Class" />
                             )}
                             {lesson.teaching_mode === 'recorded_video' && (
-                              <Video size={10} className="text-sky-500 flex-shrink-0" title="Video" />
+                              <Video size={10} className="text-sky-500 flex-shrink-0" aria-label="Video" />
                             )}
                             {lesson.enable_coding_playground && (
-                              <Code size={10} className="text-teal-500 flex-shrink-0" title="Coding" />
+                              <Code size={10} className="text-teal-500 flex-shrink-0" aria-label="Coding" />
                             )}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">

@@ -18,6 +18,7 @@ import {
 import type { Course, Quiz, QuizQuestion, QuizOption, QuizAttempt, Profile } from '../../types/database';
 
 type QuestionWithOptions = QuizQuestion & { options: QuizOption[] };
+type QuestionType = QuizQuestion['question_type'];
 
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'Multiple Choice' },
@@ -123,7 +124,7 @@ export default function FacultyQuizzesPage() {
   // Question CRUD
   const [questionModal, setQuestionModal] = useState<{ mode: 'create' | 'edit'; question?: QuestionWithOptions } | null>(null);
   const [qForm, setQForm] = useState({
-    question_text: '', question_type: 'mcq' as string, explanation: '',
+    question_text: '', question_type: 'mcq' as QuestionType, explanation: '',
     points: 1, difficulty: 'medium', code_snippet: '', image_url: '',
     enable_playground: false, correct_answer_text: '', time_limit_seconds: '',
     options: [] as { id?: string; option_text: string; is_correct: boolean }[],
@@ -266,7 +267,7 @@ export default function FacultyQuizzesPage() {
     setQuestionModal({ mode, question });
   };
 
-  const handleQTypeChange = (type: string) => {
+  const handleQTypeChange = (type: QuestionType) => {
     if (type === 'true_false') {
       setQForm(f => ({ ...f, question_type: type, options: [
         { option_text: 'True', is_correct: true },
@@ -301,7 +302,7 @@ export default function FacultyQuizzesPage() {
       const base = {
         question_text: qForm.question_text,
         question_type: qForm.question_type,
-        explanation: qForm.explanation || null,
+        explanation: qForm.explanation || undefined,
         points: qForm.points,
         difficulty: qForm.difficulty,
         code_snippet: qForm.code_snippet || null,
@@ -663,7 +664,7 @@ export default function FacultyQuizzesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="label">Type</label>
-              <select className="input" value={qForm.question_type} onChange={e => handleQTypeChange(e.target.value)}>
+              <select className="input" value={qForm.question_type} onChange={e => handleQTypeChange(e.target.value as QuestionType)}>
                 {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>

@@ -170,6 +170,7 @@ export default function FacultySettingsPage() {
     try {
       const redirectUri = `${window.location.origin}${window.location.pathname}${window.location.search}`;
       const authUrl = await getGoogleOAuthUrl(profile.id, redirectUri);
+      if (!authUrl) throw new Error('Google authorization URL was not returned.');
       window.location.href = authUrl;
     } catch (error) {
       console.error('Could not start Google connection:', error);
