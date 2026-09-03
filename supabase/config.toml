@@ -417,3 +417,12 @@ enabled = true
 client_id = "735463799740-easdns2e0mqet6fakrdnfcdl3esau2qa.apps.googleusercontent.com"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
 skip_nonce_check = false
+
+[functions.secure-grade]
+verify_jwt = true
+
+[functions.google-calendar-auth]
+verify_jwt = true
+
+[functions.google-meet-create]
+verify_jwt = true

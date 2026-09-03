@@ -51,6 +51,16 @@ const LANGUAGE_CACHE_MS = 5 * 60_000;
 
 let languageCache: { expiresAt: number; languages: JudgeLanguage[] } | null = null;
 
+const GO_JUDGE_LANGUAGE: JudgeLanguage = { id: 71, name: 'Python (3.x)' };
+
+function getRunnerBackend(): 'go-judge' | 'judge0' {
+  const url = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
+  if (url && token) return 'go-judge';
+  if (url || token) throw new Error('RUNNER_NOT_CONFIGURED');
+  return 'judge0';
+}
+
 function json(body: unknown, status: number, origin: string) {
   return new Response(JSON.stringify(body), {
     status,
@@ -202,6 +212,7 @@ function judge0Headers() {
 }
 
 async function getJudgeLanguages(): Promise<JudgeLanguage[]> {
+  if (getRunnerBackend() === 'go-judge') return [GO_JUDGE_LANGUAGE];
   if (languageCache && languageCache.expiresAt > Date.now()) return languageCache.languages;
 
   let response: Response;
@@ -233,12 +244,17 @@ async function getJudgeLanguages(): Promise<JudgeLanguage[]> {
 async function requireJudgeLanguage(languageId: unknown) {
   const parsedId = Number(languageId);
   if (!Number.isInteger(parsedId) || parsedId <= 0) throw new Error('INVALID_LANGUAGE');
+  if (getRunnerBackend() === 'go-judge') {
+    if (parsedId !== GO_JUDGE_LANGUAGE.id) throw new Error('INVALID_LANGUAGE');
+    return GO_JUDGE_LANGUAGE;
+  }
   const language = (await getJudgeLanguages()).find(item => item.id === parsedId);
   if (!language) throw new Error('INVALID_LANGUAGE');
   return language;
 }
 
 async function defaultPythonLanguage() {
+  if (getRunnerBackend() === 'go-judge') return GO_JUDGE_LANGUAGE;
   const languages = await getJudgeLanguages();
   const python = languages.find(language => /^Python \(3\./i.test(language.name));
   if (!python) throw new Error('PYTHON_RUNTIME_UNAVAILABLE');
@@ -257,12 +273,99 @@ function mapJudge0Status(description: string, passed: boolean): JudgeStatus {
   return 'execution_error';
 }
 
+function mapGoJudgeStatus(status: string, passed: boolean): JudgeStatus {
+  if (passed) return 'accepted';
+  if (status === 'Accepted') return 'wrong_answer';
+  if (status === 'Time Limit Exceeded') return 'time_limit';
+  if (status === 'Memory Limit Exceeded') return 'memory_limit';
+  if (status === 'Output Limit Exceeded') return 'output_limit';
+  if (status === 'Nonzero Exit Status' || status === 'Signalled') return 'runtime_error';
+  if (status === 'Internal Error') return 'internal_error';
+  return 'execution_error';
+}
+
+async function judgeCodeGoJudge(
+  code: string,
+  test: TestCase,
+  index: number,
+  _language: JudgeLanguage,
+): Promise<JudgeResult> {
+  const url = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
+  if (!url || !token) throw new Error('RUNNER_NOT_CONFIGURED');
+
+  const runUrl = new URL('run', url.endsWith('/') ? url : `${url}/`);
+  let response: Response;
+  try {
+    response = await fetch(runUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        cmd: [{
+          args: ['/usr/bin/python3', '-I', 'solution.py'],
+          env: ['PATH=/usr/bin:/bin', 'PYTHONIOENCODING=utf-8'],
+          stdin: test.input_data ?? '',
+          stdout: 65536,
+          stderr: 65536,
+          cpuLimit: 2_000_000_000,
+          clockLimit: 5_000_000_000,
+          memoryLimit: 134_217_728,
+          procLimit: 30,
+          copyIn: { 'solution.py': code },
+          copyOut: ['stdout', 'stderr'],
+        }],
+      }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new Error('RUNNER_TIMEOUT');
+    console.error('secure-grade go-judge request failed', error);
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  if (!response.ok) {
+    console.error('secure-grade go-judge returned an error status', response.status);
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload) || !payload[0] || typeof payload[0] !== 'object') {
+    throw new Error('RUNNER_INVALID_RESPONSE');
+  }
+  const result = payload[0] as Record<string, unknown>;
+  const files = result.files as { stdout?: unknown; stderr?: unknown } | undefined;
+  const status = String(result.status ?? '');
+  const stdout = normalizeOutput(typeof files?.stdout === 'string' ? files.stdout : '');
+  const stderr = normalizeOutput(typeof files?.stderr === 'string' ? files.stderr : '');
+  const expected = normalizeOutput(test.expected_output);
+  const executionAccepted = status === 'Accepted';
+  const passed = executionAccepted && (test.expected_output === '' || stdout === expected);
+
+  return {
+    id: test.id,
+    index,
+    hidden: test.is_hidden,
+    passed,
+    status: mapGoJudgeStatus(status, passed),
+    timeMs: result.time == null ? null : Math.round(Number(result.time) / 1_000_000),
+    memoryKb: result.memory == null ? null : Math.round(Number(result.memory) / 1024),
+    input: test.input_data ?? '',
+    expected,
+    actual: stdout,
+    stderr,
+  };
+}
+
 async function judgeCode(
   code: string,
   test: TestCase,
   index: number,
   language: JudgeLanguage,
 ): Promise<JudgeResult> {
+  if (getRunnerBackend() === 'go-judge') return judgeCodeGoJudge(code, test, index, language);
   const url = judge0Url('submissions/');
   url.searchParams.set('base64_encoded', 'true');
   url.searchParams.set('wait', 'true');
@@ -477,7 +580,8 @@ Deno.serve(async req => {
         status: 'running',
       }).select('id').single();
       assertDatabaseSuccess(requestResult, 'create code execution audit');
-      return requestResult.data.id as string;
+      if (!requestResult.data) throw new Error('GRADING_STORAGE_ERROR');
+      return requestResult.data.id;
     };
 
     const finishExecutionRequest = async (requestId: string, status: 'completed' | 'error') => {
