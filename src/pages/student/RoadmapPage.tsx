@@ -1,123 +1,114 @@
 import { useState, useEffect } from 'react';
-import { Map, CheckCircle, Circle, Lock, Loader2, BookOpen } from 'lucide-react';
+import { Map as MapIcon, CheckCircle, Play, Lock, Loader2, BookOpen, ArrowRight, Clock, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { getStudentCoursePlan } from '../../services/lessons';
+import type { LessonPlanItem } from '../../types/database';
 
-interface LessonRoadmapItem {
-  id: string;
-  title: string;
-  done: boolean;
-}
-
-interface ChapterGroup {
-  chapterId: string;
+interface JourneyChapter {
   chapterTitle: string;
-  orderIndex: number;
-  lessons: LessonRoadmapItem[];
+  chapterOrder: number;
+  lessons: LessonPlanItem[];
 }
 
-interface CourseRoadmap {
+interface JourneyCourse {
   courseId: string;
   courseTitle: string;
-  color: string;
-  chapters: ChapterGroup[];
+  chapters: JourneyChapter[];
+  done: number;
+  total: number;
+  nextAvailableId: string | null;
 }
 
 const COURSE_COLORS = [
-  'from-emerald-500 to-teal-500',
-  'from-primary-500 to-primary-700',
-  'from-slate-600 to-slate-800',
-  'from-teal-500 to-cyan-600',
-  'from-rose-500 to-pink-600',
-  'from-amber-500 to-orange-600',
+  'from-primary-600 to-indigo-700',
+  'from-emerald-600 to-teal-700',
+  'from-violet-600 to-purple-700',
+  'from-rose-600 to-pink-700',
+  'from-amber-600 to-orange-700',
+  'from-sky-600 to-blue-700',
 ];
+
+function stateIcon(item: LessonPlanItem) {
+  if (item.access === 'completed') {
+    return { Icon: CheckCircle, cls: 'text-emerald-500 dark:text-emerald-400' };
+  }
+  if (item.access === 'locked') {
+    return { Icon: Lock, cls: 'text-slate-400 dark:text-slate-500' };
+  }
+  return { Icon: Play, cls: 'text-primary-600 dark:text-primary-400' };
+}
 
 export default function RoadmapPage() {
   const { profile } = useAuth();
-  const [roadmaps, setRoadmaps] = useState<CourseRoadmap[]>([]);
+  const [courses, setCourses] = useState<JourneyCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!profile) return;
-    loadRoadmap();
+    loadJourney();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  async function loadRoadmap() {
+  async function loadJourney() {
     if (!profile) return;
     setLoading(true);
     try {
-      const { data: enrollments } = await supabase
+      const { data: enrollments, error: enrError } = await supabase
         .from('course_enrollments')
         .select('course_id, courses(id, title)')
         .eq('student_id', profile.id)
         .eq('access_status', 'active');
 
-      if (!enrollments?.length) { setRoadmaps([]); return; }
+      if (enrError) throw enrError;
+      if (!enrollments?.length) { setCourses([]); return; }
 
-      const courseIds = enrollments.map(e => e.course_id);
-
-      const [chaptersRes, lessonsRes, progressRes] = await Promise.all([
-        supabase
-          .from('chapters')
-          .select('id, course_id, title, order_index')
-          .in('course_id', courseIds)
-          .eq('is_published', true)
-          .order('order_index', { ascending: true }),
-        supabase
-          .from('lessons')
-          .select('id, chapter_id, course_id, title, order_index')
-          .in('course_id', courseIds)
-          .eq('is_published', true)
-          .order('order_index', { ascending: true }),
-        supabase
-          .from('lesson_progress')
-          .select('lesson_id, completed')
-          .eq('student_id', profile.id)
-          .eq('completed', true),
-      ]);
-
-      const completedSet = new Set((progressRes.data ?? []).map(p => p.lesson_id));
-      const chapters = chaptersRes.data ?? [];
-      const lessons = lessonsRes.data ?? [];
-
-      const result: CourseRoadmap[] = enrollments.map((enr, idx) => {
+      const built: JourneyCourse[] = [];
+      for (const enr of enrollments) {
         const course = (enr as any).courses;
-        const courseChapters = chapters
-          .filter(c => c.course_id === enr.course_id)
-          .map(ch => ({
-            chapterId: ch.id,
-            chapterTitle: ch.title,
-            orderIndex: ch.order_index,
-            lessons: lessons
-              .filter(l => l.chapter_id === ch.id)
-              .map(l => ({
-                id: l.id,
-                title: l.title,
-                done: completedSet.has(l.id),
-              })),
-          }));
+        const plan = await getStudentCoursePlan(enr.course_id);
+        if (!plan.length) continue;
 
-        return {
+        const byChapter = new Map<string, JourneyChapter>();
+        for (const item of plan) {
+          const key = `${item.chapter_order_index}-${item.chapter_id}`;
+          const group: JourneyChapter = byChapter.get(key) ?? {
+            chapterTitle: item.chapter_title,
+            chapterOrder: item.chapter_order_index,
+            lessons: [] as LessonPlanItem[],
+          };
+          group.lessons.push(item);
+          byChapter.set(key, group);
+        }
+
+        const chapters = [...byChapter.values()].sort((a, b) => a.chapterOrder - b.chapterOrder);
+        const done = plan.filter(i => i.access === 'completed').length;
+        const nextAvailable = plan.find(i => i.access === 'available');
+
+        built.push({
           courseId: enr.course_id,
-          courseTitle: course?.title ?? 'Unknown Course',
-          color: COURSE_COLORS[idx % COURSE_COLORS.length],
-          chapters: courseChapters,
-        };
-      });
+          courseTitle: course?.title ?? 'Course',
+          chapters,
+          done,
+          total: plan.length,
+          nextAvailableId: nextAvailable?.lesson_id ?? null,
+        });
+      }
 
-      setRoadmaps(result.filter(r => r.chapters.length > 0));
-    } catch {
-      setRoadmaps([]);
+      setCourses(built.filter(c => c.chapters.length > 0));
+    } catch (err) {
+      console.error('Failed to load journey:', err);
+      setCourses([]);
     } finally {
       setLoading(false);
     }
   }
 
-  const totalLessons = roadmaps.reduce((s, r) => s + r.chapters.reduce((s2, c) => s2 + c.lessons.length, 0), 0);
-  const doneLessons = roadmaps.reduce((s, r) => s + r.chapters.reduce((s2, c) => s2 + c.lessons.filter(l => l.done).length, 0), 0);
+  const totalDone = courses.reduce((s, c) => s + c.done, 0);
+  const totalAll = courses.reduce((s, c) => s + c.total, 0);
 
   if (loading) {
     return (
@@ -130,86 +121,130 @@ export default function RoadmapPage() {
   return (
     <div className="p-6 lg:p-8 max-w-4xl mx-auto animate-fade-in">
       <PageHeader
-        title="Learning Roadmap"
-        subtitle={totalLessons > 0 ? `${doneLessons}/${totalLessons} lessons completed` : 'Track your learning progress'}
-        icon={Map}
+        title="My Journey"
+        subtitle={totalAll > 0 ? `${totalDone}/${totalAll} lessons completed across your courses` : 'Your learning path, chapter by chapter'}
+        icon={MapIcon}
         action={<Link to="/student/courses" className="btn-primary text-sm">Browse Courses</Link>}
       />
 
-      {roadmaps.length === 0 ? (
+      {courses.length === 0 ? (
         <EmptyState
           icon={BookOpen}
-          title="No courses enrolled"
-          description="Enroll in courses to see your learning roadmap and track progress."
+          title="No course journey yet"
+          description="Enroll in a course to unlock your learning journey."
           action={<Link to="/student/courses" className="btn-primary text-sm mt-3">Explore Courses</Link>}
         />
       ) : (
-        <div className="space-y-10">
-          {roadmaps.map(roadmap => {
-            const courseLessons = roadmap.chapters.reduce((s, c) => s + c.lessons.length, 0);
-            const courseDone = roadmap.chapters.reduce((s, c) => s + c.lessons.filter(l => l.done).length, 0);
-            const pct = courseLessons > 0 ? (courseDone / courseLessons) * 100 : 0;
+        <div className="space-y-12">
+          {courses.map((course, ci) => {
+            const pct = course.total > 0 ? Math.round((course.done / course.total) * 100) : 0;
+            const color = COURSE_COLORS[ci % COURSE_COLORS.length];
+            const nextId = course.nextAvailableId;
 
             return (
-              <div key={roadmap.courseId}>
-                <div className={`p-4 rounded-2xl bg-gradient-to-r ${roadmap.color} mb-4`}>
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-bold text-white text-lg">{roadmap.courseTitle}</h2>
-                    <span className="text-white/80 text-sm font-medium">{courseDone}/{courseLessons} lessons</span>
+              <section key={course.courseId}>
+                <div className={`p-5 rounded-2xl bg-gradient-to-r ${color} shadow-lg shadow-slate-200/60 dark:shadow-none mb-5`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-white/70">Course</p>
+                      <h2 className="font-bold text-white text-lg">{course.courseTitle}</h2>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-white/20 text-white text-xs font-semibold">
+                      {course.done}/{course.total} · {pct}%
+                    </span>
                   </div>
-                  <div className="mt-2 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-white/80 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
+                    <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  {roadmap.chapters.map((chapter, ci) => {
-                    const chDone = chapter.lessons.filter(l => l.done).length;
-                    const allPrevChaptersDone = ci === 0 || roadmap.chapters.slice(0, ci).every(
-                      pc => pc.lessons.every(l => l.done)
-                    );
-
+                <div className="space-y-5">
+                  {course.chapters.map(chapter => {
+                    const chDone = chapter.lessons.filter(l => l.access === 'completed').length;
+                    const isNextChapter = chapter.lessons.some(l => l.lesson_id === nextId);
                     return (
-                      <div key={chapter.chapterId}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            {chapter.chapterTitle}
-                          </h3>
-                          <span className="text-xs text-slate-400">({chDone}/{chapter.lessons.length})</span>
+                      <div key={chapter.chapterTitle} className="card p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{chapter.chapterTitle}</h3>
+                            <span className="text-xs text-slate-400 font-medium">({chDone}/{chapter.lessons.length})</span>
+                            {isNextChapter && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                                Continue here
+                              </span>
+                            )}
+                          </div>
+                          {chDone === chapter.lessons.length && (
+                            <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle size={13} /> Chapter complete
+                            </span>
+                          )}
                         </div>
-                        <div className="grid sm:grid-cols-2 gap-3">
-                          {chapter.lessons.map((lesson, li) => {
-                            const locked = !allPrevChaptersDone && li > 0 && !chapter.lessons.slice(0, li).every(l => l.done);
+
+                        <div className="space-y-1.5">
+                          {chapter.lessons.map(item => {
+                            const { Icon, cls } = stateIcon(item);
+                            const isNext = item.lesson_id === nextId;
+                            const rowCls =
+                              item.access === 'completed'
+                                ? 'bg-emerald-50/60 dark:bg-emerald-900/10'
+                                : item.access === 'locked'
+                                ? 'opacity-70'
+                                : isNext
+                                ? 'ring-2 ring-primary-400 dark:ring-primary-600'
+                                : '';
                             return (
-                              <div
-                                key={lesson.id}
-                                className={`card p-4 flex items-center gap-3 transition-all ${
-                                  lesson.done
-                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800'
-                                    : locked
-                                    ? 'opacity-60'
-                                    : ''
-                                }`}
-                              >
-                                {lesson.done ? (
-                                  <CheckCircle size={18} className="text-emerald-500 flex-shrink-0" />
-                                ) : locked ? (
-                                  <Lock size={18} className="text-slate-300 flex-shrink-0" />
-                                ) : (
-                                  <Circle size={18} className="text-slate-300 flex-shrink-0" />
+                              <div key={item.lesson_id} className={`flex items-start gap-3 rounded-xl border border-slate-100 dark:border-slate-800 p-3 transition-colors ${rowCls}`}>
+                                <div className={`mt-0.5 flex-shrink-0 ${item.access === 'locked' ? 'text-slate-300 dark:text-slate-600' : ''}`}>
+                                  {item.access === 'locked' ? (
+                                    <Lock size={17} className={cls} />
+                                  ) : item.access === 'completed' ? (
+                                    <CheckCircle size={17} className={cls} />
+                                  ) : (
+                                    <span className="block w-[17px] h-[17px] rounded-full bg-primary-600 dark:bg-primary-400 flex items-center justify-center">
+                                      <Play size={10} className="text-white dark:text-slate-900 ml-[1px]" />
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className={`text-sm font-medium ${item.access === 'completed' ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+                                      {item.title}
+                                    </p>
+                                    {item.access === 'available' && !isNext && (
+                                      <span className="text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">Available</span>
+                                    )}
+                                    {isNext && (
+                                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary-600 text-white">Next up</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
+                                    {item.duration_minutes ? (
+                                      <span className="flex items-center gap-1"><Clock size={11} /> {item.duration_minutes} min</span>
+                                    ) : null}
+                                    <span className="flex items-center gap-1"><Zap size={11} /> +{item.xp_reward} XP</span>
+                                    {item.teaching_mode === 'live_class' && (
+                                      <span className="uppercase tracking-wide text-[10px] font-semibold text-red-500/80">Live Class</span>
+                                    )}
+                                  </div>
+                                  {item.access === 'locked' && item.reason && (
+                                    <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1">
+                                      <Lock size={11} className="flex-shrink-0 mt-0.5" />
+                                      {item.reason}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {item.access !== 'locked' && (
+                                  <Link
+                                    to={`/student/course/${course.courseId}`}
+                                    className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 mt-1"
+                                  >
+                                    {item.access === 'completed' ? 'Review' : 'Start'}
+                                    <ArrowRight size={13} />
+                                  </Link>
                                 )}
-                                <span
-                                  className={`text-sm font-medium ${
-                                    lesson.done
-                                      ? 'text-emerald-700 dark:text-emerald-400 line-through'
-                                      : 'text-slate-700 dark:text-slate-300'
-                                  }`}
-                                >
-                                  {lesson.title}
-                                </span>
                               </div>
                             );
                           })}
@@ -218,7 +253,7 @@ export default function RoadmapPage() {
                     );
                   })}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>

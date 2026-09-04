@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
+import { getStudentCoursePlan } from '../../services/lessons';
 import type { CourseEnrollment, Course, Announcement, Notification, LiveSession } from '../../types/database';
 import type { SessionWithDetails } from '../../services/liveSessions';
 
@@ -23,6 +24,7 @@ export default function StudentDashboard() {
   const [weeklyData, setWeeklyData] = useState<{ day: string; lessons: number }[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<SessionWithDetails[]>([]);
   const [liveSessions, setLiveSessions] = useState<SessionWithDetails[]>([]);
+  const [nextLesson, setNextLesson] = useState<{ courseId: string; courseTitle: string; lessonTitle: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,6 +46,20 @@ export default function StudentDashboard() {
       setAnnouncements((annData ?? []) as Announcement[]);
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
+
+      // Next available lesson across enrolled courses (server-authoritative plan)
+      for (const enr of (enrData ?? [])) {
+        try {
+          const plan = await getStudentCoursePlan(enr.course_id);
+          const next = plan.find(i => i.access === 'available');
+          if (next) {
+            setNextLesson({ courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: next.title });
+            break;
+          }
+        } catch {
+          // skip course if the plan cannot be resolved
+        }
+      }
 
       // Build weekly activity data from lesson_progress completed_at
       const now = new Date();
@@ -113,6 +129,81 @@ export default function StudentDashboard() {
           iconColor="text-primary-600 dark:text-primary-400"
         />
       </div>
+
+      {/* Work On Now */}
+      {(() => {
+        const live = liveSessions[0];
+        if (live) {
+          return (
+            <div className="card p-5 mb-8 ring-2 ring-red-500 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/40 dark:to-rose-950/40">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/40 flex items-center justify-center flex-shrink-0">
+                    <Video size={22} className="text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400">Work on now</p>
+                    <p className="font-bold text-slate-900 dark:text-white">{live.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{live.course?.title} · live right now</p>
+                  </div>
+                </div>
+                {live.google_meet_url && (
+                  <a href={live.google_meet_url} target="_blank" rel="noopener noreferrer" className="btn-primary flex items-center gap-2">
+                    <Video size={15} /> Join Live Class
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        }
+        if (nextLesson) {
+          return (
+            <div className="card p-5 mb-8 bg-gradient-to-r from-primary-600 to-indigo-700 shadow-lg shadow-primary-200/50 dark:shadow-none">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Play size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-white/70">Continue learning</p>
+                    <p className="font-bold text-white">{nextLesson.lessonTitle}</p>
+                    <p className="text-xs text-white/70">{nextLesson.courseTitle}</p>
+                  </div>
+                </div>
+                <Link to={`/student/course/${nextLesson.courseId}`} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50 transition-colors">
+                  Continue <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          );
+        }
+        const upcoming = upcomingSessions.find(s => {
+          const start = new Date(s.session_date).getTime();
+          return start > Date.now() && start - Date.now() < 3 * 24 * 60 * 60 * 1000;
+        });
+        if (upcoming) {
+          return (
+            <div className="card p-5 mb-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                    <Video size={22} className="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">Up next</p>
+                    <p className="font-bold text-slate-900 dark:text-white">{upcoming.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{upcoming.course?.title} · {getTimeUntilSession(upcoming)}</p>
+                  </div>
+                </div>
+                <Link to={`/student/live-classes/${upcoming.id}`} className="btn-secondary flex items-center gap-2">
+                  View Session <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left column */}

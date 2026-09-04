@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
-  { label: 'Learning Roadmap', icon: Map, to: '/roadmap' },
+  { label: 'My Journey', icon: Map, to: '/roadmap' },
   { label: 'Code Playground', icon: Terminal, to: '/playground' },
   { label: 'Coding Practice', icon: Terminal, to: '/coding-practice' },
   { label: 'Assignments', icon: FileText, to: '/assignments' },
