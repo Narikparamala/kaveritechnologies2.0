@@ -568,7 +568,7 @@ export interface PlatformSetting {
 // Live Session types
 export type SessionStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
 export type AttendanceStatus = 'registered' | 'attended' | 'absent' | 'excused';
-export type SessionResourceType = 'slides' | 'notes' | 'practice_questions' | 'code_example' | 'quiz' | 'assignment' | 'downloadable';
+export type SessionResourceType = 'slides' | 'notes' | 'practice_questions' | 'code_example' | 'quiz' | 'assignment' | 'downloadable' | 'recording';
 
 export interface LiveSession {
   id: string;

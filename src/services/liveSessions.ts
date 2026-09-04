@@ -6,6 +6,8 @@ export interface SessionWithDetails extends Omit<LiveSession, 'course' | 'facult
   faculty?: { id: string; full_name: string | null; avatar_url: string | null };
   attendance?: SessionAttendance;
   resources?: SessionResource[];
+  /** Unlocked recording resource visible to a student (card-level shortcut). */
+  recording?: SessionResource;
 }
 
 export interface CreateSessionInput {
@@ -133,9 +135,24 @@ export async function getStudentSessions(studentId: string): Promise<SessionWith
 
   const attendanceMap = new Map(attendance?.map(a => [a.session_id, a]));
 
+  // Unlocked recordings for the student's session set (RLS hides locked rows,
+  // so this only ever surfaces published recordings).
+  const { data: unlockedRecordings } = await supabase
+    .from('session_resources')
+    .select('*')
+    .eq('resource_type', 'recording')
+    .eq('is_locked', false)
+    .in('session_id', sessionIds);
+
+  const recordingMap = new Map<string, SessionResource>();
+  for (const rec of (unlockedRecordings ?? []) as SessionResource[]) {
+    if (!recordingMap.has(rec.session_id)) recordingMap.set(rec.session_id, rec);
+  }
+
   return (data || []).map(session => ({
     ...session,
-    attendance: attendanceMap.get(session.id)
+    attendance: attendanceMap.get(session.id),
+    recording: recordingMap.get(session.id)
   })) as SessionWithDetails[];
 }
 
@@ -314,6 +331,25 @@ export async function markAttendance(
 
   if (error) throw error;
   return data as SessionAttendance;
+}
+
+// Faculty/Admin: Get all resources for a session (including locked ones)
+export async function getSessionResources(sessionId: string): Promise<SessionResource[]> {
+  const { data, error } = await supabase
+    .from('session_resources')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('order_index', { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as SessionResource[];
+}
+
+// Student: safe metadata-only recording state ('none' | 'pending' | 'available' | null)
+export async function getSessionRecordingStatus(sessionId: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('get_session_recording_status', { p_session_id: sessionId });
+  if (error) return null;
+  return data as string | null;
 }
 
 // Faculty: Add session resource

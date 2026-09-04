@@ -178,7 +178,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
         supabase.from('lesson_practice_questions').select('*').eq('lesson_id', lessonId).eq('is_published', true).order('order_index'),
         supabase.from('quizzes').select('*').eq('lesson_id', lessonId).eq('is_published', true),
         supabase.from('assignments').select('*').eq('lesson_id', lessonId).eq('is_published', true),
-        supabase.from('live_sessions').select('*').eq('lesson_id', lessonId).in('status', ['scheduled', 'live']).order('session_date'),
+        supabase.from('live_sessions').select('*').eq('lesson_id', lessonId).in('status', ['scheduled', 'live', 'completed']).order('session_date'),
       ]);
 
       setLessonProgress(prog);
