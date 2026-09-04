@@ -64,8 +64,19 @@ X-Kaveri-Timestamp: <unix epoch seconds>
 X-Kaveri-Signature: <hex>
 Idempotency-Key: <source>.<stable_event_uuid>
 
-Signature = HMAC-SHA256( timestamp || "." || raw_body, per-satellite secret )
+Signature = HMAC-SHA256(
+  timestamp || "." || idempotency_key || "." || raw_body,
+  per-satellite secret
+)
 ```
+
+The **idempotency key changes server semantics, so it is part of what is
+signed**: changing the header invalidates the signature (401), while an exact
+replay answers `200 + duplicate`.
+
+Per-satellite secrets must be **strong — at least 32 random bytes** — and
+byte-identical on both systems. Short secrets are a `CONFIGURATION_ERROR` on
+both sender and receiver; they are never padded.
 
   1. Verify `X-Kaveri-Timestamp` is within a freshness/replay window
      (default ±5 minutes) and the signature **constant-time** compares
@@ -172,7 +183,7 @@ registration:
 Workshop app (server)
   → POST https://<lms>/functions/v1/integrations/workshop
       X-Kaveri-Timestamp: <unix epoch seconds>
-      X-Kaveri-Signature: HMAC-SHA256(timestamp "." raw_body, workshop secret)
+      X-Kaveri-Signature: HMAC-SHA256(timestamp "." idempotency_key "." raw_body, workshop secret)
       Idempotency-Key: workshop.<app_registration_uuid>
       body: { app_registration_id, email, full_name, phone?,
               workshop_slug, workshop_date, status: 'registered', ... }

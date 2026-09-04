@@ -4,7 +4,7 @@
 //   Workshop app (server only, never browser)
 //     → POST /functions/v1/integrations-workshop
 //       X-Kaveri-Timestamp: <unix epoch seconds>
-//       X-Kaveri-Signature: <hex HMAC-SHA256(timestamp "." raw_body)>
+//       X-Kaveri-Signature: <hex HMAC-SHA256(timestamp "." idempotency_key "." raw_body)>
 //       Idempotency-Key: workshop.<stable_registration_uuid>
 //       body: { external_workshop_id, external_registration_id, email,
 //               full_name, phone?, workshop_name, starts_at?, venue?,
@@ -13,7 +13,11 @@
 // Verification:
 //   - signature: constant-time compare against the per-satellite secret
 //     (env KAVERI_WORKSHOP_INTEGRATION_SECRET, else vault secret
-//     'integrations.workshop.secret' — server-side only)
+//     'integrations.workshop.secret' — server-side only). The idempotency
+//     key is part of the signed payload: changing the header invalidates
+//     the signature.
+//   - secret strength: minimum 32 bytes (UTF-8). A short secret is a
+//     CONFIGURATION_ERROR — it is never padded.
 //   - timestamp freshness: ±5 minutes (replay window)
 //   - idempotency: handled server-side by ingest_workshop_registration via
 //     integration_audit_log (source+action+idempotency_key)
@@ -29,6 +33,7 @@ import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.5
 type AdminClient = SupabaseClient<any, any, any>;
 
 const REPLAY_WINDOW_SECONDS = 5 * 60;
+const MIN_WORKSHOP_SECRET_BYTES = 32;
 
 function json(body: unknown, status: number) {
   return new Response(JSON.stringify(body), {
@@ -135,17 +140,28 @@ Deno.serve(async req => {
   // Constant-time signature verification against the per-satellite secret.
   const secret = await workshopSecret(admin);
   if (!secret) return json({ error: 'Integration not configured' }, 503);
+  // Strong-secret contract: the same exact bytes are used on both systems
+  // (never padded). Short secrets are a configuration error.
+  if (new TextEncoder().encode(secret).length < MIN_WORKSHOP_SECRET_BYTES) {
+    console.error('[integrations-workshop] integration secret is shorter than 32 bytes');
+    return json({ error: 'Integration not configured', code: 'CONFIGURATION_ERROR' }, 500);
+  }
 
-  // Signature = hex(HMAC-SHA256(timestamp "." raw_body, per-satellite secret))
-  const rawKey = secret.length >= 32 ? secret : secret.padEnd(32, '0');
+  // Signature = hex(HMAC-SHA256(timestamp "." idempotency_key "." raw_body,
+  // per-satellite secret)). The idempotency key changes server semantics, so
+  // it is part of what is signed.
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(rawKey),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${timestamp}.${rawBody}`));
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`${timestamp}.${idempotencyKey}.${rawBody}`),
+  );
   const actualSignature = Array.from(new Uint8Array(mac), byte => byte.toString(16).padStart(2, '0')).join('');
 
   if (!(await timingSafeEqual(signature, actualSignature))) {
@@ -180,20 +196,32 @@ Deno.serve(async req => {
     return json({ error: 'Invalid email' }, 400);
   }
 
+  // Blank optional strings are treated as unknown (null) so a replay can
+  // never blank curated central workshop values. Empty timestamps are never
+  // passed (they would fail the timestamptz cast).
+  const optionalText = (value: unknown): string | null => {
+    const text = String(value ?? '').trim();
+    return text ? text : null;
+  };
+  const optionalIso = (value: unknown): string | null => {
+    const text = String(value ?? '').trim();
+    return /^\d{4}-\d{2}-\d{2}T/.test(text) ? text : null;
+  };
+
   const { data, error } = await admin.rpc('ingest_workshop_registration', {
     p_source: 'workshop-app',
     p_external_workshop_id: payload.external_workshop_id,
     p_external_registration_id: payload.external_registration_id,
     p_workshop_name: payload.workshop_name,
-    p_workshop_slug: payload.workshop_slug ?? null,
-    p_starts_at: payload.starts_at ?? null,
-    p_venue: payload.venue ?? null,
-    p_mode: payload.mode ?? null,
+    p_workshop_slug: optionalText(payload.workshop_slug),
+    p_starts_at: optionalIso(payload.starts_at),
+    p_venue: optionalText(payload.venue),
+    p_mode: optionalText(payload.mode),
     p_email: email,
     p_full_name: payload.full_name,
-    p_phone: payload.phone ?? null,
-    p_registration_status: payload.status ?? 'registered',
-    p_registered_at: payload.registered_at ?? null,
+    p_phone: optionalText(payload.phone),
+    p_registration_status: optionalText(payload.status) ?? 'registered',
+    p_registered_at: optionalIso(payload.registered_at),
     p_metadata: payload.metadata ?? {},
     p_idempotency_key: idempotencyKey,
     p_action: 'workshop.registration.upsert',
