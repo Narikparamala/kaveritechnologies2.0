@@ -384,6 +384,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# integrations-workshop is a server-to-server webhook endpoint. The edge
+# runtime JWT gateway is disabled for it; its only authentication is the
+# HMAC-SHA256 signature verified inside the function against the vault/
+# env per-satellite secret. The mailer keeps verify_jwt = true and uses the
+# anon JWT as a gateway pass plus its own X-Kaveri-Mailer-Token check.
+[functions.integrations-workshop]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
