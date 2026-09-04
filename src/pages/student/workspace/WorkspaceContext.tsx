@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
-import { markLessonComplete, getLessonProgress, getLessonNotes, getBookmark, getLessonResources, saveNote, toggleBookmark } from '../../../services/lessons';
-import type { Course, Chapter, Lesson, LessonProgress, LessonNote, LessonResource, LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession } from '../../../types/database';
+import { markLessonComplete, getLessonProgress, getLessonNotes, getBookmark, getLessonResources, getStudentCoursePlan, saveNote, toggleBookmark } from '../../../services/lessons';
+import type { Course, Chapter, Lesson, LessonProgress, LessonNote, LessonResource, LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession, LessonAccessInfo, LessonPlanItem } from '../../../types/database';
 
 export interface ChapterWithLessons extends Chapter {
   lessons: Lesson[];
@@ -13,6 +13,7 @@ interface WorkspaceState {
   chapters: ChapterWithLessons[];
   currentLesson: Lesson | null;
   currentChapter: Chapter | null;
+  accessMap: Map<string, LessonAccessInfo>;
   progress: Map<string, boolean>;
   courseProgress: number;
   lessonProgress: LessonProgress | null;
@@ -61,6 +62,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
+  const [accessMap, setAccessMap] = useState<Map<string, LessonAccessInfo>>(new Map());
   const [progress, setProgress] = useState<Map<string, boolean>>(new Map());
   const [courseProgress, setCourseProgress] = useState(0);
   const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
@@ -90,34 +92,67 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
     if (!profile) return;
     setLoading(true);
     try {
-      const [courseRes, chaptersRes, lessonsRes, progressRes, enrollmentRes] = await Promise.all([
+      const [courseRes, chaptersRes, lessonsRes, enrollmentRes, planRes] = await Promise.all([
         supabase.from('courses').select('*').eq('id', courseId).maybeSingle(),
         supabase.from('chapters').select('*').eq('course_id', courseId).eq('is_published', true).order('order_index'),
         supabase.from('lessons').select('*').eq('course_id', courseId).eq('is_published', true).order('order_index'),
-        supabase.from('lesson_progress').select('lesson_id, completed').eq('student_id', profile.id).eq('course_id', courseId).eq('completed', true),
         supabase.from('course_enrollments').select('progress_percentage').eq('course_id', courseId).eq('student_id', profile.id).maybeSingle(),
+        getStudentCoursePlan(courseId),
       ]);
 
       setCourse(courseRes.data as Course | null);
       setCourseProgress(enrollmentRes.data?.progress_percentage ?? 0);
 
+      // Authoritative access states come from the server plan RPC
+      const planItems = (planRes ?? []) as LessonPlanItem[];
+      const accessMap = new Map<string, LessonAccessInfo>();
+      planItems.forEach(p => accessMap.set(p.lesson_id, { access: p.access, reason: p.reason, isReleased: p.is_released }));
+      setAccessMap(accessMap);
+
       const progressMap = new Map<string, boolean>();
-      (progressRes.data ?? []).forEach(p => progressMap.set(p.lesson_id, true));
+      planItems.forEach(p => { if (p.access === 'completed') progressMap.set(p.lesson_id, true); });
       setProgress(progressMap);
 
-      const chaps = (chaptersRes.data ?? []) as Chapter[];
-      const lessons = (lessonsRes.data ?? []) as Lesson[];
+      const fullLessons = new Map((lessonsRes.data ?? [] as Lesson[]).map(l => [l.id, l]));
+      const lessons: Lesson[] = planItems.map(p => fullLessons.get(p.lesson_id) ?? ({
+        id: p.lesson_id,
+        chapter_id: p.chapter_id,
+        course_id: p.course_id,
+        title: p.title,
+        slug: p.slug,
+        teaching_mode: p.teaching_mode,
+        enable_coding_playground: p.enable_coding_playground,
+        duration_minutes: p.duration_minutes,
+        xp_reward: p.xp_reward,
+        order_index: p.order_index,
+        is_free_preview: p.is_free_preview,
+        video_url: null,
+        notes_markdown: null,
+        code_example: null,
+        explanation: null,
+        slides_url: null,
+        notes_url: null,
+        is_published: true,
+        requires_previous_lesson_completion: false,
+        unlock_rule: 'open',
+        requires_activity_type: null,
+        requires_activity_id: null,
+        created_at: '',
+        updated_at: '',
+      } as Lesson));
 
+      const chaps = (chaptersRes.data ?? []) as Chapter[];
       const chaptersWithLessons: ChapterWithLessons[] = chaps.map(ch => ({
         ...ch,
         lessons: lessons.filter(l => l.chapter_id === ch.id),
       }));
       setChapters(chaptersWithLessons);
 
-      // Auto-select first incomplete lesson or first lesson
+      // Auto-select first available incomplete lesson (skip locked ones)
       const flat = chaptersWithLessons.flatMap(c => c.lessons);
-      const firstIncomplete = flat.find(l => !progressMap.has(l.id));
-      const target = firstIncomplete ?? flat[0];
+      const firstAvailableIncomplete = flat.find(l => accessMap.get(l.id)?.access === 'available' && !progressMap.has(l.id));
+      const firstUnlocked = flat.find(l => accessMap.get(l.id)?.access !== 'locked');
+      const target = firstAvailableIncomplete ?? firstUnlocked ?? flat[0];
       if (target) {
         setCurrentLesson(target);
         setCurrentChapter(chaps.find(c => c.id === target.chapter_id) ?? null);
@@ -172,16 +207,18 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   }, [allLessonsFlat, chapters, loadLessonData]);
 
   const goToNextLesson = useCallback(() => {
-    if (currentLessonIndex < allLessonsFlat.length - 1) {
-      selectLesson(allLessonsFlat[currentLessonIndex + 1].id);
+    for (let i = currentLessonIndex + 1; i < allLessonsFlat.length; i++) {
+      const next = allLessonsFlat[i];
+      if (accessMap.get(next.id)?.access !== 'locked') { selectLesson(next.id); return; }
     }
-  }, [currentLessonIndex, allLessonsFlat, selectLesson]);
+  }, [currentLessonIndex, allLessonsFlat, accessMap, selectLesson]);
 
   const goToPrevLesson = useCallback(() => {
-    if (currentLessonIndex > 0) {
-      selectLesson(allLessonsFlat[currentLessonIndex - 1].id);
+    for (let i = currentLessonIndex - 1; i >= 0; i--) {
+      const prev = allLessonsFlat[i];
+      if (accessMap.get(prev.id)?.access !== 'locked') { selectLesson(prev.id); return; }
     }
-  }, [currentLessonIndex, allLessonsFlat, selectLesson]);
+  }, [currentLessonIndex, allLessonsFlat, accessMap, selectLesson]);
 
   const markComplete = useCallback(async () => {
     if (!currentLesson || !profile) return;
@@ -191,8 +228,23 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       next.set(currentLesson.id, true);
       return next;
     });
+    setAccessMap(prev => {
+      const next = new Map(prev);
+      next.set(currentLesson.id, { access: 'completed', reason: 'Completed', isReleased: false });
+      return next;
+    });
     setLessonProgress(result.progress);
     setCourseProgress(result.courseProgress);
+    // Refetch authoritative access: completing this lesson may unlock the next one
+    try {
+      const planItems = await getStudentCoursePlan(currentLesson.course_id);
+      const nextAccess = new Map<string, LessonAccessInfo>();
+      planItems.forEach(p => nextAccess.set(p.lesson_id, { access: p.access, reason: p.reason, isReleased: p.is_released }));
+      setAccessMap(nextAccess);
+      const nextProgress = new Map<string, boolean>();
+      planItems.forEach(p => { if (p.access === 'completed') nextProgress.set(p.lesson_id, true); });
+      setProgress(nextProgress);
+    } catch { /* keep optimistic local state */ }
     await refreshProfile();
   }, [currentLesson, profile, refreshProfile]);
 
@@ -210,7 +262,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
 
   const value: WorkspaceContextType = {
     course, chapters, currentLesson, currentChapter,
-    progress, courseProgress, lessonProgress, lessonNote,
+    accessMap, progress, courseProgress, lessonProgress, lessonNote,
     isBookmarked, resources, topics, practiceQuestions,
     lessonQuizzes, lessonAssignments, lessonSessions,
     loading, lessonLoading, sidebarCollapsed, rightPanelCollapsed,

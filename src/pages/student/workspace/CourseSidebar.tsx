@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor, Lock } from 'lucide-react';
 import { useWorkspace } from './WorkspaceContext';
 
 export function CourseSidebar() {
-  const { course, chapters, currentLesson, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
+  const { course, chapters, currentLesson, accessMap, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
     if (!currentLesson) return new Set();
     return new Set([currentLesson.chapter_id]);
@@ -74,20 +74,25 @@ export function CourseSidebar() {
                   {chapter.lessons.map(lesson => {
                     const isActive = currentLesson?.id === lesson.id;
                     const isCompleted = progress.has(lesson.id);
+                    const access = accessMap.get(lesson.id);
+                    const isLocked = access?.access === 'locked';
 
                     return (
                       <button
                         key={lesson.id}
                         onClick={() => selectLesson(lesson.id)}
+                        title={isLocked ? (access?.reason || 'Locked') : undefined}
                         className={`w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 transition-all group ${
                           isActive
                             ? 'bg-primary-50 dark:bg-primary-900/20 border-l-2 border-primary-500'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent'
-                        }`}
+                        } ${isLocked ? 'opacity-75' : ''}`}
                       >
                         <div className="flex-shrink-0">
                           {isCompleted ? (
                             <CheckCircle size={14} className="text-emerald-500" />
+                          ) : isLocked ? (
+                            <Lock size={13} className="text-amber-500" />
                           ) : isActive ? (
                             <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-500 bg-primary-500/20" />
                           ) : (
@@ -99,6 +104,7 @@ export function CourseSidebar() {
                             <p className={`text-xs leading-relaxed truncate ${
                               isActive ? 'font-semibold text-primary-700 dark:text-primary-400' :
                               isCompleted ? 'text-slate-500 dark:text-slate-400' :
+                              isLocked ? 'text-slate-400 dark:text-slate-500' :
                               'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
                             }`}>{lesson.title}</p>
                             {lesson.teaching_mode === 'live_class' && (

@@ -93,9 +93,39 @@ export interface Lesson {
   is_published: boolean;
   is_free_preview: boolean;
   requires_previous_lesson_completion: boolean;
+  unlock_rule: 'open' | 'sequential' | 'gated';
+  requires_activity_type: 'assignment' | 'quiz' | 'coding' | null;
+  requires_activity_id: string | null;
   xp_reward: number;
   created_at: string;
   updated_at: string;
+}
+
+export type LessonAccessState = 'available' | 'completed' | 'locked';
+
+export interface LessonAccessInfo {
+  access: LessonAccessState;
+  reason: string;
+  isReleased: boolean;
+}
+
+export interface LessonPlanItem {
+  lesson_id: string;
+  chapter_id: string;
+  course_id: string;
+  title: string;
+  slug: string;
+  teaching_mode: TeachingMode;
+  enable_coding_playground: boolean;
+  duration_minutes: number;
+  xp_reward: number;
+  order_index: number;
+  is_free_preview: boolean;
+  chapter_title: string;
+  chapter_order_index: number;
+  access: LessonAccessState;
+  reason: string;
+  is_released: boolean;
 }
 
 export type LessonResourceType = 'slides' | 'notes' | 'code_example' | 'practice_sheet' | 'external_resource' | 'recorded_video';

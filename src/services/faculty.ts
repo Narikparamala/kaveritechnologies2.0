@@ -109,6 +109,16 @@ export async function updateLesson(lessonId: string, updates: Partial<Lesson>): 
   if (error) throw error;
 }
 
+export async function releaseLessonForStudent(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('release_lesson_for_student', { p_student_id: studentId, p_lesson_id: lessonId });
+  if (error) throw error;
+}
+
+export async function revokeLessonRelease(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_lesson_release', { p_student_id: studentId, p_lesson_id: lessonId });
+  if (error) throw error;
+}
+
 export async function deleteLesson(lessonId: string): Promise<void> {
   const { error } = await supabase.from('lessons').delete().eq('id', lessonId);
   if (error) throw error;

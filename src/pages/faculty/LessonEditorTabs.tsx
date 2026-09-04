@@ -15,7 +15,9 @@ import {
   getLessonMaterials, createMaterial, updateMaterial, deleteMaterial,
   getPracticeQuestions, createPracticeQuestion, updatePracticeQuestion, deletePracticeQuestion,
   getLessonQuizzes, getLessonAssignments, getLessonLiveSessions, createQuiz, updateQuiz, deleteQuiz, createAssignment, updateAssignment, deleteAssignment,
+  getCourseAssignments, getCourseQuizzes,
 } from '../../services/faculty';
+import { supabase } from '../../lib/supabase';
 import type { Course, Lesson, LessonTopic, LessonSubtopic, LessonResource, LessonResourceType, LessonPracticeQuestion, Quiz, Assignment, LiveSession } from '../../types/database';
 import { FileUpload } from '../../components/ui/FileUpload';
 import { uploadLessonFile, ACCEPTED_FILE_TYPES } from '../../services/fileUpload';
@@ -126,7 +128,7 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
         {activeTab === 'practice' && <PracticeTab lesson={lesson} />}
         {activeTab === 'quiz' && <QuizTab lesson={lesson} course={course} />}
         {activeTab === 'assignment' && <AssignmentTab lesson={lesson} course={course} />}
-        {activeTab === 'settings' && <SettingsTab lesson={lesson} onRefresh={onRefresh} />}
+        {activeTab === 'settings' && <SettingsTab lesson={lesson} course={course} onRefresh={onRefresh} />}
       </div>
     </div>
   );
@@ -1097,10 +1099,65 @@ function RecordingTab({ lesson, course }: { lesson: Lesson; course: Course }) {
 // ============================================================
 // Settings Tab
 // ============================================================
-function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => void }) {
+function SettingsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Course; onRefresh: () => void }) {
   const { success, error: toastError } = useToast();
   const [saving, setSaving] = useState(false);
   const [teachingMode, setTeachingMode] = useState(lesson.teaching_mode ?? 'live_class');
+  const [unlockRule, setUnlockRule] = useState<'open' | 'sequential' | 'gated'>(lesson.unlock_rule ?? 'open');
+  const [actType, setActType] = useState<'assignment' | 'quiz' | 'coding' | ''>(lesson.requires_activity_type ?? '');
+  const [actId, setActId] = useState<string>(lesson.requires_activity_id ?? '');
+  const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  const loadActivities = async (type: 'assignment' | 'quiz' | 'coding') => {
+    setActivitiesLoading(true);
+    try {
+      if (type === 'assignment') {
+        const list = await getCourseAssignments(course.id);
+        setActivities(list.filter(a => a.is_published).map(a => ({ id: a.id, title: a.title })));
+      } else if (type === 'quiz') {
+        const list = await getCourseQuizzes(course.id);
+        setActivities(list.filter(q => q.is_published).map(q => ({ id: q.id, title: q.title })));
+      } else {
+        const { data } = await supabase.from('coding_questions').select('id, title').eq('is_published', true).order('title');
+        setActivities((data ?? []).map((q: any) => ({ id: q.id, title: q.title })));
+      }
+    } catch { setActivities([]); } finally { setActivitiesLoading(false); }
+  };
+
+  // When the lesson already has a gated activity type configured, load its options
+  useEffect(() => {
+    if (unlockRule === 'gated' && actType) loadActivities(actType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson.id]);
+
+  const handleUnlockRule = async (rule: 'open' | 'sequential' | 'gated') => {
+    setUnlockRule(rule);
+    if (rule !== 'gated') {
+      setActType(''); setActId('');
+      await handleUpdate({ unlock_rule: rule, requires_activity_type: null, requires_activity_id: null });
+    } else {
+      await handleUpdate({ unlock_rule: rule });
+    }
+  };
+
+  const handleActivityType = async (type: 'assignment' | 'quiz' | 'coding' | '') => {
+    setActType(type);
+    setActId('');
+    if (type) {
+      await loadActivities(type);
+      await handleUpdate({ requires_activity_type: type, requires_activity_id: null });
+    } else {
+      setActivities([]);
+      await handleUpdate({ requires_activity_type: null, requires_activity_id: null });
+    }
+  };
+
+  const handleActivity = async (id: string) => {
+    setActId(id);
+    if (id) await handleUpdate({ requires_activity_id: id });
+    else await handleUpdate({ requires_activity_id: null });
+  };
 
   const handleUpdate = async (updates: Partial<Lesson>) => {
     setSaving(true);
@@ -1171,6 +1228,61 @@ function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => v
               <p className="text-xs text-slate-400 mt-0.5">Students get an embedded Python editor to practice alongside the lesson.</p>
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
+          <label className="label">Lesson Progression</label>
+          <p className="text-xs text-slate-400 mb-3">Controls when enrolled students can access this lesson. Existing lessons default to Open.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {([
+              { key: 'open', title: 'Open', desc: 'Available to all enrolled students', icon: <Unlock size={16} /> },
+              { key: 'sequential', title: 'Sequential', desc: 'Unlocks after the previous lesson is completed', icon: <ListTree size={16} /> },
+              { key: 'gated', title: 'Gated', desc: 'Requires an assignment, quiz, or coding activity', icon: <Lock size={16} /> },
+            ] as const).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => handleUnlockRule(opt.key)}
+                className={`flex flex-col items-start gap-1.5 p-3 rounded-xl border-2 transition-all text-left ${unlockRule === opt.key ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
+              >
+                <span className={`flex items-center gap-1.5 text-sm font-medium ${unlockRule === opt.key ? 'text-primary-700 dark:text-primary-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {opt.icon} {opt.title}
+                </span>
+                <span className="text-[11px] text-slate-400 leading-snug">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+          {unlockRule === 'gated' && (
+            <div className="mt-3 space-y-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
+              <div>
+                <label className="label">Required activity type</label>
+                <select
+                  className="input text-sm w-full"
+                  value={actType}
+                  onChange={e => handleActivityType(e.target.value as any)}
+                >
+                  <option value="">Select activity type</option>
+                  <option value="assignment">Assignment</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="coding">Coding practice</option>
+                </select>
+              </div>
+              {actType && (
+                <div>
+                  <label className="label">Required activity</label>
+                  <select
+                    className="input text-sm w-full"
+                    value={actId}
+                    onChange={e => handleActivity(e.target.value)}
+                    disabled={activitiesLoading}
+                  >
+                    <option value="">{activitiesLoading ? 'Loading...' : `Select ${actType}`}</option>
+                    {activities.map(a => <option key={a.id} value={a.id}>{a.title}</option>)}
+                  </select>
+                </div>
+              )}
+              <p className="text-xs text-slate-400">Students must also complete the previous lesson in course order. Faculty can still release this lesson to individual students.</p>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-slate-100 dark:border-slate-700 pt-4">

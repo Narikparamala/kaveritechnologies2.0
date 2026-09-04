@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronLeft, CheckCircle, BookOpen, Video, FileText, Code,
   ExternalLink, ChevronDown, Lightbulb, Eye, EyeOff, Play, Clock, Zap,
   Bookmark, BookmarkCheck, Loader2, Award, ClipboardList, HelpCircle,
-  PanelLeftOpen, PanelRightOpen, Copy, Terminal,
+  PanelLeftOpen, PanelRightOpen, Copy, Terminal, Lock,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,7 +19,7 @@ export function LessonContent() {
     lessonQuizzes, lessonAssignments, lessonSessions, lessonLoading,
     goToNextLesson, goToPrevLesson, markComplete, toggleStudentBookmark,
     currentLessonIndex, totalLessons, sidebarCollapsed, rightPanelCollapsed,
-    toggleSidebar, toggleRightPanel, progress, isBookmarked,
+    toggleSidebar, toggleRightPanel, progress, isBookmarked, accessMap,
   } = ws;
 
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
@@ -46,6 +46,29 @@ export function LessonContent() {
   }, [goToNextLesson, goToPrevLesson]);
 
   if (!currentLesson || !course) return null;
+
+  const accessInfo = accessMap.get(currentLesson.id);
+  const isLocked = accessInfo?.access === 'locked';
+
+  if (isLocked) {
+    return (
+      <div className="flex items-center justify-center h-full px-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-5">
+            <Lock size={28} className="text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{currentLesson.title}</h2>
+          <p className="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">This lesson is locked</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            {accessInfo?.reason || 'Complete the required previous work to unlock this lesson.'}
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-4">
+            Locked lessons become available once the required work is completed or your faculty releases them.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const isCompleted = progress.has(currentLesson.id);
   const slides = resources.filter(r => r.resource_type === 'slides');

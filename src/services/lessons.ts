@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { Lesson, LessonProgress, LessonNote, LessonBookmark, LessonResource } from '../types/database';
+import type { Lesson, LessonProgress, LessonNote, LessonBookmark, LessonResource, LessonPlanItem, LessonAccessInfo } from '../types/database';
 
 export interface LessonCompletionResult {
   progress: LessonProgress;
@@ -18,6 +18,18 @@ export async function getLessonById(lessonId: string) {
     .maybeSingle();
   if (error) throw error;
   return data as Lesson | null;
+}
+
+export async function getStudentCoursePlan(courseId: string): Promise<LessonPlanItem[]> {
+  const { data, error } = await supabase.rpc('get_student_course_plan', { p_course_id: courseId });
+  if (error) throw error;
+  return (data ?? []) as LessonPlanItem[];
+}
+
+export async function getStudentLessonAccess(lessonId: string): Promise<LessonAccessInfo | null> {
+  const { data, error } = await supabase.rpc('get_student_lesson_access', { p_lesson_id: lessonId });
+  if (error) throw error;
+  return (data?.[0] ?? null) as LessonAccessInfo | null;
 }
 
 export async function getLessonProgress(lessonId: string, studentId: string) {
