@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Clock, Award, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, Clock, Award, CheckCircle, ArrowLeft, ChevronDown, ChevronUp, Hourglass, UserPlus, XCircle, LogIn } from 'lucide-react';
 import { PublicNav } from '../../components/common/PublicNav';
 import { Footer } from '../../components/common/Footer';
 import { Badge } from '../../components/ui/Badge';
@@ -8,7 +8,8 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import type { Course, Chapter, Lesson, CourseEnrollment } from '../../types/database';
+import type { Course, Chapter, Lesson, CourseEnrollment, EnrollmentRequest } from '../../types/database';
+import { COMPANY } from '../../lib/company';
 
 export default function CourseDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -19,8 +20,11 @@ export default function CourseDetailPage() {
   const [course, setCourse] = useState<Course | null>(null);
   const [chapters, setChapters] = useState<(Chapter & { lessons: Lesson[] })[]>([]);
   const [enrollment, setEnrollment] = useState<CourseEnrollment | null>(null);
+  const [request, setRequest] = useState<EnrollmentRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [openChapters, setOpenChapters] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -57,15 +61,14 @@ export default function CourseDetailPage() {
       setChapters(chaptersWithLessons);
       if (chaps.length > 0) setOpenChapters(new Set([chaps[0].id]));
 
-      // Check enrollment
+      // Check enrollment + any enrollment request
       if (user) {
-        const { data: enrData } = await supabase
-          .from('course_enrollments')
-          .select('*')
-          .eq('course_id', courseData.id)
-          .eq('student_id', user.id)
-          .maybeSingle();
+        const [{ data: enrData }, { data: reqData }] = await Promise.all([
+          supabase.from('course_enrollments').select('*').eq('course_id', courseData.id).eq('student_id', user.id).maybeSingle(),
+          supabase.from('enrollment_requests').select('*').eq('course_id', courseData.id).eq('student_id', user.id).order('requested_at', { ascending: false }).limit(1).maybeSingle(),
+        ]);
         setEnrollment(enrData as CourseEnrollment | null);
+        setRequest(reqData as EnrollmentRequest | null);
       }
 
       setLoading(false);
@@ -104,6 +107,47 @@ export default function CourseDetailPage() {
       setTimeout(() => navigate('/student/courses'), 1000);
     }
     setEnrolling(false);
+  };
+
+  const handleRequestAccess = async () => {
+    if (!user || !profile) { navigate('/login'); return; }
+    if (profile.role !== 'student') { info('Request', 'Only student accounts can request course access.'); return; }
+    if (enrollment) { navigate('/student/courses'); return; }
+    if (request?.status === 'pending') { info('Request', 'You already have a pending request for this course.'); return; }
+
+    setRequesting(true);
+    const { data, error: err } = await supabase
+      .from('enrollment_requests')
+      .insert({ course_id: course!.id, student_id: user.id, status: 'pending' })
+      .select()
+      .single();
+    setRequesting(false);
+
+    if (err) {
+      if (err.code === '23505') {
+        info('Request pending', 'You already have a pending request for this course.');
+        const { data: latest } = await supabase.from('enrollment_requests').select('*').eq('course_id', course!.id).eq('student_id', user.id).order('requested_at', { ascending: false }).limit(1).maybeSingle();
+        if (latest) setRequest(latest as EnrollmentRequest);
+      } else {
+        toastError('Request failed', err.message);
+      }
+      return;
+    }
+    setRequest(data as EnrollmentRequest);
+    success('Request sent!', 'Our team will review your request. You will get access once it is approved.');
+  };
+
+  const handleCancelRequest = async () => {
+    if (!request) return;
+    setCancelling(true);
+    const { error } = await supabase.rpc('cancel_enrollment_request', { p_request_id: request.id });
+    setCancelling(false);
+    if (error) {
+      toastError('Could not cancel request', error.message);
+      return;
+    }
+    setRequest({ ...request, status: 'cancelled' });
+    info('Request cancelled', 'You can request access again if you change your mind.');
   };
 
   const toggleChapter = (chapterId: string) => {
@@ -157,38 +201,183 @@ export default function CourseDetailPage() {
                 </div>
               </div>
 
-              {/* Enrol card */}
+              {/* Enrol / admissions card */}
               <div className="card p-6 self-start">
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
-                  {course.price === 0
-                    ? 'This course is open for enrolment. Sign in (or create a free account) and enrol to start learning right away.'
-                    : 'Enrol to access the full course on the Kaveri platform. Our team confirms course access and batch details for paid courses.'}
-                </p>
+                {(() => {
+                  const hasActive = Boolean(enrollment && enrollment.access_status === 'active');
+                  const isStudent = Boolean(user && profile?.role === 'student');
+                  const mode = course.enrollment_mode ?? 'open';
 
-                <button
-                  onClick={handleEnroll}
-                  disabled={enrolling}
-                  className={`w-full py-3 rounded-xl font-semibold text-sm transition-all mb-4 ${
-                    enrollment
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                      : 'btn-primary'
-                  }`}
-                >
-                  {enrolling ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Enrolling...
-                    </span>
-                  ) : enrollment ? (
-                    '✓ Go to Course'
-                  ) : user ? (
-                    'Enrol Now'
-                  ) : (
-                    'Sign Up to Enrol'
-                  )}
-                </button>
+                  if (hasActive) {
+                    return (
+                      <>
+                        <p className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">
+                          <CheckCircle size={16} /> You are enrolled in this course
+                        </p>
+                        <Link to={`/student/course/${course.id}`} className="block w-full py-3 rounded-xl font-semibold text-sm text-center bg-emerald-600 text-white hover:bg-emerald-700 transition-colors mb-4">
+                          ✓ Go to Course
+                        </Link>
+                      </>
+                    );
+                  }
 
-                <ul className="space-y-2.5 text-sm text-slate-600 dark:text-slate-400">
+                  if (!user) {
+                    return (
+                      <>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          {mode === 'open'
+                            ? 'This course has open enrolment. Create a free account (or sign in) and enrol to start learning right away.'
+                            : mode === 'approval_required'
+                            ? 'This course requires approval before you get access. Sign in to request course access.'
+                            : 'Admissions for this course are currently closed. Contact Kaveri to ask about the next batch.'}
+                        </p>
+                        <Link to="/login" className="block w-full py-3 rounded-xl font-semibold text-sm text-center btn-primary mb-3">
+                          <span className="inline-flex items-center gap-2"><LogIn size={15} /> Sign In</span>
+                        </Link>
+                        <Link to="/register" className="block w-full py-3 rounded-xl font-semibold text-sm text-center btn-secondary">Create an Account</Link>
+                      </>
+                    );
+                  }
+
+                  if (!isStudent) {
+                    return (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Only student accounts can enrol or request access to courses.
+                      </p>
+                    );
+                  }
+
+                  if (mode === 'open') {
+                    return (
+                      <>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          This course has open enrolment — enrol now and start learning right away.
+                        </p>
+                        <button
+                          onClick={handleEnroll}
+                          disabled={enrolling}
+                          className="w-full py-3 rounded-xl font-semibold text-sm btn-primary mb-4"
+                        >
+                          {enrolling ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              Enrolling...
+                            </span>
+                          ) : (
+                            'Enrol Now'
+                          )}
+                        </button>
+                      </>
+                    );
+                  }
+
+                  if (mode === 'closed') {
+                    return (
+                      <>
+                        <p className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">
+                          <XCircle size={16} className="text-slate-400" /> Admissions closed
+                        </p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          New admissions for this course are currently closed. Contact Kaveri to ask about the next batch.
+                        </p>
+                        <a href={`mailto:${COMPANY.email}?subject=${encodeURIComponent(`Admissions enquiry — ${course.title}`)}`} className="block w-full py-3 rounded-xl font-semibold text-sm text-center btn-secondary">
+                          Contact Kaveri
+                        </a>
+                      </>
+                    );
+                  }
+
+                  // approval_required
+                  if (request?.status === 'pending') {
+                    return (
+                      <>
+                        <p className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm font-medium mb-3">
+                          <Hourglass size={16} /> Request pending
+                        </p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          Your request was sent on {new Date(request.requested_at).toLocaleDateString()}. Our team will review it — you will get course access as soon as it is approved.
+                        </p>
+                        <button
+                          onClick={() => void handleCancelRequest()}
+                          disabled={cancelling}
+                          className="w-full py-3 rounded-xl font-semibold text-sm btn-secondary mb-1"
+                        >
+                          {cancelling ? 'Cancelling...' : 'Cancel Request'}
+                        </button>
+                      </>
+                    );
+                  }
+
+                  if (request?.status === 'approved') {
+                    return (
+                      <>
+                        <p className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-3">
+                          <CheckCircle size={16} /> Request approved
+                        </p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          Your request was approved. If your course access has not appeared yet, contact Kaveri.
+                        </p>
+                        <a href={`mailto:${COMPANY.email}?subject=${encodeURIComponent(`Enrolment help — ${course.title}`)}`} className="block w-full py-3 rounded-xl font-semibold text-sm text-center btn-secondary">
+                          Contact Kaveri
+                        </a>
+                      </>
+                    );
+                  }
+
+                  if (request?.status === 'rejected') {
+                    return (
+                      <>
+                        <p className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-medium mb-3">
+                          <XCircle size={16} /> Access request was not approved
+                        </p>
+                        {request.review_note && (
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                            Note from Kaveri: “{request.review_note}”
+                          </p>
+                        )}
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                          Contact Kaveri to discuss other options, or request access again.
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          <button onClick={() => void handleRequestAccess()} disabled={requesting} className="w-full py-3 rounded-xl font-semibold text-sm btn-primary">
+                            {requesting ? 'Sending...' : 'Request Again'}
+                          </button>
+                          <a href={`mailto:${COMPANY.email}?subject=${encodeURIComponent(`Enrolment enquiry — ${course.title}`)}`} className="text-center text-sm text-primary-600 dark:text-primary-400 underline">
+                            Contact Kaveri
+                          </a>
+                        </div>
+                      </>
+                    );
+                  }
+
+                  // no request yet (or cancelled) — offer to request
+                  return (
+                    <>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                        This course requires approval before you get access. Send a request and our team will review it.
+                      </p>
+                      <button
+                        onClick={() => void handleRequestAccess()}
+                        disabled={requesting}
+                        className="w-full py-3 rounded-xl font-semibold text-sm btn-primary mb-4"
+                      >
+                        {requesting ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Sending...
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-2"><UserPlus size={15} /> Request Course Access</span>
+                        )}
+                      </button>
+                      {request?.status === 'cancelled' && (
+                        <p className="text-xs text-slate-400 mb-2">Your earlier request was cancelled. You can request again.</p>
+                      )}
+                    </>
+                  );
+                })()}
+
+                <ul className="space-y-2.5 text-sm text-slate-600 dark:text-slate-400 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   {[
                     `${totalLessons} structured lessons in order`,
                     'Assignments, quizzes & coding practice',

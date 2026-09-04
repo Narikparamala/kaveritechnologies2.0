@@ -50,6 +50,7 @@ export default function CoursesPage() {
   }, [user]);
 
   const handleEnroll = async (courseId: string) => {
+    const course = courses.find(c => c.id === courseId);
     if (!user || !profile) { navigate('/login'); return; }
     if (profile.role !== 'student') {
       info('Enrollment', 'Only students can enroll in courses.');
@@ -57,6 +58,11 @@ export default function CoursesPage() {
     }
     if (enrolledIds.has(courseId)) {
       navigate('/student/courses');
+      return;
+    }
+    // Non-open courses are handled on the course page (request / closed flows)
+    if (course && course.enrollment_mode && course.enrollment_mode !== 'open') {
+      navigate(`/courses/${course.slug}`);
       return;
     }
     setEnrollingId(courseId);
@@ -154,28 +160,37 @@ export default function CoursesPage() {
                       <div className="flex items-center gap-4 text-xs text-slate-400 mb-4">
                         <span className="flex items-center gap-1"><Clock size={12} /> {course.duration_hours}h</span>
                       </div>
-                      <button
-                        onClick={() => handleEnroll(course.id)}
-                        disabled={isEnrolling}
-                        className={`w-full py-2.5 rounded-xl font-medium text-sm transition-all ${
-                          isEnrolled
-                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200'
-                            : 'btn-primary'
-                        }`}
-                      >
-                        {isEnrolling ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {isEnrolled ? (
+                        <Link to={`/student/course/${course.id}`} className="w-full py-2.5 rounded-xl font-medium text-sm text-center bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-all">
+                          ✓ Go to Course
+                        </Link>
+                      ) : course.enrollment_mode && course.enrollment_mode !== 'open' ? (
+                        <Link
+                          to={`/courses/${course.slug}`}
+                          className={`w-full py-2.5 rounded-xl font-medium text-sm text-center btn-primary`}
+                        >
+                          {course.enrollment_mode === 'approval_required' ? 'Request Access' : course.enrollment_mode === 'closed' ? 'View Course' : 'View Course'}
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => handleEnroll(course.id)}
+                          disabled={isEnrolling}
+                          className={`w-full py-2.5 rounded-xl font-medium text-sm transition-all ${
+                            'btn-primary'
+                          }`}
+                        >
+                          {isEnrolling ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             Enrolling...
-                          </span>
-                        ) : isEnrolled ? (
-                          '✓ Go to Course'
-                        ) : user ? (
-                          'Enroll Now'
-                        ) : (
-                          'Sign Up to Enroll'
-                        )}
-                      </button>
+                            </span>
+                          ) : user ? (
+                            'Enroll Now'
+                          ) : (
+                            'Sign Up to Enroll'
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

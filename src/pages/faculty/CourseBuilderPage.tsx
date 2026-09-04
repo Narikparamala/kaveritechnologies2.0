@@ -66,7 +66,7 @@ export default function CourseBuilderPage() {
     teaching_mode: 'live_class', enable_coding_playground: false,
     duration_minutes: 60, is_published: false,
   });
-  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', is_published: false, is_featured: false });
+  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', enrollment_mode: 'open', is_published: false, is_featured: false });
 
   const loadData = useCallback(async () => {
     if (!courseId || !profile) return;
@@ -214,6 +214,7 @@ export default function CourseBuilderPage() {
         difficulty: courseForm.difficulty as any,
         category: courseForm.category,
         language: courseForm.language,
+        enrollment_mode: courseForm.enrollment_mode as any,
         is_published: courseForm.is_published,
         is_featured: courseForm.is_featured,
       });
@@ -311,7 +312,8 @@ export default function CourseBuilderPage() {
       title: course.title, short_description: course.short_description ?? '',
       description: course.description ?? '', thumbnail_url: course.thumbnail_url ?? '',
       difficulty: course.difficulty, category: course.category ?? 'python',
-      language: course.language ?? 'English', is_published: course.is_published,
+      language: course.language ?? 'English', enrollment_mode: course.enrollment_mode ?? 'open',
+      is_published: course.is_published,
       is_featured: course.is_featured,
     });
     setCourseEditModal(true);
@@ -567,6 +569,15 @@ export default function CourseBuilderPage() {
               <label className="label">Language</label>
               <input className="input" value={courseForm.language} onChange={e => setCourseForm(f => ({ ...f, language: e.target.value }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Enrolment</label>
+            <select className="input" value={courseForm.enrollment_mode} onChange={e => setCourseForm(f => ({ ...f, enrollment_mode: e.target.value }))}>
+              <option value="open">Open enrolment — students can enrol immediately</option>
+              <option value="approval_required">Approval required — students request access, admin approves</option>
+              <option value="closed">Closed — no new students</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Paid or batch-based courses normally use "Approval required". Access is always granted server-side.</p>
           </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 cursor-pointer">

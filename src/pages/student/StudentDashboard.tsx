@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -10,7 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
 import { getStudentCoursePlan } from '../../services/lessons';
-import type { CourseEnrollment, Course, Announcement, Notification, LiveSession } from '../../types/database';
+import type { CourseEnrollment, Course, Announcement, Notification, LiveSession, EnrollmentRequest } from '../../types/database';
 import type { SessionWithDetails } from '../../services/liveSessions';
 
 type EnrolledCourse = CourseEnrollment & { course: Course };
@@ -18,6 +18,7 @@ type EnrolledCourse = CourseEnrollment & { course: Course };
 export default function StudentDashboard() {
   const { profile } = useAuth();
   const [enrollments, setEnrollments] = useState<EnrolledCourse[]>([]);
+  const [requests, setRequests] = useState<EnrollmentRequest[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [completedLessons, setCompletedLessons] = useState(0);
@@ -39,14 +40,17 @@ export default function StudentDashboard() {
         { data: annData },
         { data: notifData },
         { data: progData },
+        { data: reqData },
       ] = await Promise.all([
         supabase.from('course_enrollments').select('*, course:courses(*)').eq('student_id', profile.id).order('enrolled_at', { ascending: false }).limit(5),
         supabase.from('announcements').select('*').eq('is_global', true).order('created_at', { ascending: false }).limit(3),
         supabase.from('notifications').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5),
         supabase.from('lesson_progress').select('id, completed_at').eq('student_id', profile.id).eq('completed', true),
+        supabase.from('enrollment_requests').select('*, course:courses(id,title,slug)').eq('student_id', profile.id).order('requested_at', { ascending: false }).limit(5),
       ]);
 
       setEnrollments((enrData ?? []) as any);
+      setRequests(((reqData ?? []).filter((r: any) => r.status !== 'approved')) as EnrollmentRequest[]);
       setAnnouncements((annData ?? []) as Announcement[]);
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
@@ -262,6 +266,44 @@ export default function StudentDashboard() {
         }
         return null;
       })()}
+
+      {/* Course requests (pending / rejected / cancelled) */}
+      {requests.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="section-title mb-0">Course Requests</h2>
+            <Link to="/courses" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">Browse Courses</Link>
+          </div>
+          <div className="space-y-3">
+            {requests.map(r => {
+              const statusMeta = {
+                pending: { label: 'Pending', cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
+                approved: { label: 'Approved', cls: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' },
+                rejected: { label: 'Not approved', cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' },
+                cancelled: { label: 'Cancelled', cls: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' },
+              }[r.status] ?? { label: r.status, cls: 'bg-slate-100 dark:bg-slate-800 text-slate-500' };
+              return (
+                <div key={r.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+                    <Hourglass size={17} className="text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{r.course?.title ?? 'Course'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Requested {new Date(r.requested_at).toLocaleDateString()}</p>
+                  </div>
+                  <span className={`badge text-xs ${statusMeta.cls}`}>{statusMeta.label}</span>
+                  {r.course?.slug && (
+                    <Link to={`/courses/${r.course.slug}`} className="btn-ghost text-xs py-1.5 px-3 flex-shrink-0">View Course</Link>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            Need help? <Link to="/contact" className="underline">Contact Kaveri</Link>
+          </p>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left column */}

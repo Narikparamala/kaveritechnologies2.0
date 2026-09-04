@@ -17,6 +17,8 @@ export interface Profile {
   updated_at: string;
 }
 
+export type CourseEnrollmentMode = 'open' | 'approval_required' | 'closed';
+
 export interface Course {
   id: string;
   title: string;
@@ -33,6 +35,7 @@ export interface Course {
   price: number;
   certificate_eligible: boolean;
   language: string;
+  enrollment_mode: CourseEnrollmentMode;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -52,13 +55,30 @@ export interface CourseEnrollment {
   enrolled_at: string;
   completed_at: string | null;
   progress_percentage: number;
-  enrollment_source: 'purchase' | 'admin_grant' | 'free_enrollment' | 'manual';
+  enrollment_source: 'purchase' | 'admin_grant' | 'free_enrollment' | 'manual' | 'approved_request';
   access_status: 'active' | 'revoked' | 'pending';
   granted_by: string | null;
   granted_at: string | null;
   revoked_by: string | null;
   revoked_at: string | null;
   notes: string | null;
+}
+
+export type EnrollmentRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface EnrollmentRequest {
+  id: string;
+  student_id: string;
+  course_id: string;
+  status: EnrollmentRequestStatus;
+  message: string | null;
+  requested_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+  course?: Pick<Course, 'id' | 'title' | 'slug'> | null;
 }
 
 export interface Chapter {

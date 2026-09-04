@@ -14,7 +14,7 @@ export default function AdminCoursesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python' });
+  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python', enrollment_mode: 'open' });
 
   useEffect(() => {
     supabase.from('courses').select('*').order('created_at', { ascending: false })
@@ -29,6 +29,13 @@ export default function AdminCoursesPage() {
     }).select().maybeSingle();
     if (error) { toastError('Error', error.message); return; }
     if (data) { setCourses(cs => [data as Course, ...cs]); success('Course created!'); setShowModal(false); }
+  };
+
+  const updateEnrollmentMode = async (id: string, mode: string) => {
+    const { error } = await supabase.from('courses').update({ enrollment_mode: mode }).eq('id', id);
+    if (error) { toastError('Update failed', error.message); return; }
+    setCourses(cs => cs.map(c => c.id === id ? { ...c, enrollment_mode: mode as Course['enrollment_mode'] } : c));
+    success('Enrolment mode updated');
   };
 
   const togglePublish = async (id: string, current: boolean) => {
@@ -71,6 +78,17 @@ export default function AdminCoursesPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={c.is_published ? 'success' : 'default'}>{c.is_published ? 'Published' : 'Draft'}</Badge>
+                <select
+                  title="Enrolment mode"
+                  aria-label={`Enrolment mode for ${c.title}`}
+                  value={c.enrollment_mode ?? 'open'}
+                  onChange={e => updateEnrollmentMode(c.id, e.target.value)}
+                  className="input !py-1.5 !px-2 text-xs w-36"
+                >
+                  <option value="open">Open enrolment</option>
+                  <option value="approval_required">Approval required</option>
+                  <option value="closed">Closed</option>
+                </select>
                 <button
                   onClick={() => togglePublish(c.id, c.is_published)}
                   className="btn-ghost py-1.5 px-3 text-xs flex items-center gap-1"
@@ -106,6 +124,14 @@ export default function AdminCoursesPage() {
               <label className="label">Duration (hours)</label>
               <input type="number" className="input" value={form.duration_hours} onChange={e => setForm(f => ({ ...f, duration_hours: Number(e.target.value) }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Enrolment</label>
+            <select className="input" value={form.enrollment_mode} onChange={e => setForm(f => ({ ...f, enrollment_mode: e.target.value }))}>
+              <option value="open">Open enrolment — students enrol immediately</option>
+              <option value="approval_required">Approval required — admin approves requests</option>
+              <option value="closed">Closed — no new students</option>
+            </select>
           </div>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
