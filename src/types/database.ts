@@ -543,7 +543,7 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support';
+  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support' | 'enrollment' | 'workshop' | 'exam' | 'ecosystem' | 'system';
   is_read: boolean;
   read_at: string | null;
   reference_id: string | null;
