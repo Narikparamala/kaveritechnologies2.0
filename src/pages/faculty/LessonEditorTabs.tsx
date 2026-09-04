@@ -500,7 +500,6 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
                     {m.file_url && <a href={m.file_url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline flex items-center gap-0.5"><FileText size={9} /> File</a>}
                     {m.external_url && <a href={m.external_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-0.5"><ExternalLink size={9} /> Link</a>}
                     {m.is_locked && <span className="flex items-center gap-0.5 text-amber-500"><Lock size={9} /> Locked</span>}
-                    {m.unlock_after_session && <span className="text-blue-500">Unlocks after live class</span>}
                   </div>
                 </div>
                 <button onClick={() => handleToggleLock(m)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
@@ -555,8 +554,8 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Published</span></label>
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.is_locked} onChange={e => setForm(f => ({ ...f, is_locked: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Locked</span></label>
-            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.unlock_after_session} onChange={e => setForm(f => ({ ...f, unlock_after_session: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Unlock after live class</span></label>
           </div>
+          <p className="text-[11px] text-slate-400">Use <strong>Live Class → Materials &amp; Recording</strong> to control when materials release around a live session.</p>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setEditModal(null)} className="btn-secondary">Cancel</button>
             <button onClick={handleSave} disabled={saving || !form.title} className="btn-primary flex items-center gap-2 disabled:opacity-50">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}{editModal?.mode === 'edit' ? 'Update' : 'Add'}</button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -25,6 +25,10 @@ export default function StudentDashboard() {
   const [upcomingSessions, setUpcomingSessions] = useState<SessionWithDetails[]>([]);
   const [liveSessions, setLiveSessions] = useState<SessionWithDetails[]>([]);
   const [nextLesson, setNextLesson] = useState<{ courseId: string; courseTitle: string; lessonTitle: string } | null>(null);
+  const [nextGate, setNextGate] = useState<{
+    courseId: string; courseTitle: string; activityType: string;
+    activityTitle: string; activityId: string; lessonTitle: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,19 +51,38 @@ export default function StudentDashboard() {
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
 
-      // Next available lesson across enrolled courses (server-authoritative plan)
+      // Next action across enrolled courses (server-authoritative plan):
+      // priority for the dashboard card is live -> blocking gate -> next lesson.
+      let foundGate: typeof nextGate = null;
+      let foundNext: typeof nextLesson = null;
       for (const enr of (enrData ?? [])) {
         try {
           const plan = await getStudentCoursePlan(enr.course_id);
-          const next = plan.find(i => i.access === 'available');
-          if (next) {
-            setNextLesson({ courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: next.title });
-            break;
+          if (!foundGate) {
+            const gated = plan.find(i => i.access === 'locked' && i.requires_activity_type && i.requires_activity_id);
+            if (gated) {
+              foundGate = {
+                courseId: enr.course_id,
+                courseTitle: enr.course?.title ?? 'Course',
+                activityType: gated.requires_activity_type as string,
+                activityTitle: gated.requires_activity_title ?? (gated.requires_activity_type as string),
+                activityId: gated.requires_activity_id as string,
+                lessonTitle: gated.title,
+              };
+            }
+          }
+          if (!foundNext) {
+            const next = plan.find(i => i.access === 'available');
+            if (next) {
+              foundNext = { courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: next.title };
+            }
           }
         } catch {
           // skip course if the plan cannot be resolved
         }
       }
+      setNextGate(foundGate);
+      setNextLesson(foundNext);
 
       // Build weekly activity data from lesson_progress completed_at
       const now = new Date();
@@ -152,6 +175,34 @@ export default function StudentDashboard() {
                     <Video size={15} /> Join Live Class
                   </a>
                 )}
+              </div>
+            </div>
+          );
+        }
+        if (nextGate) {
+          const gateHref = nextGate.activityType === 'assignment'
+            ? `/student/assignments/${nextGate.activityId}`
+            : nextGate.activityType === 'quiz'
+            ? '/student/quizzes'
+            : `/student/coding-practice/${nextGate.activityId}`;
+          const gateLabel = nextGate.activityType === 'assignment' ? 'Assignment'
+            : nextGate.activityType === 'quiz' ? 'Quiz' : 'Coding practice';
+          return (
+            <div className="card p-5 mb-8 bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-200/50 dark:shadow-none">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Target size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-white/70">Required to continue</p>
+                    <p className="font-bold text-white">{nextGate.activityTitle}</p>
+                    <p className="text-xs text-white/70">Complete this {gateLabel.toLowerCase()} to unlock &ldquo;{nextGate.lessonTitle}&rdquo; · {nextGate.courseTitle}</p>
+                  </div>
+                </div>
+                <Link to={gateHref} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors">
+                  Open {gateLabel} <ArrowRight size={15} />
+                </Link>
               </div>
             </div>
           );

@@ -109,6 +109,18 @@ export interface LessonAccessInfo {
   isReleased: boolean;
 }
 
+export interface LessonActivity {
+  kind: string;
+  title: string;
+  state: string;
+  count?: number;
+  session_id?: string;
+  quiz_id?: string;
+  assignment_id?: string;
+  recording?: string;
+  date?: string;
+}
+
 export interface LessonPlanItem {
   lesson_id: string;
   chapter_id: string;
@@ -126,6 +138,10 @@ export interface LessonPlanItem {
   access: LessonAccessState;
   reason: string;
   is_released: boolean;
+  requires_activity_type: 'assignment' | 'quiz' | 'coding' | null;
+  requires_activity_id: string | null;
+  requires_activity_title: string | null;
+  activities: LessonActivity[];
 }
 
 export type LessonResourceType = 'slides' | 'notes' | 'code_example' | 'practice_sheet' | 'external_resource' | 'recorded_video';
