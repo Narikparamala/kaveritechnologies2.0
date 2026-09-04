@@ -25,7 +25,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import AuthRedirectPage from './pages/auth/AuthRedirectPage';
-import DeveloperRolePage from './pages/auth/DeveloperRolePage';
+import PortalChooserPage from './pages/auth/PortalChooserPage';
 
 // Layouts (keep eager so shell renders immediately)
 import StudentLayout from './pages/student/StudentLayout';
@@ -182,7 +182,9 @@ export default function App() {
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route path="/auth/redirect" element={<AuthRedirectPage />} />
-                  <Route path="/developer-role" element={<DeveloperRolePage />} />
+                  <Route path="/portal" element={<PortalChooserPage />} />
+                  {/* Legacy alias used by local development tooling */}
+                  <Route path="/developer-role" element={<PortalChooserPage />} />
 
                   {/* Demo routes - lazy loaded */}
                   <Route path="/demo/student" element={<DemoStudentLayout />}>

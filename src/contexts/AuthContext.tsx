@@ -30,11 +30,35 @@ export const ROLE_DASHBOARDS: Record<UserRole, string> = {
   super_admin: '/admin/dashboard',
 };
 
+// Which portals a user may view. A portal switch is a UI-only preview: the
+// real database role (realRole) never changes, so server-side RLS still
+// authorises every request with the user's actual account permissions.
+export function portalRolesFor(realRole: UserRole | null): {
+  primary: UserRole;
+  previews: UserRole[];
+} {
+  if (realRole === 'super_admin') {
+    return { primary: 'super_admin', previews: ['faculty', 'student'] };
+  }
+  if (realRole === 'faculty') {
+    return { primary: 'faculty', previews: ['student'] };
+  }
+  return { primary: 'student', previews: [] };
+}
+
+export function canSwitchPortal(realRole: UserRole | null): boolean {
+  return portalRolesFor(realRole).previews.length > 0;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   role: UserRole | null;
+  /** The user's actual role from the database — never changed by previews. */
+  realRole: UserRole | null;
+  /** True when the UI is showing a different portal than the real role. */
+  isPortalPreview: boolean;
   loading: boolean;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -45,6 +69,10 @@ interface AuthContextType {
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<Profile | null>;
+  /** Switch the UI portal (super_admin/faculty only). UI-only, never the DB role. */
+  switchPortal: (role: UserRole) => void;
+  /** Return to the user's real portal. */
+  resetPortal: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,30 +94,22 @@ const PREVIEW_PROFILE: Profile = {
   updated_at: new Date().toISOString(),
 };
 
-function selectedDeveloperRole(profile: Profile | null): UserRole | null {
-  if (
-    !import.meta.env.DEV ||
-    profile?.email?.toLowerCase() !== DEVELOPER_EMAIL
-  ) {
-    return null;
-  }
+function selectedPortalRole(profile: Profile | null): UserRole | null {
+  if (!profile) return null;
 
-  const requestedRole = new URLSearchParams(window.location.search).get(
-    'developerRole',
-  );
-  if (
-    requestedRole === 'student' ||
-    requestedRole === 'faculty' ||
-    requestedRole === 'super_admin'
-  ) {
-    return requestedRole;
+  const params = new URLSearchParams(window.location.search);
+  const requestedRole = params.get('portal') ?? params.get('developerRole');
+  if (requestedRole === 'student' || requestedRole === 'faculty' || requestedRole === 'super_admin') {
+    return portalRolesFor(profile.role).primary === requestedRole ||
+      portalRolesFor(profile.role).previews.includes(requestedRole)
+      ? requestedRole
+      : null;
   }
 
   const selected = sessionStorage.getItem(DEVELOPER_ROLE_KEY);
-  return selected === 'student' ||
-    selected === 'faculty' ||
-    selected === 'super_admin'
-    ? selected
+  const allowed = portalRolesFor(profile.role);
+  return selected === allowed.primary || allowed.previews.includes(selected as UserRole)
+    ? (selected as UserRole)
     : null;
 }
 
@@ -127,12 +147,16 @@ function PreviewAuthProvider({ children }: { children: ReactNode }) {
     session: previewSession,
     profile: previewProfile,
     role: previewRole,
+    realRole: previewRole,
+    isPortalPreview: false,
     loading: false,
     isAuthenticated: true,
     signIn: async () => ({ error: null }),
     signUp: async () => ({ error: null }),
     signOut: async () => undefined,
     refreshProfile: async () => previewProfile,
+    switchPortal: () => undefined,
+    resetPortal: () => undefined,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -285,22 +309,43 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   };
 
-  const developerRole = selectedDeveloperRole(profile);
+  const portalRole = selectedPortalRole(profile);
   const effectiveProfile =
-    profile && developerRole ? { ...profile, role: developerRole } : profile;
+    profile && portalRole ? { ...profile, role: portalRole } : profile;
   const role = effectiveProfile?.role ?? null;
+  const realRole = profile?.role ?? null;
+
+  const switchPortal = (nextRole: UserRole) => {
+    const allowed = portalRolesFor(realRole);
+    if (allowed.primary !== nextRole && !allowed.previews.includes(nextRole)) {
+      return; // never let a preview escape the user's real-role set
+    }
+    sessionStorage.setItem(DEVELOPER_ROLE_KEY, nextRole);
+    window.location.assign(ROLE_DASHBOARDS[nextRole]);
+  };
+
+  const resetPortal = () => {
+    sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
+    if (realRole) window.location.assign(ROLE_DASHBOARDS[realRole]);
+  };
 
   const value: AuthContextType = {
     user,
     session,
     profile: effectiveProfile,
     role,
+    realRole,
+    isPortalPreview: Boolean(
+      realRole && role && role !== realRole && canSwitchPortal(realRole),
+    ),
     loading,
     isAuthenticated: Boolean(user && session),
     signIn,
     signUp,
     signOut,
     refreshProfile,
+    switchPortal,
+    resetPortal,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

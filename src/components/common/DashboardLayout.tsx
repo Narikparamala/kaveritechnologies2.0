@@ -1,14 +1,22 @@
 import { useState, type ReactNode } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Eye } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface DashboardLayoutProps {
   sidebar: ReactNode;
   children: ReactNode;
 }
 
+const PORTAL_LABEL: Record<string, string> = {
+  student: 'Student',
+  faculty: 'Faculty',
+  super_admin: 'Admin',
+};
+
 export function DashboardLayout({ sidebar, children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { isPortalPreview, role, resetPortal } = useAuth();
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden">
@@ -49,6 +57,24 @@ export function DashboardLayout({ sidebar, children }: DashboardLayoutProps) {
           </button>
           <span className="font-semibold text-slate-900 dark:text-white">Kaveri Academy</span>
         </div>
+
+        {isPortalPreview && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 px-4 py-2.5">
+            <p className="flex items-center gap-2 text-xs sm:text-sm text-amber-800 dark:text-amber-300">
+              <Eye size={14} className="flex-shrink-0" />
+              <span>
+                You are viewing the <strong>{PORTAL_LABEL[role ?? ''] ?? ''} portal</strong> in preview mode.
+                This does not change your account permissions.
+              </span>
+            </p>
+            <button
+              onClick={() => resetPortal()}
+              className="text-xs font-semibold text-amber-800 dark:text-amber-300 underline hover:text-amber-950 dark:hover:text-amber-100"
+            >
+              Back to my portal
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto">
           {children}

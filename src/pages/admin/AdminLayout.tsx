@@ -36,7 +36,7 @@ const NAV_ITEMS = [
 
 export default function AdminLayout() {
   return (
-    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/admin" />}>
+    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/admin" showPortalSwitch />}>
       <Outlet />
     </DashboardLayout>
   );

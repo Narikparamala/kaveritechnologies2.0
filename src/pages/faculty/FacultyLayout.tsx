@@ -30,7 +30,7 @@ const NAV_ITEMS = [
 
 export default function FacultyLayout() {
   return (
-    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/faculty" />}>
+    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/faculty" showPortalSwitch />}>
       <Outlet />
     </DashboardLayout>
   );

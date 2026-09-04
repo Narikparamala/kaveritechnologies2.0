@@ -31,7 +31,7 @@ export default function AuthRedirectPage() {
         profile.email.toLowerCase() === DEVELOPER_EMAIL
       ) {
         sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
-        navigate('/developer-role', { replace: true });
+        navigate('/portal', { replace: true });
       } else {
         navigate(ROLE_DASHBOARDS[profile.role], { replace: true });
       }
