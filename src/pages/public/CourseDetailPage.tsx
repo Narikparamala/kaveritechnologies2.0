@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Clock, Users, Award, CheckCircle, Play, ArrowLeft, ChevronDown, ChevronUp, Lock } from 'lucide-react';
+import { BookOpen, Clock, Award, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
 import { PublicNav } from '../../components/common/PublicNav';
 import { Footer } from '../../components/common/Footer';
 import { Badge } from '../../components/ui/Badge';
@@ -81,7 +81,12 @@ export default function CourseDetailPage() {
     setEnrolling(true);
     const { error: err } = await supabase
       .from('course_enrollments')
-      .insert({ course_id: course!.id, student_id: user.id });
+      .insert({
+        course_id: course!.id,
+        student_id: user.id,
+        access_status: 'active',
+        enrollment_source: 'free_enrollment',
+      });
 
     if (err) {
       if (err.code === '23505') {
@@ -127,7 +132,6 @@ export default function CourseDetailPage() {
   }
 
   const totalLessons = chapters.reduce((sum, ch) => sum + ch.lessons.length, 0);
-  const freeLessons = chapters.reduce((sum, ch) => sum + ch.lessons.filter(l => l.is_free_preview).length, 0);
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
@@ -147,19 +151,19 @@ export default function CourseDetailPage() {
                 <div className="flex flex-wrap gap-6 text-white/70 text-sm">
                   <span className="flex items-center gap-2"><Clock size={16} /> {course.duration_hours}h</span>
                   <span className="flex items-center gap-2"><BookOpen size={16} /> {totalLessons} lessons</span>
-                  <span className="flex items-center gap-2"><Users size={16} /> {course.enrollment_count.toLocaleString()} students</span>
-                  {freeLessons > 0 && <span className="flex items-center gap-2 text-teal-300"><Play size={16} /> {freeLessons} free preview lessons</span>}
                   {course.certificate_eligible && (
-                    <span className="flex items-center gap-2 text-amber-300"><Award size={16} /> Certificate included</span>
+                    <span className="flex items-center gap-2 text-amber-300"><Award size={16} /> Certificate of completion</span>
                   )}
                 </div>
               </div>
 
-              {/* Enroll card */}
+              {/* Enrol card */}
               <div className="card p-6 self-start">
-                <div className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">
-                  {course.price === 0 ? 'Free' : `₹${course.price}`}
-                </div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                  {course.price === 0
+                    ? 'This course is open for enrolment. Sign in (or create a free account) and enrol to start learning right away.'
+                    : 'Enrol to access the full course on the Kaveri platform. Our team confirms course access and batch details for paid courses.'}
+                </p>
 
                 <button
                   onClick={handleEnroll}
@@ -178,19 +182,19 @@ export default function CourseDetailPage() {
                   ) : enrollment ? (
                     '✓ Go to Course'
                   ) : user ? (
-                    'Enroll Now — It\'s Free'
+                    'Enrol Now'
                   ) : (
-                    'Sign Up to Enroll'
+                    'Sign Up to Enrol'
                   )}
                 </button>
 
                 <ul className="space-y-2.5 text-sm text-slate-600 dark:text-slate-400">
                   {[
-                    'Lifetime access to course content',
-                    `${totalLessons} structured lessons`,
-                    'Certificate of completion',
-                    'Course assignments & quizzes',
+                    `${totalLessons} structured lessons in order`,
+                    'Assignments, quizzes & coding practice',
+                    'Live classes & recordings (when scheduled)',
                     'Faculty grading & feedback',
+                    ...(course.certificate_eligible ? ['Certificate of completion'] : []),
                   ].map(f => (
                     <li key={f} className="flex items-center gap-2">
                       <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" /> {f}
@@ -248,19 +252,9 @@ export default function CourseDetailPage() {
                     <div className="border-t border-slate-100 dark:border-slate-700">
                       {chapter.lessons.map(lesson => (
                         <div key={lesson.id} className="flex items-center gap-4 px-5 py-3 border-b border-slate-50 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                          <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
-                            {lesson.is_free_preview
-                              ? <Play size={11} className="text-primary-600" />
-                              : <Lock size={11} className="text-slate-400" />
-                            }
-                          </div>
+                          <BookOpen size={13} className="text-slate-400 flex-shrink-0" />
                           <span className="flex-1 text-sm text-slate-700 dark:text-slate-300">{lesson.title}</span>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {lesson.is_free_preview && (
-                              <Badge variant="success" className="text-xs">Free Preview</Badge>
-                            )}
-                            <span className="text-xs text-slate-400">{lesson.duration_minutes}m</span>
-                          </div>
+                          <span className="text-xs text-slate-400 flex-shrink-0">{lesson.duration_minutes}m</span>
                         </div>
                       ))}
                     </div>
