@@ -104,6 +104,12 @@ function publicFailure(error: unknown) {
         status: 409,
         message: 'This question does not have final test cases yet. Ask faculty to review it.',
       };
+    case 'VSCODE_NO_HIDDEN_TESTS':
+      return {
+        code: internalCode,
+        status: 409,
+        message: 'This assignment has no hidden server tests yet. Your submission is saved and available for faculty review.',
+      };
     case 'TOO_MANY_TESTS':
       return {
         code: internalCode,
@@ -838,6 +844,191 @@ Deno.serve(async req => {
       assertDatabaseSuccess(submissionUpdateResult, 'save final assignment grade');
 
       return json({ verified: true, submissionId: submission.id, passed: totalPassed, total: totalTests, score: totalScore, questions: questionResults }, 200, responseOrigin);
+    }
+
+    if (payload.kind === 'vscode') {
+      if (!payload.submissionId) return json({ error: 'Submission is required' }, 400, responseOrigin);
+      await enforceFinalRateLimit();
+      const language = await defaultPythonLanguage();
+
+      const submissionResult = await admin.from('coding_vscode_submissions')
+        .select('id,student_id,assignment_key,language,file_name,code,status,max_marks,verification_status,verified_passed,verified_total,verified_score,verified_summary')
+        .eq('id', payload.submissionId)
+        .maybeSingle();
+      assertDatabaseSuccess(submissionResult, 'load vscode submission');
+      const submission = submissionResult.data;
+      if (!submission || submission.student_id !== user.id) {
+        return json({ error: 'Submission not found' }, 404, responseOrigin);
+      }
+      if (submission.status !== 'submitted') {
+        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
+      }
+      if (submission.verification_status === 'verified') {
+        // Idempotent replay: the stored server outcome is authoritative.
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          duplicate: true,
+          hiddenPassed: submission.verified_passed,
+          hiddenTotal: submission.verified_total,
+          allPassed: submission.verified_passed === submission.verified_total,
+          verifiedScore: submission.verified_score,
+          verifiedSummary: submission.verified_summary,
+        }, 200, responseOrigin);
+      }
+      if (submission.language !== 'python') {
+        return json({ error: 'This assignment is not available in a supported runner language' }, 422, responseOrigin);
+      }
+
+      const code = String(submission.code ?? '');
+      if (!code.trim()) return json({ error: 'Code is required' }, 400, responseOrigin);
+      if (new TextEncoder().encode(code).byteLength > MAX_CODE_BYTES) {
+        return json({ error: 'Code is too large' }, 413, responseOrigin);
+      }
+
+      const assignmentResult = await admin.from('coding_vscode_assignments')
+        .select('id,assignment_key,is_published,language,marks')
+        .eq('assignment_key', submission.assignment_key)
+        .maybeSingle();
+      assertDatabaseSuccess(assignmentResult, 'load vscode assignment');
+      const assignment = assignmentResult.data;
+      if (!assignment?.is_published || assignment.language !== 'python') {
+        return json({ error: 'Assignment is unavailable' }, 404, responseOrigin);
+      }
+
+      // Mirror the REST access contract server-side (admin client bypasses RLS):
+      // student must be an active member of an active batch linked to the
+      // assignment, with either a permanent release or a per-student release.
+      const [linksResult, memberBatchesResult, activeBatchesResult] = await Promise.all([
+        admin.from('coding_vscode_assignment_batches')
+          .select('batch_id,is_permanently_released')
+          .eq('assignment_id', assignment.id),
+        admin.from('batch_students')
+          .select('batch_id')
+          .eq('student_id', user.id)
+          .eq('status', 'active'),
+        admin.from('batches')
+          .select('id')
+          .eq('status', 'active'),
+      ]);
+      assertDatabaseSuccess(linksResult, 'load vscode batch links');
+      assertDatabaseSuccess(memberBatchesResult, 'load student batch membership');
+      assertDatabaseSuccess(activeBatchesResult, 'load active batches');
+      const activeBatchIds = new Set((activeBatchesResult.data ?? []).map((row: { id: string }) => row.id));
+      const memberActiveBatchIds = new Set(
+        (memberBatchesResult.data ?? [])
+          .map((row: { batch_id: string }) => row.batch_id)
+          .filter((batchId: string) => activeBatchIds.has(batchId)),
+      );
+      const links = (linksResult.data ?? []) as Array<{ batch_id: string; is_permanently_released: boolean }>;
+      const releasableBatchIds = links
+        .filter(link => memberActiveBatchIds.has(link.batch_id))
+        .map(link => link.batch_id);
+      const permanentlyReleased = links.some(link =>
+        link.is_permanently_released && memberActiveBatchIds.has(link.batch_id),
+      );
+      let hasPerStudentRelease = false;
+      if (!permanentlyReleased && releasableBatchIds.length) {
+        const releasedResult = await admin.from('coding_vscode_student_assignment_access')
+          .select('id', { count: 'exact', head: true })
+          .eq('assignment_id', assignment.id)
+          .eq('student_id', user.id)
+          .in('batch_id', releasableBatchIds);
+        assertDatabaseSuccess(releasedResult, 'load vscode per-student release');
+        hasPerStudentRelease = (releasedResult.count ?? 0) > 0;
+      }
+      if (!permanentlyReleased && !hasPerStudentRelease) {
+        return json({ error: 'This assignment is not unlocked for you yet' }, 403, responseOrigin);
+      }
+
+      const hiddenTestsResult = await admin.from('coding_vscode_test_cases')
+        .select('id,input_text,expected_output')
+        .eq('assignment_id', assignment.id)
+        .eq('is_hidden', true)
+        .order('position');
+      assertDatabaseSuccess(hiddenTestsResult, 'load vscode hidden tests');
+      const hiddenTests: TestCase[] = (hiddenTestsResult.data ?? []).map((test: { id: string; input_text: string; expected_output: string }) => ({
+        id: test.id,
+        input_data: test.input_text,
+        expected_output: test.expected_output,
+        is_hidden: true,
+        weight: 1,
+      }));
+      if (!hiddenTests.length) throw new Error('VSCODE_NO_HIDDEN_TESTS');
+
+      const codeHash = await sha256(code);
+      const { data: run, error: runError } = await admin.from('secure_grading_runs').insert({
+        source_kind: 'vscode',
+        student_id: user.id,
+        coding_vscode_submission_id: submission.id,
+        language: language.name,
+        code_hash: codeHash,
+        status: 'running',
+        max_score: Math.round(Number(submission.max_marks ?? 0)),
+      }).select('id').single();
+      if (runError) {
+        console.error('secure-grade could not create vscode audit row', runError);
+        throw new Error('GRADING_STORAGE_ERROR');
+      }
+
+      try {
+        const outcome = await runTests(code, hiddenTests, language);
+        const marks = Number(submission.max_marks ?? 0);
+        const verifiedScore = Math.round(marks * outcome.passed / outcome.total * 100) / 100;
+        const verifiedSummary = outcome.allPassed
+          ? `All ${outcome.total} hidden server test${outcome.total === 1 ? '' : 's'} passed`
+          : `${outcome.passed} of ${outcome.total} hidden server test${outcome.total === 1 ? '' : 's'} passed`;
+
+        const [runUpdateResult, submissionUpdateResult] = await Promise.all([
+          admin.from('secure_grading_runs').update({
+            status: outcome.allPassed ? 'passed' : 'failed',
+            passed_test_cases: outcome.passed,
+            total_test_cases: outcome.total,
+            score: Math.round(verifiedScore),
+            public_result: outcome,
+            completed_at: new Date().toISOString(),
+          }).eq('id', run.id),
+          admin.from('coding_vscode_submissions').update({
+            verification_status: 'verified',
+            verified_passed: outcome.passed,
+            verified_total: outcome.total,
+            verified_score: verifiedScore,
+            verified_at: new Date().toISOString(),
+            verified_summary: verifiedSummary,
+            verified_result: outcome,
+            verification_error: null,
+          }).eq('id', submission.id),
+        ]);
+        assertDatabaseSuccess(runUpdateResult, 'save vscode grading run');
+        assertDatabaseSuccess(submissionUpdateResult, 'save verified vscode result');
+
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          hiddenPassed: outcome.passed,
+          hiddenTotal: outcome.total,
+          allPassed: outcome.allPassed,
+          verifiedScore,
+          verifiedSummary,
+        }, 200, responseOrigin);
+      } catch (error) {
+        const failure = publicFailure(error);
+        const [failedRunResult, failedSubmissionResult] = await Promise.all([
+          admin.from('secure_grading_runs').update({
+            status: 'error',
+            error_code: failure.code,
+            completed_at: new Date().toISOString(),
+          }).eq('id', run.id),
+          admin.from('coding_vscode_submissions').update({
+            verification_status: 'error',
+            verification_error: failure.code,
+            verified_at: new Date().toISOString(),
+          }).eq('id', submission.id),
+        ]);
+        if (failedRunResult.error) console.error('secure-grade could not mark vscode run as failed', failedRunResult.error);
+        if (failedSubmissionResult.error) console.error('secure-grade could not mark vscode submission as failed', failedSubmissionResult.error);
+        throw error;
+      }
     }
 
     return json({ error: 'Unknown grading request' }, 400, responseOrigin);
