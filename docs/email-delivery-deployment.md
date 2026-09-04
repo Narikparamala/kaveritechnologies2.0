@@ -34,21 +34,35 @@ pg_cron (every minute)                      [scheduler, see below]
 
 notification-mailer (Supabase Edge Function)
   ├─ verify X-Kaveri-Mailer-Token (vault or env, constant-time compare)
-  ├─ load outbox row; already sent → 200 duplicate (idempotent)
+  ├─ load the outbox ROW (message authority: template/recipient/payload/
+  │    dedupe all come from the DB row, never from the HTTP body)
+  ├─ already sent → 200 duplicate (idempotent)
   ├─ atomic claim: sending → delivering (second concurrent call → duplicate)
-  ├─ render approved template (_shared/templates.ts)
-  ├─ provider adapter (_shared/provider.ts): log | resend
-  └─ resolve row: sent | failed | queued + exponential backoff
+  ├─ render approved template from the DB row (_shared/templates.ts)
+  ├─ provider adapter (_shared/provider.ts): log | resend — FAILS CLOSED
+  │    (missing/unknown MAILER_PROVIDER → PROVIDER_NOT_CONFIGURED, no send)
+  └─ resolve row: sent | failed | queued + backoff (honours Retry-After)
        (never stores raw provider errors or secrets; only safe codes)
 ```
 
+The mailer accepts essentially `{ "outbox_id": "<uuid>" }` — the body is a
+reference, not content. A tampered body can never change the destination or
+content of an email.
+
 Delivery is **at-least-once**: a crash between provider success and row
 resolution can cause a retry, but the provider idempotency key
-(`dedupe_key` or outbox id) makes duplicate sends harmless for providers that
-support it (Resend `Idempotency-Key`). Default operations never resend a
-`sent` row; the only resend path is the explicit ops function
-`force_resend_notification_outbox()` which writes a `force_resend_audit`
-entry into the row payload.
+(`dedupe_key:delivery:<generation>` — Resend `Idempotency-Key`) makes
+duplicate sends harmless. `delivery_generation` starts at 0 and is bumped
+only by `force_resend_notification_outbox()`, so an explicit forced resend is
+a NEW delivery in the provider's eyes while ordinary retries keep the same
+generation and stay deduplicated. Default operations never resend a `sent`
+row; the only resend path is the explicit ops function, which writes a
+`force_resend_audit` entry (with the new generation) into the row payload.
+
+If the provider accepts the message but the DB row cannot be updated, the
+mailer returns 500 (RESOLVE_FAILED) — it never pretends the state is
+resolved. The row stays `delivering`, is reclaimed later, and the unchanged
+provider idempotency key prevents a duplicate email.
 
 ## State machine
 
@@ -57,7 +71,7 @@ entry into the row payload.
 | queued | sending | worker claims (attempts+1) |
 | sending | delivering | mailer atomic claim |
 | delivering | sent | provider success (`sent_at`, `provider_message_id`) |
-| delivering | queued + backoff | transient provider failure (`next_attempt_at`, last_error = safe code) |
+| delivering | queued + backoff | transient provider failure — 5xx, 408, 425, 429 (Retry-After honoured when present, else exponential backoff); last_error = safe code |
 | delivering | failed | permanent provider rejection |
 | queued/sending/delivering | failed | attempts >= max_attempts (worker cleanup, `MAX_ATTEMPTS_EXCEEDED`) |
 | queued/sending/delivering | skipped | worker in `disabled` mode |
@@ -72,13 +86,14 @@ Never in Vite/browser/Git. Supabase Vault is already enabled.
 |---|---|---|
 | `notification_mailer_token` | shared mailer auth token | `openssl rand -hex 32`; read by the DB worker and by the mailer (`get_server_secret` RPC / `NOTIFICATION_MAILER_TOKEN` env) |
 | `supabase_anon_key` | gateway pass JWT for the functions gateway | public key; the DB worker attaches it as `Authorization: Bearer` so the edge-runtime JWT gateway routes the request. Real auth is the mailer token. |
+| `mailer_provider` | provider name fallback | only read when `MAILER_PROVIDER` env is unset (e.g. local dev): `log` or `resend`. Missing/unknown → fail closed. |
 
 Provider credentials live in **function secrets** (not vault) because they are
 consumed by the Edge Function runtime:
 
 | Function secret | When |
 |---|---|
-| `MAILER_PROVIDER` | `log` (default/local) or `resend` (production) |
+| `MAILER_PROVIDER` | **required in production** — explicitly `resend` (or `log` for a local mock). Unset/unknown anywhere → the mailer fails closed (`PROVIDER_NOT_CONFIGURED`) and nothing is marked sent |
 | `RESEND_API_KEY` | only when `MAILER_PROVIDER=resend` |
 | `RESEND_FROM` | sender address for Resend |
 | `LMS_PUBLIC_URL` | absolute link base rendered into templates (e.g. `https://www.kaveritech.co.in`) |
@@ -152,8 +167,10 @@ select cron.unschedule('notification-outbox-every-minute');
 
 **Replay after a fix:** `requeue_notification_outbox()` moves `skipped`/
 `failed` rows back to `queued` (never `sent`). For a deliberate resend of an
-already-sent message, use `force_resend_notification_outbox(id)` — it resets
-the row and records `force_resend_audit` with actor/from-status/timestamp.
+already-sent message, use `force_resend_notification_outbox(id)` — it
+resets the row, **bumps `delivery_generation`** (so the provider treats it as
+a new delivery), and records `force_resend_audit` with actor/from-status/
+timestamp/generation.
 
 **Full stop:** disable delivery + unschedule cron + (optionally) remove
 `mailer_url`. Outbox rows stay durable and can be replayed later.
@@ -181,6 +198,8 @@ without schema changes.
   payload contains `"dev_fail_mode": "transient"` or `"permanent"` and the
   log provider simulates the corresponding provider outcome, exercising the
   real retry/fail path end-to-end (worker → pg_net → mailer → outbox).
+- Local dev provider: set the vault secret `mailer_provider` to `log` (env
+  wins if `MAILER_PROVIDER` is set on the function).
 
 ## Verified locally (this migration)
 

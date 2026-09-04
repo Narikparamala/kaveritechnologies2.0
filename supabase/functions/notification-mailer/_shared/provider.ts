@@ -2,10 +2,23 @@
 // without touching the delivery/state-machine logic. Provider credentials
 // come ONLY from server-side environment (function secrets); never from
 // Vite, browser code, or Git.
+//
+// FAIL-CLOSED: providerByName() returns null unless the name is explicitly
+// 'resend' or 'log'. Selection lives in index.ts: env MAILER_PROVIDER first,
+// then the vault secret 'mailer_provider' (both server-side only). A
+// missing/unknown value is an ops misconfiguration — the mailer must NOT
+// mark anything as sent.
 
 export type ProviderOutcome =
   | { ok: true; providerMessageId: string }
-  | { ok: false; transient: boolean; code: string };
+  | {
+      ok: false;
+      transient: boolean;
+      code: string;
+      // Provider-supplied retry delay (seconds); the mailer uses it for
+      // next_attempt_at when cleanly available, else its own backoff.
+      retryAfterSeconds?: number;
+    };
 
 export type SendInput = {
   to: string;
@@ -13,9 +26,9 @@ export type SendInput = {
   html: string;
   text: string;
   idempotencyKey?: string;
-  // LOCAL QA ONLY: when an outbox payload sets dev_fail_mode, the mock
-  // log provider simulates provider failures (mirrors the worker's own
-  // simulate_failure mode). Production providers ignore this field.
+  // LOCAL QA ONLY: an outbox row whose payload sets dev_fail_mode makes
+  // the mock log provider simulate provider failures (mirrors the worker's
+  // own simulate_failure mode). Production providers ignore this field.
   devFailMode?: string;
 };
 
@@ -24,7 +37,7 @@ export interface EmailProvider {
   send(input: SendInput): Promise<ProviderOutcome>;
 }
 
-// ---- local/mock provider: logs the rendered message, always succeeds ----
+// ---- local/mock provider: renders + logs, never sends externally ----
 const logProvider: EmailProvider = {
   name: 'log',
   async send(input) {
@@ -55,6 +68,17 @@ const logProvider: EmailProvider = {
     };
   },
 };
+
+// Statuses the provider considers retryable even though they are 4xx.
+const TRANSIENT_4XX = new Set([408, 425, 429]);
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  // HTTP-date Retry-After: not supported for V1; fall back to backoff.
+  return undefined;
+}
 
 // ---- Resend provider (transactional email) ----
 const resendProvider: EmailProvider = {
@@ -99,18 +123,22 @@ const resendProvider: EmailProvider = {
       return { ok: true, providerMessageId: id || `resend-${crypto.randomUUID()}` };
     }
 
-    // 4xx = permanent (bad recipient, rejected template, ...); 5xx = transient.
-    const permanent = response.status >= 400 && response.status < 500;
+    // 408/425/429 and every 5xx are transient/retryable. Other 4xx
+    // (validation, auth) are permanent — retrying cannot fix them.
+    const transient = response.status >= 500 || TRANSIENT_4XX.has(response.status);
     return {
       ok: false,
-      transient: !permanent,
+      transient,
       code: `PROVIDER_REJECTED_${response.status}`,
+      retryAfterSeconds: parseRetryAfter(response.headers.get('retry-after')),
     };
   },
 };
 
-export function getProvider(): EmailProvider {
-  const name = (Deno.env.get('MAILER_PROVIDER') ?? 'log').toLowerCase();
+export function providerByName(name: string): EmailProvider | null {
   if (name === 'resend') return resendProvider;
-  return logProvider;
+  if (name === 'log') return logProvider;
+  // Fail closed: an unset or unknown provider name is a production
+  // misconfiguration. Nothing may be marked as sent.
+  return null;
 }
