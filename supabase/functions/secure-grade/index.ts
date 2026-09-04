@@ -848,7 +848,6 @@ Deno.serve(async req => {
 
     if (payload.kind === 'vscode') {
       if (!payload.submissionId) return json({ error: 'Submission is required' }, 400, responseOrigin);
-      await enforceFinalRateLimit();
       const language = await defaultPythonLanguage();
 
       const submissionResult = await admin.from('coding_vscode_submissions')
@@ -860,11 +859,9 @@ Deno.serve(async req => {
       if (!submission || submission.student_id !== user.id) {
         return json({ error: 'Submission not found' }, 404, responseOrigin);
       }
-      if (submission.status !== 'submitted') {
-        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
-      }
       if (submission.verification_status === 'verified') {
-        // Idempotent replay: the stored server outcome is authoritative.
+        // Idempotent replay first (never rate-limited): the stored server
+        // outcome is authoritative even after a teacher has reviewed the row.
         return json({
           verified: true,
           submissionId: submission.id,
@@ -875,6 +872,9 @@ Deno.serve(async req => {
           verifiedScore: submission.verified_score,
           verifiedSummary: submission.verified_summary,
         }, 200, responseOrigin);
+      }
+      if (submission.status !== 'submitted') {
+        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
       }
       if (submission.language !== 'python') {
         return json({ error: 'This assignment is not available in a supported runner language' }, 422, responseOrigin);
@@ -887,7 +887,7 @@ Deno.serve(async req => {
       }
 
       const assignmentResult = await admin.from('coding_vscode_assignments')
-        .select('id,assignment_key,is_published,language,marks')
+        .select('id,assignment_key,title,file_name,is_published,language,marks')
         .eq('assignment_key', submission.assignment_key)
         .maybeSingle();
       assertDatabaseSuccess(assignmentResult, 'load vscode assignment');
@@ -956,6 +956,46 @@ Deno.serve(async req => {
       }));
       if (!hiddenTests.length) throw new Error('VSCODE_NO_HIDDEN_TESTS');
 
+      // New runner work is rate limited; an already-verified replay above never
+      // reaches this point, so a student at the limit can still fetch an
+      // existing verified result.
+      await enforceFinalRateLimit();
+
+      // Atomic claim: exactly one invocation may grade this submission. The
+      // loser of a concurrent pair gets a safe in-progress response and never
+      // starts a second runner job.
+      const claimResult = await admin.rpc('claim_vscode_submission_verification', {
+        p_submission_id: submission.id,
+        p_student_id: user.id,
+      });
+      assertDatabaseSuccess(claimResult, 'claim vscode submission verification');
+      const claim = (claimResult.data ?? {}) as Record<string, unknown>;
+      if (claim.result === 'verified') {
+        // Another invocation finished between our read and the claim.
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          duplicate: true,
+          hiddenPassed: claim.verified_passed ?? 0,
+          hiddenTotal: claim.verified_total ?? 0,
+          allPassed: claim.verified_passed === claim.verified_total,
+          verifiedScore: claim.verified_score,
+          verifiedSummary: claim.verified_summary ?? '',
+        }, 200, responseOrigin);
+      }
+      if (claim.result === 'in_progress') {
+        return json({
+          verification_in_progress: true,
+          submissionId: submission.id,
+        }, 200, responseOrigin);
+      }
+      if (claim.result !== 'claimed') {
+        if (claim.result === 'forbidden' || claim.result === 'not_found') {
+          return json({ error: 'Submission not found' }, 404, responseOrigin);
+        }
+        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
+      }
+
       const codeHash = await sha256(code);
       const { data: run, error: runError } = await admin.from('secure_grading_runs').insert({
         source_kind: 'vscode',
@@ -964,7 +1004,7 @@ Deno.serve(async req => {
         language: language.name,
         code_hash: codeHash,
         status: 'running',
-        max_score: Math.round(Number(submission.max_marks ?? 0)),
+        max_score: Math.round(Number(assignment.marks ?? 0)),
       }).select('id').single();
       if (runError) {
         console.error('secure-grade could not create vscode audit row', runError);
@@ -973,7 +1013,9 @@ Deno.serve(async req => {
 
       try {
         const outcome = await runTests(code, hiddenTests, language);
-        const marks = Number(submission.max_marks ?? 0);
+        // The authoritative score always uses the SERVER assignment marks;
+        // client-supplied max_marks can never inflate a verified score.
+        const marks = Number(assignment.marks ?? 0);
         const verifiedScore = Math.round(marks * outcome.passed / outcome.total * 100) / 100;
         const verifiedSummary = outcome.allPassed
           ? `All ${outcome.total} hidden server test${outcome.total === 1 ? '' : 's'} passed`
@@ -997,6 +1039,12 @@ Deno.serve(async req => {
             verified_summary: verifiedSummary,
             verified_result: outcome,
             verification_error: null,
+            verification_started_at: null,
+            // Canonicalize the student-facing snapshot from the real assignment.
+            assignment_title: assignment.title,
+            language: assignment.language,
+            file_name: assignment.file_name ?? submission.file_name,
+            max_marks: assignment.marks,
           }).eq('id', submission.id),
         ]);
         assertDatabaseSuccess(runUpdateResult, 'save vscode grading run');
@@ -1023,6 +1071,7 @@ Deno.serve(async req => {
             verification_status: 'error',
             verification_error: failure.code,
             verified_at: new Date().toISOString(),
+            verification_started_at: null,
           }).eq('id', submission.id),
         ]);
         if (failedRunResult.error) console.error('secure-grade could not mark vscode run as failed', failedRunResult.error);
