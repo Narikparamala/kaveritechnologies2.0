@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2 } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
 import { getStudentCoursePlan } from '../../services/lessons';
 import type { CourseEnrollment, Course, Announcement, Notification, LiveSession, EnrollmentRequest } from '../../types/database';
@@ -501,6 +502,16 @@ export default function StudentDashboard() {
                   <ArrowRight size={14} className="ml-auto text-slate-400" />
                 </Link>
               ))}
+              <a
+                href={CODING_DASHBOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Terminal size={16} className="text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Coding Workspace (VS Code)</span>
+                <ArrowRight size={14} className="ml-auto text-slate-400" />
+              </a>
             </div>
           </div>
 
