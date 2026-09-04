@@ -2,7 +2,8 @@ import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Video, Link2, FileText,
   ClipboardList, HelpCircle, FolderKanban, Award, Megaphone, Bell,
-  BarChart2, Trophy, Settings, User, Building2, DollarSign, UserCheck, Briefcase, Inbox
+  BarChart2, Trophy, Settings, User, Building2, DollarSign, UserCheck, Briefcase, Inbox,
+  CalendarCheck2
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { label: 'Students', icon: GraduationCap, to: '/student-management' },
   { label: 'Enrollments', icon: UserCheck, to: '/enrollments' },
   { label: 'Enrollment Requests', icon: Inbox, to: '/enrollments/requests' },
+  { label: 'Workshops', icon: CalendarCheck2, to: '/workshops' },
   { label: 'Faculty', icon: UserCheck, to: '/faculty-management' },
   { label: 'Payroll', icon: DollarSign, to: '/payroll' },
   { label: 'Performance', icon: BarChart2, to: '/performance-reviews' },

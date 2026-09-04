@@ -103,6 +103,7 @@ const AdminPerformanceReviewsPage = lazy(() => import('./pages/admin/AdminPerfor
 const AdminStudentManagementPage = lazy(() => import('./pages/admin/AdminStudentManagementPage'));
 const AdminEnrollmentPage = lazy(() => import('./pages/admin/AdminEnrollmentPage'));
 const AdminEnrollmentRequestsPage = lazy(() => import('./pages/admin/AdminEnrollmentRequestsPage'));
+const AdminWorkshopsPage = lazy(() => import('./pages/admin/AdminWorkshopsPage'));
 const AdminStudentDetailPage = lazy(() => import('./pages/admin/AdminStudentDetailPage'));
 const AdminLessonsPage = lazy(() => import('./pages/admin/AdminLessonsPage'));
 const AdminAssignmentsPage = lazy(() => import('./pages/admin/AdminAssignmentsPage'));
@@ -310,6 +311,7 @@ export default function App() {
                     <Route path="student-management/:studentId" element={<AdminStudentDetailPage />} />
                     <Route path="enrollments" element={<AdminEnrollmentPage />} />
                     <Route path="enrollments/requests" element={<AdminEnrollmentRequestsPage />} />
+                    <Route path="workshops" element={<AdminWorkshopsPage />} />
                     <Route path="payroll" element={<AdminPayrollPage />} />
                     <Route path="performance-reviews" element={<AdminPerformanceReviewsPage />} />
                     <Route path="users" element={<UsersPage />} />

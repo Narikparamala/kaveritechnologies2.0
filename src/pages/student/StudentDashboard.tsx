@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -19,6 +19,7 @@ export default function StudentDashboard() {
   const { profile } = useAuth();
   const [enrollments, setEnrollments] = useState<EnrolledCourse[]>([]);
   const [requests, setRequests] = useState<EnrollmentRequest[]>([]);
+  const [workshops, setWorkshops] = useState<{ id: string; workshop: { id: string; name: string; slug: string | null; venue: string | null; mode: string | null; starts_at: string | null } | null }[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [completedLessons, setCompletedLessons] = useState(0);
@@ -41,16 +42,19 @@ export default function StudentDashboard() {
         { data: notifData },
         { data: progData },
         { data: reqData },
+        { data: wsData },
       ] = await Promise.all([
         supabase.from('course_enrollments').select('*, course:courses(*)').eq('student_id', profile.id).order('enrolled_at', { ascending: false }).limit(5),
         supabase.from('announcements').select('*').eq('is_global', true).order('created_at', { ascending: false }).limit(3),
         supabase.from('notifications').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5),
         supabase.from('lesson_progress').select('id, completed_at').eq('student_id', profile.id).eq('completed', true),
         supabase.from('enrollment_requests').select('*, course:courses(id,title,slug)').eq('student_id', profile.id).order('requested_at', { ascending: false }).limit(5),
+        supabase.from('workshop_registrations').select('id, workshop:workshops(id,name,slug,venue,mode,starts_at)').eq('user_id', profile.id).order('registered_at', { ascending: false }).limit(3),
       ]);
 
       setEnrollments((enrData ?? []) as any);
       setRequests(((reqData ?? []).filter((r: any) => r.status !== 'approved')) as EnrollmentRequest[]);
+      setWorkshops(((wsData ?? []) as any[]).filter(w => w.workshop) as any);
       setAnnouncements((annData ?? []) as Announcement[]);
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
@@ -301,6 +305,38 @@ export default function StudentDashboard() {
           </div>
           <p className="text-xs text-slate-400 mt-3">
             Need help? <Link to="/contact" className="underline">Contact Kaveri</Link>
+          </p>
+        </div>
+      )}
+
+      {/* My Workshops (linked registrations via the platform workshop bridge) */}
+      {workshops.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="section-title mb-0">My Workshops</h2>
+          </div>
+          <div className="space-y-3">
+            {workshops.map(w => (
+              <div key={w.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                  <CalendarCheck2 size={17} className="text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{w.workshop?.name}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    {w.workshop?.starts_at
+                      ? `Scheduled ${new Date(w.workshop.starts_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                      : 'Registration confirmed'}
+                    {w.workshop?.venue ? ` · ${w.workshop.venue}` : ''}
+                    {w.workshop?.mode ? ` · ${w.workshop.mode}` : ''}
+                  </p>
+                </div>
+                <span className="badge text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">Registered</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            Registering for a Kaveri workshop links it here automatically.
           </p>
         </div>
       )}
