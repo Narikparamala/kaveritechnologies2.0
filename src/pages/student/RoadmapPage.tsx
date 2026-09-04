@@ -95,28 +95,61 @@ function activityHref(act: LessonActivity, courseId: string): string {
   return `/student/course/${courseId}`;
 }
 
+function isGateActivity(item: LessonPlanItem, act: LessonActivity): boolean {
+  if (!item.requires_activity_type || !item.requires_activity_id) return false;
+  if (item.requires_activity_type === 'quiz') return act.kind === 'quiz' && act.quiz_id === item.requires_activity_id;
+  if (item.requires_activity_type === 'assignment') return act.kind === 'assignment' && act.assignment_id === item.requires_activity_id;
+  return false;
+}
+
 function ActivityChips({ item, courseId }: { item: LessonPlanItem; courseId: string }) {
   const acts = item.activities ?? [];
   if (!acts.length) return null;
+  const parentLocked = item.access === 'locked';
   return (
     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
       {acts.map((act, i) => {
         const Icon = ACTIVITY_ICONS[act.kind] ?? FileText;
-        const st = activityLabel(act);
-        const href = activityHref(act, courseId);
+        const isGate = isGateActivity(item, act);
+        // A locked lesson hides its child activities: chips render as
+        // non-clickable metadata.  The one exception is the activity that
+        // unlocks the lesson (its required gate), which must stay reachable.
+        const locked = parentLocked && !isGate;
+        const st = locked
+          ? { text: 'Locked', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' }
+          : isGate && parentLocked
+          ? { text: 'Required to unlock', cls: 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300' }
+          : activityLabel(act);
         const title = act.kind === 'live'
           ? `${act.title}${act.date ? ` · ${act.date}` : ''}${act.recording === 'available' ? ' · recording available' : act.recording === 'locked' ? ' · recording locked' : ''}`
           : act.title;
+        const shared = `inline-flex items-center gap-1 rounded-lg border border-slate-100 dark:border-slate-800 px-2 py-0.5 text-[10px] font-medium`;
+        const chip = (
+          <>
+            <Icon size={10} className={locked ? 'text-slate-300 dark:text-slate-600' : act.state === 'live_now' ? 'text-red-500 animate-pulse' : act.kind === 'live' ? 'text-red-400' : isGate ? 'text-primary-500' : 'text-slate-400'} />
+            <span>{activityKindLabel(act)}</span>
+            <span className={`px-1 rounded text-[9px] font-semibold uppercase tracking-wide ${st.cls}`}>{st.text}</span>
+          </>
+        );
+        if (locked) {
+          return (
+            <span
+              key={`${act.kind}-${i}`}
+              title="Locked until this lesson is available"
+              className={`${shared} bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 cursor-not-allowed select-none`}
+            >
+              {chip}
+            </span>
+          );
+        }
         return (
           <Link
             key={`${act.kind}-${i}`}
-            to={href}
+            to={activityHref(act, courseId)}
             title={title}
-            className={`inline-flex items-center gap-1 rounded-lg border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300 hover:border-primary-300 dark:hover:border-primary-600 transition-colors ${act.state === 'cancelled' ? 'opacity-60' : ''}`}
+            className={`${shared} bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-primary-300 dark:hover:border-primary-600 transition-colors ${act.state === 'cancelled' ? 'opacity-60' : ''}`}
           >
-            <Icon size={10} className={act.state === 'live_now' ? 'text-red-500 animate-pulse' : act.kind === 'live' ? 'text-red-400' : 'text-slate-400'} />
-            <span>{activityKindLabel(act)}</span>
-            <span className={`px-1 rounded text-[9px] font-semibold uppercase tracking-wide ${st.cls}`}>{st.text}</span>
+            {chip}
           </Link>
         );
       })}

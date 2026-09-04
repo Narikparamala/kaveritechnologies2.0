@@ -33,6 +33,7 @@ export default function QuizzesPage() {
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [xpAwarded, setXpAwarded] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [qIdx, setQIdx] = useState(0);
   const [showNav, setShowNav] = useState(false);
@@ -85,6 +86,7 @@ export default function QuizzesPage() {
     setFlagged(new Set());
     setSubmitted(false);
     setScore(0);
+    setXpAwarded(0);
     setQIdx(0);
     setShowNav(false);
     setTimeLeft(quiz.time_limit_minutes ? quiz.time_limit_minutes * 60 : null);
@@ -177,6 +179,7 @@ export default function QuizzesPage() {
       const pct = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
       setScore(pct);
       setSubmitted(true);
+      setXpAwarded(0);
       success(`Practice complete: ${Math.round(pct)}%. No attempt, XP, or progress was recorded.`);
       return;
     }
@@ -203,8 +206,14 @@ export default function QuizzesPage() {
     }
     setScore(data.score);
     setSubmitted(true);
+    const awarded = data.xp_awarded ?? 0;
+    setXpAwarded(awarded);
     if (data.passed) {
-      success(`Quiz passed! +${data.xp_reward} XP`);
+      if (awarded > 0) {
+        success(`Quiz passed! +${awarded} XP`);
+      } else {
+        success('Quiz passed!');
+      }
     } else {
       success(`Quiz submitted: ${Math.round(data.score)}%`);
     }
@@ -464,7 +473,11 @@ export default function QuizzesPage() {
               <ProgressBar value={score} color={score >= (activeQuiz.pass_percentage ?? 70) ? 'green' : 'amber'} />
             </div>
             {score >= (activeQuiz.pass_percentage ?? 70) && (
-              <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{activeQuiz.xp_reward} XP earned!</p>
+              xpAwarded > 0 ? (
+                <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{xpAwarded} XP earned!</p>
+              ) : (
+                <p className="text-slate-400 text-sm font-medium mb-4">No additional XP — you already passed this quiz.</p>
+              )
             )}
             <div className="flex gap-3 justify-center">
               <button onClick={() => { startQuiz(activeQuiz); }} className="btn-secondary">Retry Quiz</button>

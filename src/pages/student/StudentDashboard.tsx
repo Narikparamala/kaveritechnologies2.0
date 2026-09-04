@@ -51,32 +51,39 @@ export default function StudentDashboard() {
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
 
-      // Next action across enrolled courses (server-authoritative plan):
-      // priority for the dashboard card is live -> blocking gate -> next lesson.
+      // Next action across enrolled courses (server-authoritative plan),
+      // walking each course IN ORDER so we never recommend a gate from a
+      // future stage while earlier work is still available.  A blocking gate
+      // only counts when it is the earliest unfinished item of its course.
+      // Cross-course priority: live -> blocking gate -> next lesson.
       let foundGate: typeof nextGate = null;
       let foundNext: typeof nextLesson = null;
       for (const enr of (enrData ?? [])) {
         try {
           const plan = await getStudentCoursePlan(enr.course_id);
-          if (!foundGate) {
-            const gated = plan.find(i => i.access === 'locked' && i.requires_activity_type && i.requires_activity_id);
-            if (gated) {
+          if (!plan.length) continue;
+          // Earliest meaningful unfinished progression item, in course order.
+          const earliest = plan.find(i => i.access !== 'completed');
+          if (!earliest) continue;
+          if (earliest.access === 'available') {
+            if (!foundNext) {
+              foundNext = { courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: earliest.title };
+            }
+          } else if (earliest.access === 'locked' && earliest.requires_activity_type && earliest.requires_activity_id) {
+            // Immediate blocker: earlier lessons in this course are done.
+            if (!foundGate) {
               foundGate = {
                 courseId: enr.course_id,
                 courseTitle: enr.course?.title ?? 'Course',
-                activityType: gated.requires_activity_type as string,
-                activityTitle: gated.requires_activity_title ?? (gated.requires_activity_type as string),
-                activityId: gated.requires_activity_id as string,
-                lessonTitle: gated.title,
+                activityType: earliest.requires_activity_type as string,
+                activityTitle: earliest.requires_activity_title ?? (earliest.requires_activity_type as string),
+                activityId: earliest.requires_activity_id as string,
+                lessonTitle: earliest.title,
               };
             }
           }
-          if (!foundNext) {
-            const next = plan.find(i => i.access === 'available');
-            if (next) {
-              foundNext = { courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: next.title };
-            }
-          }
+          // 'locked' without a gate means the previous lesson is incomplete,
+          // so the earlier available lesson is already the current action.
         } catch {
           // skip course if the plan cannot be resolved
         }
