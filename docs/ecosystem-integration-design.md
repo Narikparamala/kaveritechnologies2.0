@@ -52,14 +52,26 @@ correlate:
 
 ## 2. Server-to-server authentication
 
-- Every satellite holds a **shared secret**, stored ONLY in server-side env
-  (never in satellite browser code, never in VS Code, never in Vite).
-- LMS hosts a **webhook ingestion endpoint** (Supabase Edge Function) that:
-  1. reads an `Authorization: Bearer <satellite secret>` header,
-  2. verifies the secret (constant-time compare; secret stored via
-     `supabase_vault`, never in Vite),
-  3. verifies an **idempotency key** before mutating state,
-  4. writes a row to `integration_audit_log` for every accepted call.
+- Every satellite holds a **per-satellite shared secret**, stored ONLY in
+  server-side env / `supabase_vault` (never in satellite browser code, never
+  in VS Code, never in Vite).
+- LMS hosts **webhook ingestion endpoints** (Supabase Edge Functions).
+  Satellite → LMS requests are **HMAC-signed** (not bearer-only):
+
+```
+POST https://<lms>/functions/v1/integrations/<source>
+X-Kaveri-Timestamp: <unix epoch seconds>
+X-Kaveri-Signature: <hex>
+Idempotency-Key: <source>.<stable_event_uuid>
+
+Signature = HMAC-SHA256( timestamp || "." || raw_body, per-satellite secret )
+```
+
+  1. Verify `X-Kaveri-Timestamp` is within a freshness/replay window
+     (default ±5 minutes) and the signature **constant-time** compares
+     (hash both sides, XOR) against the vault-stored per-satellite secret.
+  2. Verify the **idempotency key** before mutating state.
+  3. Write a row to `integration_audit_log` for every accepted call.
 - All satellite → LMS writes are **webhooks (server → server)**. The LMS never
   exposes service-role credentials to any satellite browser.
 - No public anonymous execution: unauthenticated webhook calls return 401 and
@@ -86,9 +98,12 @@ create unique index integration_audit_log_key_idx
 -- RLS: no client policies — server-internal.
 ```
 
-`integration_audit_log` gives ops a replayable, tamper-evident record and makes
-duplicate webhooks harmless: an idempotency key collision is answered with the
-original result (200 + `"duplicate": true`), never a second mutation.
+`integration_audit_log` is a **server-internal audit trail** (it is not
+cryptographically chained/tamper-evident): it gives ops a replayable record of
+every accepted call, and duplicate webhooks are harmless — an idempotency key
+collision is answered with the original result (200 + `"duplicate": true`),
+never a second mutation. If tamper-evidence is ever required, add a
+hash-chain column in a later migration; nothing in V1 depends on it.
 
 ## 3. Central notification / email outbox (implemented — migration
    `20260905180000_central_notifications_outbox.sql`)
@@ -96,11 +111,14 @@ original result (200 + `"duplicate": true`), never a second mutation.
 Already implemented in the LMS:
 
 - `notification_events` — append-only event log written by SECURITY DEFINER
-  functions only.
-- `notification_outbox` — durable email queue (`queued → sending/sent/failed/
-  skipped`) with `attempts`, `max_attempts`, backoff via `next_attempt_at`,
-  per-recipient `dedupe_key` idempotency, and **RLS disabled for clients**
-  (no student can read queue contents).
+  functions only; **immutable** (a duplicate `dedupe_key` returns the original
+  event id and never rewrites its payload).
+- `notification_outbox` — durable email queue
+  (`queued → sending → delivering → sent | failed | queued+backoff`;
+  `skipped` when delivery is disabled) with `attempts`, `max_attempts`,
+  exponential backoff via `next_attempt_at`, per-recipient `dedupe_key`
+  idempotency, `provider_message_id` for safe provider ids, and **RLS disabled
+  for clients** (no student can read queue contents).
 - In-app notifications reuse the existing `notifications` table (own-rows RLS,
   aggregation key support).
 - Enrollment events (`enrollment_request_created`, `enrollment_approved`,
@@ -109,12 +127,24 @@ Already implemented in the LMS:
   delivery is asynchronous; a delivery failure never rolls back enrollment.
 - `process_notification_outbox()` drives delivery with modes:
   - `disabled` — local default; rows are durably queued then honestly marked
-    `skipped` (ops requeue after configuring a provider).
+    `skipped` (ops requeues after configuring a provider).
   - `simulate_failure` — dev/diagnostic: first attempt fails transiently with
     backoff, retry succeeds (proves the retry machine without a provider).
-  - `pg_net` — production path: outbox → `pg_net` → mailer Edge Function that
-    renders the template and sends via the configured provider. Provider
-    credentials live in `supabase_vault` / server env, never in the browser.
+  - `pg_net` — production path: the worker claims rows with
+    `FOR UPDATE SKIP LOCKED` (concurrent workers can never deliver the same
+    row twice), marks them `sending`, and POSTs them to the
+    **`notification-mailer` Edge Function** via `pg_net`. The mailer verifies
+    `X-Kaveri-Mailer-Token` (vault secret, constant-time), atomically claims
+    the row (`delivering`), renders the approved template, calls the provider
+    through an isolated adapter (`log` local / `resend` production), and
+    resolves the row. Provider credentials live in `supabase_vault` / server
+    env only — never in the browser.
+- Ops health: `notification_delivery_health()` (service-role only) returns
+  aggregate queue counts and oldest-queued age — never recipient data.
+- Production scheduling (documented, not configured): a `pg_cron` job calls
+  `process_notification_outbox()` every minute; see
+  `docs/email-delivery-deployment.md` for the cron SQL, secrets and
+  rollback/disable procedure.
 
 Planned events reuse the same machinery (template keys reserved, not yet
 wired): `live_session_scheduled`, `live_session_reminder`,
@@ -135,12 +165,14 @@ For any given recipient/event, exactly ONE system sends the email:
 ## 4. Workshop bridge (`kaveri-workshop-nextjs`)
 
 Current workshop flow keeps working unchanged (registration → Apps Script →
-Sheets). The bridge adds a **signed webhook** after successful registration:
+Sheets). The bridge adds an **HMAC-signed webhook** after successful
+registration:
 
 ```
 Workshop app (server)
   → POST https://<lms>/functions/v1/integrations/workshop
-      Authorization: Bearer <workshop secret>        (server-side env only)
+      X-Kaveri-Timestamp: <unix epoch seconds>
+      X-Kaveri-Signature: HMAC-SHA256(timestamp "." raw_body, workshop secret)
       Idempotency-Key: workshop.<app_registration_uuid>
       body: { app_registration_id, email, full_name, phone?,
               workshop_slug, workshop_date, status: 'registered', ... }
@@ -148,10 +180,12 @@ Workshop app (server)
 
 LMS side:
 
-1. Verify bearer secret + idempotency key; write `integration_audit_log`.
-2. Match `email` to `profiles` (verified email). 
-   - Match → link registration to `user_id` (attendee gets workshop status on
-     their LMS profile).
+1. Verify timestamp freshness (replay window), signature (constant-time), and
+   idempotency key; write `integration_audit_log`.
+2. Match `email` to `profiles` **only when that email is verified in Supabase
+   Auth** (a `profiles.email` string alone is not proof of ownership).
+   - Verified match → link registration to `user_id` (attendee gets workshop
+     status on their LMS profile).
    - No match → **retain as external attendee/lead**. Do NOT auto-create an
      auth account or password.
 3. Emit `workshop_registered` event → central outbox (email handled per the
@@ -180,11 +214,15 @@ VS Code extension                     LMS
 
 Rules:
 
-- Extension credentials live only in **VS Code SecretStorage**.
-- The extension receives a **scoped token** (student + read-assignment +
-  submit-scope), never the service-role key, never `GO_JUDGE_TOKEN`, never
-  hidden tests, never passwords.
-- Pairing is revocable from the LMS profile page.
+- The extension uses an **opaque, revocable device credential** minted by the
+  LMS at pairing time. The LMS stores only the **SHA-256 hash** of the
+  credential; the raw credential lives only in **VS Code SecretStorage**.
+- Revocation: deleting the LMS-side credential row (from the LMS profile
+  page) invalidates the device immediately — the server compares the SHA-256
+  hash on every call.
+- The credential is scoped (student + read-assignment + submit-scope), never
+  the service-role key, never `GO_JUDGE_TOKEN`, never hidden tests, never
+  passwords, and never the mailer/outbox token.
 
 ### Assignment flow
 
