@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Settings, Sun, Moon, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Sun, Moon, Lock, Eye, EyeOff, CheckCircle, Info } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../components/ui/Toast';
@@ -12,6 +12,19 @@ export default function SettingsPage() {
   const [showPw, setShowPw] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
   const [showPwSection, setShowPwSection] = useState(false);
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!active || !data.user) return;
+      const providers = (data.user.identities ?? []).map(i => i.provider);
+      setHasPassword(providers.includes('password') || providers.includes('email'));
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,13 +119,23 @@ export default function SettingsPage() {
           >
             <Lock size={16} className="text-slate-400" />
             <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Change Password</p>
-              <p className="text-xs text-slate-400">Update your account password</p>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Change / Set Password</p>
+              <p className="text-xs text-slate-400">
+                {hasPassword === false
+                  ? 'You joined with Google. Set a password to also sign in with email + password.'
+                  : 'Update your account password. Your password is stored securely by the sign-in provider — never in plaintext.'}
+              </p>
             </div>
           </button>
 
           {showPwSection && (
             <form onSubmit={handleChangePassword} className="mt-4 space-y-4 animate-fade-in">
+              {hasPassword === false && (
+                <p className="flex items-start gap-2 text-xs text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-xl p-3">
+                  <Info size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>Setting a password here lets you sign in with your email and password from now on. You can keep using Google Sign In too.</span>
+                </p>
+              )}
               <div>
                 <label className="label" htmlFor="new-pw">New Password</label>
                 <div className="relative">
@@ -172,7 +195,7 @@ export default function SettingsPage() {
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
             To delete your account, contact us at{' '}
-            <a href="mailto:info@kaveritech.com" className="text-primary-600 dark:text-primary-400 underline">info@kaveritech.com</a>
+            <a href="mailto:kaveritech2022@gmail.com" className="text-primary-600 dark:text-primary-400 underline">kaveritech2022@gmail.com</a>
           </p>
         </div>
       </div>

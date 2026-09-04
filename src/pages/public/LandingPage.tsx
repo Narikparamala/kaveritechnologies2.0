@@ -1,85 +1,76 @@
 import { Link } from 'react-router-dom';
 import {
-  BookOpen, Code, Award, Users, TrendingUp, CheckCircle, Play, Star,
-  ArrowRight, Zap, Shield, Globe, ChevronDown, ChevronUp, Eye
+  BookOpen, Code, Award, CheckCircle, ArrowRight,
+  Zap, Video, ClipboardList, TrendingUp, ChevronDown, ChevronUp, Map, Presentation
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PublicNav } from '../../components/common/PublicNav';
 import { Footer } from '../../components/common/Footer';
-import { ProgressBar } from '../../components/ui/ProgressBar';
+import { supabase } from '../../lib/supabase';
+import type { Course } from '../../types/database';
 
-const stats = [
-  { label: 'Students Enrolled', value: '12,500+' },
-  { label: 'Courses', value: '25+' },
-  { label: 'Hours of Content', value: '500+' },
-  { label: 'Completion Rate', value: '87%' },
-];
+const DIFFICULTY_COLORS: Record<string, string> = {
+  beginner: 'from-emerald-500 to-teal-500',
+  intermediate: 'from-primary-500 to-primary-700',
+  advanced: 'from-slate-700 to-slate-900',
+};
 
 const features = [
-  { icon: Code, title: 'Python Playground', desc: 'Write and run Python code directly in your browser with our Monaco-powered code editor.' },
-  { icon: Award, title: 'Certificates', desc: 'Earn industry-recognized certificates upon course completion to boost your career.' },
-  { icon: TrendingUp, title: 'Track Progress', desc: 'Detailed analytics and XP system to keep you motivated and on track.' },
-  { icon: Users, title: 'Expert Faculty', desc: 'Learn from experienced Python developers and industry professionals.' },
-  { icon: Zap, title: 'Project-Based', desc: 'Build real projects that go into your portfolio from day one.' },
-  { icon: Globe, title: 'Learn Anywhere', desc: 'Fully responsive platform — learn on mobile, tablet, or desktop.' },
+  { icon: Map, title: 'Structured Journeys', desc: 'Courses organised into chapters and ordered lessons, with clear progress and an obvious next step — no guesswork about what to do next.' },
+  { icon: Video, title: 'Live & Recorded Classes', desc: 'Scheduled live classes with recordings and materials released after class, all attached to the course you are learning.' },
+  { icon: Presentation, title: 'Slides & Study Resources', desc: 'Lesson slides, notes and downloadable resources that stay with each lesson for revision at your own pace.' },
+  { icon: Code, title: 'Hands-on Coding Practice', desc: 'Write and run real code in the browser with automated verification and instant feedback on your work.' },
+  { icon: ClipboardList, title: 'Assignments & Quizzes', desc: 'Practice questions, quizzes and faculty-graded assignments that test understanding — not just watching.' },
+  { icon: TrendingUp, title: 'Progress Tracking', desc: 'Completion states, XP and level tracking show exactly what you have finished and what comes next in your journey.' },
 ];
 
-const roadmap = [
-  { step: 1, title: 'Python Basics', topics: ['Variables', 'Data Types', 'Operators', 'Conditionals', 'Loops'], done: true },
-  { step: 2, title: 'Core Python', topics: ['Functions', 'Lists', 'Dictionaries', 'OOP', 'File Handling'], done: false },
-  { step: 3, title: 'Advanced Topics', topics: ['Decorators', 'Generators', 'Async', 'Testing', 'Packaging'], done: false },
-  { step: 4, title: 'Real Projects', topics: ['Web APIs', 'Data Analysis', 'Automation', 'Flask/FastAPI', 'Deploy'], done: false },
+const learningAreas = [
+  'Programming',
+  'Full Stack Development',
+  'Testing & QA',
+  'Data & AI',
+  'Automation',
+  'Career-focused IT skills',
 ];
 
-const testimonials = [
-  { name: 'Priya Sharma', role: 'Data Analyst @ TCS', text: 'Kaveri Academy transformed my career. The Python Fundamentals course was incredibly well-structured and the projects gave me real experience.', rating: 5 },
-  { name: 'Arjun Nair', role: 'Backend Developer', text: 'Best Python learning platform I\'ve used. The code sandbox is amazing, and the faculty are super responsive and knowledgeable.', rating: 5 },
-  { name: 'Meera Iyer', role: 'ML Engineer @ Infosys', text: 'The structured curriculum and certificate really helped me land my dream job. Highly recommend for anyone serious about Python.', rating: 5 },
-];
-
-const courses = [
-  { title: 'Python Fundamentals', level: 'Beginner', lessons: 45, hours: 40, students: 1250, color: 'from-emerald-500 to-teal-500' },
-  { title: 'Python Intermediate: OOP & Data', level: 'Intermediate', lessons: 62, hours: 60, students: 890, color: 'from-primary-500 to-primary-700' },
-  { title: 'Python for Data Science & Web', level: 'Advanced', lessons: 78, hours: 80, students: 445, color: 'from-slate-700 to-slate-900' },
+const steps = [
+  { title: 'Enrol in a course', desc: 'Choose a published course that matches your current level and goal.' },
+  { title: 'Follow your journey', desc: 'Work through lessons in order — each completed stage unlocks the next.' },
+  { title: 'Learn actively', desc: 'Attend live classes, watch recordings, study slides, and practise with code, quizzes and assignments.' },
+  { title: 'Get feedback & grow', desc: 'Faculty review your work. Track your progress and complete the course at your own pace.' },
 ];
 
 const faqs = [
-  { q: 'Do I need any prior programming experience?', a: 'No! Our Python Fundamentals course starts from absolute zero. We assume no prior coding knowledge.' },
-  { q: 'Are the certificates industry-recognized?', a: 'Our certificates are issued by Kaveri Technologies Academy and are recognized by numerous tech companies across India.' },
-  { q: 'Can I access the courses on mobile?', a: 'Yes! Our platform is fully responsive and optimized for mobile, tablet, and desktop devices.' },
-  { q: 'What is the Python Playground?', a: 'The Python Playground is a browser-based code editor where you can write and execute Python code without installing anything.' },
-  { q: 'How long do I have access to the courses?', a: 'Once enrolled, you have lifetime access to course materials, including future updates.' },
-];
-
-const pricingPlans = [
-  {
-    name: 'Free',
-    price: '₹0',
-    period: 'forever',
-    features: ['2 free preview lessons', 'Python Playground access', 'Community forum', 'Basic progress tracking'],
-    cta: 'Start Free',
-    highlighted: false,
-  },
-  {
-    name: 'Pro',
-    price: '₹2,999',
-    period: 'per course',
-    features: ['Full course access', 'Certificate of completion', 'Assignment grading', 'Quiz system', 'Priority support', 'Project reviews'],
-    cta: 'Enroll Now',
-    highlighted: true,
-  },
-  {
-    name: 'All Access',
-    price: '₹9,999',
-    period: 'per year',
-    features: ['Access to all courses', 'All Pro features', 'Mentorship sessions', 'Job placement support', 'Resume review', 'Mock interviews'],
-    cta: 'Get All Access',
-    highlighted: false,
-  },
+  { q: 'Do I need prior programming experience?', a: 'It depends on the course. Beginner courses assume no prior knowledge and start from the basics; other courses list their expected level so you can choose the right starting point.' },
+  { q: 'What does a course include?', a: 'Published courses can include recorded lessons, live classes with recordings, slides and resources, coding practice, quizzes and assignments — everything you need is inside the course.' },
+  { q: 'How do live classes work?', a: 'Faculty schedule live classes with a date and time and a join link. Enrolled students see upcoming and live sessions in the student dashboard. When a class ends, the recording and materials are released through the same session.' },
+  { q: 'Can I learn from a mobile phone or tablet?', a: 'Yes. The platform is fully responsive, so lessons, videos and resources work on mobile, tablet and desktop browsers.' },
+  { q: 'Do I get a certificate?', a: 'Courses that are set up for certification issue a certificate of completion from Kaveri Technologies Academy when you finish the course requirements. Recognition of any certificate is at the discretion of employers or institutions.' },
+  { q: 'How does the XP and level system work?', a: 'You earn XP by completing lessons and passing quizzes. XP builds your level and shows up in progress tracking and the leaderboard.' },
 ];
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [featured, setFeatured] = useState<Course[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(3);
+      if (active) {
+        setFeatured((data ?? []) as Course[]);
+        setCoursesLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
@@ -99,48 +90,32 @@ export default function LandingPage() {
             <div className="animate-slide-up">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-sm mb-8">
                 <Zap size={14} className="text-teal-400" />
-                Python · Data Science · Web Development
+                IT Training · Programming · Full Stack · Testing · Data & AI
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6">
-                Learn Python.<br />
-                <span className="text-teal-400">Build Projects.</span><br />
+                Learn Technology.<br />
+                <span className="text-teal-400">Build Real Projects.</span><br />
                 Become Industry Ready.
               </h1>
               <p className="text-lg text-white/70 mb-10 max-w-lg leading-relaxed">
-                Join 12,500+ learners mastering Python with structured courses, hands-on projects, expert mentorship, and industry-recognized certificates.
+                Kaveri Technologies Academy is an IT training and career-learning platform from
+                Kaveri Technologies Private Limited — structured courses, live and recorded classes,
+                coding practice, assignments and quizzes to take you from learning to working.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link to="/register" className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-4 rounded-2xl hover:bg-primary-50 transition-all hover:shadow-xl hover:-translate-y-0.5 text-base">
-                  Start Learning Free
+                <Link to="/courses" className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-4 rounded-2xl hover:bg-primary-50 transition-all hover:shadow-xl hover:-translate-y-0.5 text-base">
+                  Browse Courses
                   <ArrowRight size={18} />
                 </Link>
-                <Link to="/courses" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded-2xl hover:bg-white/10 transition-all text-base">
-                  <Play size={18} />
-                  Explore Courses
+                <Link to="/contact" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded-2xl hover:bg-white/10 transition-all text-base">
+                  Talk to Us
                 </Link>
-              </div>
-
-              {/* Demo buttons */}
-              <div className="mt-6">
-                <p className="text-white/50 text-xs mb-3">Explore without signing up:</p>
-                <div className="flex flex-wrap gap-2">
-                  <Link to="/demo/student" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-xs font-medium transition-all">
-                    <Shield size={12} /> Student Demo
-                  </Link>
-                  <Link to="/demo/faculty" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-xs font-medium transition-all">
-                    <Shield size={12} /> Faculty Demo
-                  </Link>
-                  <Link to="/demo/admin" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-xs font-medium transition-all">
-                    <Shield size={12} /> Admin Demo
-                  </Link>
-                </div>
-                <p className="text-white/30 text-xs mt-2">Demo mode is read-only. Create an account to save progress.</p>
               </div>
               <div className="flex flex-wrap gap-6 mt-10">
                 {[
-                  { icon: CheckCircle, label: 'No prior experience needed' },
-                  { icon: CheckCircle, label: 'Lifetime course access' },
-                  { icon: CheckCircle, label: 'Real projects & certificates' },
+                  { icon: CheckCircle, label: 'Structured learning journeys' },
+                  { icon: CheckCircle, label: 'Live & recorded classes' },
+                  { icon: CheckCircle, label: 'Coding practice with feedback' },
                 ].map(({ icon: Icon, label }) => (
                   <div key={label} className="flex items-center gap-2 text-white/70 text-sm">
                     <Icon size={16} className="text-teal-400 flex-shrink-0" />
@@ -150,7 +125,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Mock dashboard preview */}
+            {/* Platform preview mock */}
             <div className="hidden lg:block animate-fade-in stagger-2">
               <div className="relative">
                 <div className="bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 p-6 space-y-4">
@@ -164,9 +139,9 @@ export default function LandingPage() {
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: 'Lessons', val: '24/45', color: 'bg-primary-500' },
-                      { label: 'XP Points', val: '2,400', color: 'bg-teal-500' },
-                      { label: 'Streak', val: '7 days', color: 'bg-amber-500' },
+                      { label: 'Lessons done', val: '12', color: 'bg-primary-500' },
+                      { label: 'XP Points', val: '640', color: 'bg-teal-500' },
+                      { label: 'Level', val: '3', color: 'bg-amber-500' },
                     ].map(({ label, val, color }) => (
                       <div key={label} className="bg-white/10 rounded-2xl p-3">
                         <div className={`w-8 h-8 ${color} rounded-lg mb-2`} />
@@ -177,19 +152,19 @@ export default function LandingPage() {
                   </div>
                   <div className="bg-white/10 rounded-2xl p-4">
                     <p className="text-white/60 text-xs mb-2">Course Progress</p>
-                    <p className="text-white font-semibold text-sm mb-3">Python Fundamentals</p>
+                    <p className="text-white font-semibold text-sm mb-3">Your current course</p>
                     <div className="w-full bg-white/20 rounded-full h-2 mb-1">
-                      <div className="h-2 bg-teal-400 rounded-full" style={{ width: '53%' }} />
+                      <div className="h-2 bg-teal-400 rounded-full" style={{ width: '40%' }} />
                     </div>
-                    <p className="text-white/60 text-xs">53% complete</p>
+                    <p className="text-white/60 text-xs">40% complete</p>
                   </div>
                   <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                    <p className="text-xs text-teal-400 font-mono mb-2">python_basics.py</p>
+                    <p className="text-xs text-teal-400 font-mono mb-2">next_lesson.py</p>
                     <pre className="text-white/80 text-xs font-mono">
-{`def greet(name):
-    return f"Hello, {name}!"
+{`def next_step(journey):
+    return journey.next_available_lesson()
 
-print(greet("Kaveri"))`}
+print(next_step(my_course))`}
                     </pre>
                   </div>
                 </div>
@@ -199,15 +174,21 @@ print(greet("Kaveri"))`}
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="py-12 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+      {/* Learning areas strip */}
+      <section className="py-10 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
-            {stats.map(({ label, value }) => (
-              <div key={label} className="text-center">
-                <p className="text-3xl font-extrabold text-primary-600 dark:text-primary-400">{value}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{label}</p>
-              </div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 text-center mb-4">
+            One platform for your IT career — across technologies
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {learningAreas.map(area => (
+              <Link
+                key={area}
+                to="/courses"
+                className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              >
+                {area}
+              </Link>
             ))}
           </div>
         </div>
@@ -218,10 +199,10 @@ print(greet("Kaveri"))`}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mb-4">
-              Everything You Need to Master Python
+              A Complete IT Learning Platform
             </h2>
             <p className="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
-              A complete learning ecosystem built for serious learners who want real results.
+              Everything you need to learn a technology properly — content, live classes, practice and feedback in one place.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -241,145 +222,97 @@ print(greet("Kaveri"))`}
         </div>
       </section>
 
-      {/* Featured Courses */}
-      <section className="py-20 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">Featured Courses</h2>
-              <p className="text-slate-500 dark:text-slate-400">Structured learning paths from beginner to advanced</p>
+      {/* Featured courses (real published courses from the platform) */}
+      {!coursesLoading && featured.length > 0 && (
+        <section className="py-20 bg-white dark:bg-slate-900">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-end justify-between mb-12">
+              <div>
+                <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">Our Courses</h2>
+                <p className="text-slate-500 dark:text-slate-400">Currently published on the platform</p>
+              </div>
+              <Link to="/courses" className="hidden sm:flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:gap-3 transition-all">
+                View All <ArrowRight size={18} />
+              </Link>
             </div>
-            <Link to="/courses" className="hidden sm:flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:gap-3 transition-all">
-              View All <ArrowRight size={18} />
-            </Link>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses.map(({ title, level, lessons, hours, students, color }) => (
-              <div key={title} className="card-hover overflow-hidden">
-                <div className={`h-40 bg-gradient-to-br ${color} flex items-end p-5`}>
-                  <span className="text-xs font-medium text-white/80 bg-white/20 px-3 py-1 rounded-full">{level}</span>
-                </div>
-                <div className="p-5">
-                  <h3 className="font-bold text-slate-900 dark:text-white mb-3">{title}</h3>
-                  <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mb-4">
-                    <span className="flex items-center gap-1"><BookOpen size={13} /> {lessons} lessons</span>
-                    <span>{hours}h</span>
-                    <span className="flex items-center gap-1"><Users size={13} /> {students.toLocaleString()}</span>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {featured.map(course => (
+                <Link key={course.id} to={`/courses/${course.slug}`} className="card-hover overflow-hidden group flex flex-col">
+                  <div className={`h-40 bg-gradient-to-br ${DIFFICULTY_COLORS[course.difficulty]} flex items-end p-5`}>
+                    <span className="text-xs font-medium text-white/80 bg-white/20 px-3 py-1 rounded-full capitalize">{course.difficulty}</span>
                   </div>
-                  <ProgressBar value={0} showLabel={false} size="sm" />
-                  <Link to="/courses" className="block mt-4 text-center btn-primary text-sm py-2">
-                    Enroll Now
-                  </Link>
-                </div>
-              </div>
-            ))}
+                  <div className="p-5 flex flex-col flex-1">
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{course.title}</h3>
+                    {course.short_description && (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 flex-1 line-clamp-2 mb-4">{course.short_description}</p>
+                    )}
+                    <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                      <span className="flex items-center gap-1"><BookOpen size={13} /> Course</span>
+                      {course.duration_hours ? <span>{course.duration_hours}h</span> : null}
+                    </div>
+                    <span className="block mt-auto text-center btn-primary text-sm py-2.5">
+                      View Course
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* Learning Roadmap */}
-      <section className="py-20 bg-slate-50 dark:bg-slate-950">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">Your Python Learning Path</h2>
-            <p className="text-slate-500 dark:text-slate-400">A clear, structured roadmap from beginner to professional</p>
-          </div>
-          <div className="space-y-6">
-            {roadmap.map(({ step, title, topics, done }, i) => (
-              <div key={step} className="flex gap-6 animate-slide-up" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div className="flex flex-col items-center">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${done ? 'bg-primary-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
-                    {step}
-                  </div>
-                  {i < roadmap.length - 1 && <div className="w-px flex-1 mt-3 bg-slate-200 dark:bg-slate-700" />}
-                </div>
-                <div className="card p-5 flex-1 mb-0">
-                  <h3 className="font-bold text-slate-900 dark:text-white mb-3">{title}</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {topics.map(t => (
-                      <span key={t} className="text-xs px-2.5 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-lg">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="py-20 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">What Our Students Say</h2>
-            <p className="text-slate-500 dark:text-slate-400">Real stories from learners who transformed their careers</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {testimonials.map(({ name, role, text, rating }) => (
-              <div key={name} className="card p-6">
-                <div className="flex gap-1 mb-4">
-                  {Array.from({ length: rating }).map((_, i) => (
-                    <Star key={i} size={16} className="text-amber-400 fill-amber-400" />
-                  ))}
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed mb-5">"{text}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-                    <span className="text-sm font-bold text-primary-700 dark:text-primary-400">{name[0]}</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white text-sm">{name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
+      {/* How learning works */}
       <section className="py-20 bg-slate-50 dark:bg-slate-950">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
-            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">Simple, Transparent Pricing</h2>
-            <p className="text-slate-500 dark:text-slate-400">Start free. Upgrade when you're ready.</p>
+            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">How Learning Works Here</h2>
+            <p className="text-slate-500 dark:text-slate-400">A clear path from enrolment to completion</p>
           </div>
-          <div className="grid sm:grid-cols-3 gap-6">
-            {pricingPlans.map(({ name, price, period, features, cta, highlighted }) => (
-              <div
-                key={name}
-                className={`rounded-3xl p-8 border transition-all ${highlighted ? 'bg-primary-600 border-primary-500 shadow-glow-blue scale-105' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}
-              >
-                <h3 className={`font-bold text-lg mb-1 ${highlighted ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{name}</h3>
-                <div className="mb-5">
-                  <span className={`text-3xl font-extrabold ${highlighted ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{price}</span>
-                  <span className={`text-sm ml-1 ${highlighted ? 'text-white/70' : 'text-slate-400'}`}>/{period}</span>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {steps.map(({ title, desc }, i) => (
+              <div key={title} className="card p-6">
+                <div className="w-10 h-10 rounded-2xl bg-primary-600 text-white flex items-center justify-center font-bold text-sm mb-4">
+                  {i + 1}
                 </div>
-                <ul className="space-y-3 mb-8">
-                  {features.map(f => (
-                    <li key={f} className={`flex items-center gap-2 text-sm ${highlighted ? 'text-white/90' : 'text-slate-600 dark:text-slate-400'}`}>
-                      <CheckCircle size={16} className={highlighted ? 'text-teal-300' : 'text-emerald-500'} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  to="/register"
-                  className={`block text-center py-3 rounded-2xl font-semibold text-sm transition-all ${highlighted ? 'bg-white text-primary-700 hover:bg-primary-50' : 'bg-primary-600 text-white hover:bg-primary-700'}`}
-                >
-                  {cta}
-                </Link>
+                <h3 className="font-bold text-slate-900 dark:text-white mb-2">{title}</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">{desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Admissions / contact CTA */}
+      <section className="py-20 bg-white dark:bg-slate-900">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="card p-10 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center mx-auto mb-5">
+              <Award size={26} className="text-primary-600 dark:text-primary-400" />
+            </div>
+            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">Admissions & Course Access</h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-xl mx-auto leading-relaxed mb-8">
+              Open courses let you enrol and start right away with your account. For paid or
+              batch-based courses, our team confirms fees and batch schedules first. Create an
+              account to browse courses, or contact us directly — we will guide you to the right
+              course and batch.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <Link to="/courses" className="btn-primary inline-flex items-center gap-2">
+                Browse Courses <ArrowRight size={16} />
+              </Link>
+              <Link to="/register" className="btn-secondary inline-flex items-center gap-2">
+                Create an Account
+              </Link>
+              <Link to="/contact" className="btn-secondary inline-flex items-center gap-2">
+                Contact Kaveri
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
       {/* FAQ */}
-      <section className="py-20 bg-white dark:bg-slate-900">
+      <section className="py-20 bg-slate-50 dark:bg-slate-950">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">Frequently Asked Questions</h2>
@@ -405,32 +338,21 @@ print(greet("Kaveri"))`}
         </div>
       </section>
 
-      {/* CTA */}
+      {/* Closing CTA */}
       <section className="py-20 gradient-bg">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white mb-4">
-            Ready to Start Your Python Journey?
+            Ready to Start Your IT Career?
           </h2>
           <p className="text-white/70 mb-10 max-w-xl mx-auto">
-            Join 12,500+ learners and start building your Python career today. Free to start.
+            Create your account, explore our published courses, and talk to our team about the right path for you.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link to="/register" className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-4 rounded-2xl hover:bg-primary-50 transition-all">
-              Get Started Free <ArrowRight size={18} />
+              Create Your Account <ArrowRight size={18} />
             </Link>
             <Link to="/courses" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded-2xl hover:bg-white/10 transition-all">
               Browse Courses
-            </Link>
-          </div>
-          <div className="flex flex-wrap justify-center gap-3 mt-4">
-            <Link to="/demo/student" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-sm font-medium transition-all">
-              <Eye size={14} /> Student Demo
-            </Link>
-            <Link to="/demo/faculty" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-sm font-medium transition-all">
-              <Eye size={14} /> Faculty Demo
-            </Link>
-            <Link to="/demo/admin" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 hover:text-white text-sm font-medium transition-all">
-              <Eye size={14} /> Admin Demo
             </Link>
           </div>
         </div>

@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 import { Logo } from '../../components/ui/Logo';
 import { ThemeToggle } from '../../components/ui/ThemeToggle';
-import { useAuth, ROLE_DASHBOARDS } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
 export default function LoginPage() {
-  const { signIn, profile } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -54,13 +54,17 @@ export default function LoginPage() {
           <Logo size="lg" className="justify-center mb-8 [&_span]:text-white [&_.text-primary-600]:text-teal-300" />
           <h2 className="text-3xl font-extrabold mb-4">Welcome Back!</h2>
           <p className="text-white/70 text-lg max-w-md mx-auto leading-relaxed">
-            Continue your Python learning journey. Pick up right where you left off.
+            Pick up right where you left off — your courses, live classes and progress are waiting.
           </p>
-          <div className="mt-12 grid grid-cols-3 gap-6 text-center">
-            {[['12,500+', 'Students'], ['25+', 'Courses'], ['87%', 'Completion']].map(([val, label]) => (
-              <div key={label}>
-                <p className="text-2xl font-extrabold">{val}</p>
-                <p className="text-white/60 text-sm">{label}</p>
+          <div className="mt-12 space-y-3 text-left max-w-sm mx-auto">
+            {[
+              'Structured course journeys with clear next steps',
+              'Live classes, recordings and study materials',
+              'Coding practice, quizzes and graded assignments',
+            ].map(item => (
+              <div key={item} className="flex items-center gap-3 text-white/80 text-sm">
+                <CheckCircle size={16} className="text-teal-300 flex-shrink-0" />
+                {item}
               </div>
             ))}
           </div>
@@ -81,7 +85,7 @@ export default function LoginPage() {
             <p className="text-slate-500 dark:text-slate-400 text-sm">
               Don't have an account?{' '}
               <Link to="/register" className="text-primary-600 dark:text-primary-400 hover:underline font-medium">
-                Sign up for free
+                Create one now
               </Link>
             </p>
           </div>

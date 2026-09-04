@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Mail, Phone, MapPin, Github, Twitter, Linkedin, Youtube } from 'lucide-react';
+import { Mail, Phone, MapPin, Globe } from 'lucide-react';
 import { Logo } from '../ui/Logo';
+import { COMPANY } from '../../lib/company';
 
 export function Footer() {
   return (
@@ -11,23 +12,18 @@ export function Footer() {
           <div className="lg:col-span-1">
             <Logo size="sm" className="mb-4 [&_span]:text-white [&_.text-primary-600]:text-primary-400" />
             <p className="text-slate-400 text-sm leading-relaxed mb-6">
-              Learn Python. Build Projects. Become Industry Ready. Join thousands of learners transforming their careers.
+              {COMPANY.tagline} {COMPANY.brandName} is the learning platform of {COMPANY.legalName}.
             </p>
-            <div className="flex gap-3">
-              {[
-                { icon: Github, label: 'GitHub' },
-                { icon: Twitter, label: 'Twitter' },
-                { icon: Linkedin, label: 'LinkedIn' },
-                { icon: Youtube, label: 'YouTube' },
-              ].map(({ icon: Icon, label }) => (
-                <button
-                  key={label}
-                  aria-label={label}
-                  className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-primary-600 flex items-center justify-center transition-colors"
-                >
-                  <Icon size={16} />
-                </button>
-              ))}
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Globe size={15} className="text-primary-400 flex-shrink-0" />
+              <a
+                href={COMPANY.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+              >
+                {COMPANY.website}
+              </a>
             </div>
           </div>
 
@@ -37,10 +33,11 @@ export function Footer() {
             <ul className="space-y-3">
               {[
                 { label: 'Courses', to: '/courses' },
-                { label: 'Pricing', to: '/pricing' },
                 { label: 'About Us', to: '/about' },
-                { label: 'FAQ', to: '/faq' },
                 { label: 'Contact', to: '/contact' },
+                { label: 'FAQ', to: '/faq' },
+                { label: 'Privacy Policy', to: '/privacy' },
+                { label: 'Terms of Service', to: '/terms' },
               ].map(({ label, to }) => (
                 <li key={to}>
                   <Link to={to} className="text-sm text-slate-400 hover:text-white transition-colors">{label}</Link>
@@ -49,16 +46,17 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Learning */}
+          {/* Learning areas */}
           <div>
-            <h3 className="font-semibold text-white mb-4 text-sm">Learning</h3>
+            <h3 className="font-semibold text-white mb-4 text-sm">What We Teach</h3>
             <ul className="space-y-3">
               {[
-                'Python Fundamentals',
-                'Data Science',
-                'Web Development',
+                'Programming',
+                'Full Stack Development',
+                'Testing & QA',
+                'Data & AI',
                 'Automation',
-                'AI & ML',
+                'Career-focused IT skills',
               ].map(label => (
                 <li key={label}>
                   <Link to="/courses" className="text-sm text-slate-400 hover:text-white transition-colors">{label}</Link>
@@ -73,22 +71,27 @@ export function Footer() {
             <ul className="space-y-3">
               <li className="flex items-center gap-3 text-sm text-slate-400">
                 <Mail size={15} className="text-primary-400 flex-shrink-0" />
-                info@kaveritech.com
+                <a href={`mailto:${COMPANY.email}`} className="hover:text-white transition-colors break-all">{COMPANY.email}</a>
               </li>
               <li className="flex items-center gap-3 text-sm text-slate-400">
                 <Phone size={15} className="text-primary-400 flex-shrink-0" />
-                +91 98765 43210
+                <a href={`tel:${COMPANY.phoneRaw}`} className="hover:text-white transition-colors">{COMPANY.phoneDisplay}</a>
               </li>
-              <li className="flex items-start gap-3 text-sm text-slate-400">
-                <MapPin size={15} className="text-primary-400 flex-shrink-0 mt-0.5" />
-                Bangalore, Karnataka, India
-              </li>
+              {COMPANY.offices.map(office => (
+                <li key={office.name} className="flex items-start gap-3 text-sm text-slate-400">
+                  <MapPin size={15} className="text-primary-400 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-medium text-slate-300">{office.name}: </span>
+                    {office.lines.join(' ')}
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
 
         <div className="border-t border-slate-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
-          <p>© {new Date().getFullYear()} Kaveri Technologies Academy. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {COMPANY.legalName}. All rights reserved.</p>
           <div className="flex gap-6">
             <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>

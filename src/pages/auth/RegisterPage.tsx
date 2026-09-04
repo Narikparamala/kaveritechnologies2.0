@@ -103,16 +103,16 @@ export default function RegisterPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-teal-600 to-primary-700 items-center justify-center p-12">
         <div className="text-center text-white">
           <Logo size="lg" className="justify-center mb-8 [&_span]:text-white [&_.text-primary-600]:text-teal-200" />
-          <h2 className="text-3xl font-extrabold mb-4">Start Your Python Journey</h2>
+          <h2 className="text-3xl font-extrabold mb-4">Start Your IT Career</h2>
           <p className="text-white/70 text-lg max-w-md mx-auto">
-            Join thousands of learners building real Python skills and landing dream jobs.
+            Create an account to explore courses, live classes, coding practice and more from Kaveri Technologies Academy.
           </p>
           <div className="mt-12 space-y-4 text-left">
             {[
-              'Learn at your own pace with structured courses',
-              'Build real projects for your portfolio',
-              'Earn certificates recognized by employers',
-              'Get personalized feedback from faculty',
+              'Track your progress with structured learning journeys',
+              'Practise with coding, quizzes and assignments',
+              'Join live classes and watch recordings',
+              'Get feedback and guidance from faculty',
             ].map(item => (
               <div key={item} className="flex items-center gap-3 text-white/80">
                 <CheckCircle size={18} className="text-teal-300 flex-shrink-0" />
@@ -178,7 +178,7 @@ export default function RegisterPage() {
               <input
                 id="fullName"
                 className="input"
-                placeholder="Priya Sharma"
+                placeholder="Your full name"
                 value={form.fullName}
                 onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
                 autoComplete="name"

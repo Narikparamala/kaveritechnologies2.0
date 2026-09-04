@@ -67,7 +67,7 @@ export function AuthRequiredModal({ open, onClose }: AuthRequiredModalProps) {
           </div>
 
           <p className="text-center text-xs text-slate-400 mt-4">
-            Free accounts get lifetime access to course content and certificates.
+            Create an account to start real courses. Access to course content follows enrolment.
           </p>
         </div>
       </div>

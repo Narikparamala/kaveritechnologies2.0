@@ -125,7 +125,7 @@ export default function StudentDashboard() {
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
         title={`Welcome back, ${profile.full_name?.split(' ')[0] ?? 'Learner'}!`}
-        subtitle="Continue your Python learning journey"
+        subtitle="Pick up where you left off"
       />
 
       {/* Stats */}
@@ -302,9 +302,14 @@ export default function StudentDashboard() {
             ) : enrollments.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
-                title="No courses enrolled yet"
-                description="Browse our Python courses and start learning today."
-                action={<Link to="/courses" className="btn-primary text-sm">Browse Courses</Link>}
+                title="No active courses yet"
+                description="Browse the published course catalog and enrol, or talk to Kaveri about the right course for you."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Link to="/courses" className="btn-primary text-sm">Browse Courses</Link>
+                    <Link to="/contact" className="btn-secondary text-sm">Contact Kaveri</Link>
+                  </div>
+                }
               />
             ) : (
               <div className="space-y-3">
