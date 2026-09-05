@@ -10,3 +10,15 @@ export const CODING_EXTENSION_DEEPLINK_BASE = 'vscode://kaveritechnologies.kaver
 
 /** Workshop registration site. */
 export const WORKSHOP_SITE_URL = 'https://kaveri-workshop-nextjs.vercel.app';
+
+/**
+ * Question Paper / Offline Exams system (Cloudflare Worker + React client).
+ * Empty until the QP app is deployed to a public URL — the LMS then shows
+ * the "Open Question Paper System" action automatically. See
+ * docs/kaveri-platform-registry.md (section 5) for status.
+ */
+export const QUESTION_PAPER_APP_URL = '';
+
+/** True when a configured satellite link should be surfaced in the UI. */
+export const isSatelliteConfigured = (url: string): boolean =>
+  typeof url === 'string' && url.trim().length > 0;

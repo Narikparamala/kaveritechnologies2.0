@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FileText, Send, UserCheck, Users, CalendarDays, Clock, ClipboardList } from 'lucide-react';
+import { FileText, Send, UserCheck, Users, CalendarDays, Clock, ClipboardList, Plus, ExternalLink, BookOpen } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
+import { QUESTION_PAPER_APP_URL, isSatelliteConfigured } from '../../lib/externalLinks';
 
 type ExamRow = {
   id: string;
@@ -20,6 +21,20 @@ type ExamRow = {
   external_paper_id: string | null;
   course: { id: string; title: string } | null;
   results?: { id: string; status: string }[];
+};
+
+type CourseOption = { id: string; title: string };
+
+type NewExamForm = {
+  title: string;
+  course_id: string;
+  batch_label: string;
+  exam_date: string;
+  start_time: string;
+  duration_minutes: string;
+  max_marks: string;
+  student_instructions: string;
+  external_paper_id: string;
 };
 
 type RosterStudent = {
@@ -56,6 +71,21 @@ export default function StaffOfflineExamsPage({ admin = false }: { admin?: boole
   const [saving, setSaving] = useState(false);
   const [publishTarget, setPublishTarget] = useState<ExamRow | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [courseLoading, setCourseLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newForm, setNewForm] = useState<NewExamForm>({
+    title: '',
+    course_id: '',
+    batch_label: '',
+    exam_date: '',
+    start_time: '',
+    duration_minutes: '',
+    max_marks: '',
+    student_instructions: '',
+    external_paper_id: '',
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,6 +180,89 @@ export default function StaffOfflineExamsPage({ admin = false }: { admin?: boole
     await load();
   };
 
+  const openNew = async () => {
+    setShowNew(true);
+    setCourseLoading(true);
+    setCourses([]);
+    try {
+      if (admin) {
+        const { data, error } = await supabase
+          .from('courses')
+          .select('id,title')
+          .order('title', { ascending: true });
+        if (error) throw error;
+        setCourses((data ?? []) as CourseOption[]);
+      } else {
+        const { data: cf, error: cfError } = await supabase
+          .from('course_faculty')
+          .select('course_id')
+          .eq('faculty_id', (await supabase.auth.getUser()).data.user?.id);
+        if (cfError) throw cfError;
+        const ids = (cf ?? []).map((c: any) => c.course_id).filter(Boolean);
+        if (ids.length) {
+          const { data, error } = await supabase
+            .from('courses')
+            .select('id,title')
+            .in('id', ids)
+            .order('title', { ascending: true });
+          if (error) throw error;
+          setCourses((data ?? []) as CourseOption[]);
+        }
+      }
+    } catch (e: any) {
+      toastError('Course list failed', e?.message ?? 'Could not load courses');
+    } finally {
+      setCourseLoading(false);
+    }
+  };
+
+  const createExam = async () => {
+    const title = newForm.title.trim();
+    if (!title) {
+      toastError('Title required', 'Give the exam a title before creating it.');
+      return;
+    }
+    if (!newForm.course_id && !admin) {
+      toastError('Course required', 'Select the course this exam belongs to.');
+      return;
+    }
+    if (newForm.max_marks && (Number.isNaN(Number(newForm.max_marks)) || Number(newForm.max_marks) <= 0)) {
+      toastError('Invalid max marks', 'Max marks must be a positive number.');
+      return;
+    }
+    setCreating(true);
+    const { error } = await supabase.rpc('create_offline_exam', {
+      p_title: title,
+      p_course_id: newForm.course_id || null,
+      p_batch_label: newForm.batch_label.trim() || null,
+      p_exam_date: newForm.exam_date || null,
+      p_start_time: newForm.start_time || null,
+      p_duration_minutes: newForm.duration_minutes ? Number(newForm.duration_minutes) : null,
+      p_max_marks: newForm.max_marks ? Number(newForm.max_marks) : null,
+      p_student_instructions: newForm.student_instructions.trim() || null,
+      p_external_paper_id: newForm.external_paper_id.trim() || null,
+    });
+    setCreating(false);
+    if (error) {
+      const msg = error.message ?? '';
+      if (msg.includes('OFFLINE_EXAM_FORBIDDEN')) {
+        toastError('Not permitted', 'You can only create exams for courses you are assigned to.');
+      } else if (msg.includes('OFFLINE_EXAM_ALREADY_LINKED')) {
+        toastError('Already linked', 'An exam for this question paper already exists.');
+      } else {
+        toastError('Create failed', error.message);
+      }
+      return;
+    }
+    success('Exam created', `"${title}" is now visible to enrolled students as an upcoming exam.`);
+    setShowNew(false);
+    setNewForm({
+      title: '', course_id: '', batch_label: '', exam_date: '', start_time: '',
+      duration_minutes: '', max_marks: '', student_instructions: '', external_paper_id: '',
+    });
+    await load();
+  };
+
   if (loading) return <div className="p-6 lg:p-8"><p className="text-slate-500">Loading offline exams…</p></div>;
 
   const canEnter = (e: ExamRow) => e.status === 'scheduled' || e.status === 'conducted' || e.status === 'results_pending';
@@ -160,9 +273,29 @@ export default function StaffOfflineExamsPage({ admin = false }: { admin?: boole
       <PageHeader
         title="Offline Exams"
         subtitle={admin
-          ? 'All offline exams synced from the Question Paper system, with result entry and publication across courses.'
-          : 'Offline exams for your courses. Record marks privately, then publish so students can see their results.'}
+          ? 'All offline exams across courses — scheduled manually or synced from the Question Paper system — with result entry and publication.'
+          : 'Offline exams for your courses. Schedule a new exam, record marks privately, then publish so students can see their results.'}
       />
+
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <button
+          onClick={() => void openNew()}
+          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+        >
+          <Plus size={16} /> New Exam
+        </button>
+        {isSatelliteConfigured(QUESTION_PAPER_APP_URL) && (
+          <a
+            href={QUESTION_PAPER_APP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            <BookOpen size={16} /> Open Question Paper System
+            <ExternalLink size={13} className="text-slate-400" />
+          </a>
+        )}
+      </div>
 
       {exams.length === 0 ? (
         <div className="card">
@@ -330,6 +463,132 @@ export default function StaffOfflineExamsPage({ admin = false }: { admin?: boole
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : `Save ${roster.filter(r => r.marks.trim() !== '').length} result(s)`}
+          </button>
+        </div>
+      </Modal>
+
+      {/* New exam */}
+      <Modal open={showNew} onClose={() => setShowNew(false)} title="Schedule offline exam" size="lg">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Exam title *</label>
+            <input
+              type="text"
+              value={newForm.title}
+              onChange={e => setNewForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="e.g. Python Fundamentals — Mid-Term"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Course</label>
+            {courseLoading ? (
+              <p className="text-xs text-slate-500 py-2">Loading courses…</p>
+            ) : (
+              <select
+                value={newForm.course_id}
+                onChange={e => setNewForm(f => ({ ...f, course_id: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">{admin ? 'No course (platform-level exam)' : 'Select course…'}</option>
+                {courses.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            )}
+            <p className="text-[11px] text-slate-400 mt-1">
+              Students actively enrolled in this course will see the exam.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Batch label</label>
+            <input
+              type="text"
+              value={newForm.batch_label}
+              onChange={e => setNewForm(f => ({ ...f, batch_label: e.target.value }))}
+              placeholder="e.g. Batch A"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Exam date</label>
+            <input
+              type="date"
+              value={newForm.exam_date}
+              onChange={e => setNewForm(f => ({ ...f, exam_date: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Start time</label>
+            <input
+              type="time"
+              value={newForm.start_time}
+              onChange={e => setNewForm(f => ({ ...f, start_time: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Duration (minutes)</label>
+            <input
+              type="number"
+              min={1}
+              max={600}
+              value={newForm.duration_minutes}
+              onChange={e => setNewForm(f => ({ ...f, duration_minutes: e.target.value }))}
+              placeholder="90"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Max marks</label>
+            <input
+              type="number"
+              min={1}
+              step="0.5"
+              value={newForm.max_marks}
+              onChange={e => setNewForm(f => ({ ...f, max_marks: e.target.value }))}
+              placeholder="50"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Student instructions (optional)</label>
+            <textarea
+              value={newForm.student_instructions}
+              onChange={e => setNewForm(f => ({ ...f, student_instructions: e.target.value }))}
+              rows={2}
+              placeholder="Instructions shown to students before the exam (never the questions)."
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Question Paper link (optional)</label>
+            <input
+              type="text"
+              value={newForm.external_paper_id}
+              onChange={e => setNewForm(f => ({ ...f, external_paper_id: e.target.value }))}
+              placeholder="Stable paper id from the Question Paper system (paper content stays there)"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+        <p className="mt-4 text-[11px] text-slate-400">
+          Question paper content is never stored in the LMS — it remains inside the Question Paper system and is distributed on the exam day.
+        </p>
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            onClick={() => setShowNew(false)}
+            className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void createExam()}
+            disabled={creating || courseLoading}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {creating ? 'Creating…' : 'Schedule exam'}
           </button>
         </div>
       </Modal>
