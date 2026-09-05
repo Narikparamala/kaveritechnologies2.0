@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
+  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
   { label: 'My Batches & Work', icon: Users, to: '/batches' },
   { label: 'My Students', icon: Users, to: '/students' },
   { label: 'Support Records', icon: AlertTriangle, to: '/support-records' },

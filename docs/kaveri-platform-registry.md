@@ -90,13 +90,15 @@ deployment URLs.
 
 | Field | Value |
 |---|---|
-| Repo | Narikparamala/kaveri-question-paper-system |
+| Repo | Narikparamala/kaveri-question-paper-system (active codebase on the `supabase-integration` branch history) |
 | Owner | Kaveri Technologies |
-| Host | Not deployed to a public URL yet (offline/local tool) |
-| Production status | In use offline |
-| Identity authority | None yet — faculty/student identities not yet linked |
-| Data authority | Its own local store |
-| Integration status | Not started. Planned: Faculty → Offline Exams → question-paper module → generate/print → record marks → show results on the student LMS profile. Shared references: `course_id`, `faculty_id`, `student_id`, `exam_id` |
+| Host | Not deployed to a public URL yet — runs offline/local; Cloudflare Pages deploy pipeline (`wrangler pages deploy dist`) is configured but not live |
+| Production status | Working independent product; in use offline |
+| Stack | Cloudflare Worker (Hono) + React client (Vite) + Supabase (`qp_*` tables in the SAME Supabase project as the LMS) |
+| Identity authority | Supabase Auth (same project); faculty/admin via LMS `profiles` roles (`qp_is_active_faculty_or_admin`) |
+| Data authority | `qp_papers` / `qp_*` tables are authoritative for papers, sets, question bank, AI generation, print masters. Paper content (questions, answer keys, sets) NEVER leaves the Question Paper system |
+| Integration status | **Offline Exams Bridge V1 (this branch).** When a paper is finalized/archived the Worker commits a durable `qp_platform_sync` marker (faculty JWT, RLS-scoped) and fires a signed webhook (HMAC timestamp"."idempotency"."body, separate `integrations.question_paper.secret`) to the LMS `integrations-question-paper` edge function → `ingest_offline_exam` → central `offline_exams` metadata + linkage (`external_paper_id`, `external_set_id`). Results are entered privately in the LMS (`save_offline_exam_results`), then published (`publish_offline_exam_results`) — students see only their own published rows. `integration_audit_log` records every webhook (source `question-paper`). Admin reconciliation (`/api/platform-sync/reconcile` in the QP app) retries pending/failed markers and catches up papers without markers, so a registration/exam is never lost when the LMS is unreachable |
+| Domain later | exams.kaveritech.co.in (potential, clearly marked as future — no DNS change made) |
 
 ---
 
@@ -117,4 +119,5 @@ local `supabase_migrations` history.
 |---|---|---|---|
 | Workshop → LMS | `integrations-workshop` edge function | LMS vault / env `integrations.workshop.secret`; workshop app server env `KAVERI_PLATFORM_WORKSHOP_SECRET` | Workshop Bridge Final hardening |
 | VS Code → LMS grading | LMS `secure-grade` edge function (kind `vscode`) | User JWT only; runner token stays server-side | Coding Workspace Integration V1 |
+| Question Paper → LMS | `integrations-question-paper` edge function | LMS vault / env `integrations.question_paper.secret`; QP Worker env `KAVERI_QP_PLATFORM_SECRET` (separate from Workshop secret) | Offline Exams / Question Paper Integration V1 |
 | Mailer | `notification-mailer` edge function | Vault / env | Email delivery readiness + final hardening |

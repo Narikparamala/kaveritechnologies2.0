@@ -392,6 +392,11 @@ deno_version = 2
 [functions.integrations-workshop]
 verify_jwt = false
 
+# integrations-question-paper is the same server-to-server pattern: HMAC only,
+# no JWT gateway.
+[functions.integrations-question-paper]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

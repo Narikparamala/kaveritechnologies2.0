@@ -94,7 +94,7 @@ export default function AdminWorkshopsPage() {
         <div className="card p-8">
           <EmptyState
             title="No workshop registrations yet"
-            message="Registrations appear here after the workshop app syncs its first successful registration to the platform."
+            description="Registrations appear here after the workshop app syncs its first successful registration to the platform."
           />
         </div>
       ) : (

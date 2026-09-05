@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { label: 'Enrollments', icon: UserCheck, to: '/enrollments' },
   { label: 'Enrollment Requests', icon: Inbox, to: '/enrollments/requests' },
   { label: 'Workshops', icon: CalendarCheck2, to: '/workshops' },
+  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
   { label: 'Faculty', icon: UserCheck, to: '/faculty-management' },
   { label: 'Payroll', icon: DollarSign, to: '/payroll' },
   { label: 'Performance', icon: BarChart2, to: '/performance-reviews' },
