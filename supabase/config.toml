@@ -397,6 +397,14 @@ verify_jwt = false
 [functions.integrations-question-paper]
 verify_jwt = false
 
+# marketing-lead-ingest is a server-to-server webhook endpoint. The edge
+# runtime JWT gateway is disabled for it; its only authentication is the
+# HMAC-SHA256 signature verified inside the function against the shared
+# secret (env KAVERI_LEAD_API_SECRET, else vault secret 'marketing.lead.secret').
+[functions.marketing-lead-ingest]
+verify_jwt = false
+
+
 [analytics]
 enabled = true
 port = 54327
