@@ -114,6 +114,8 @@ const AdminQuizzesPage = lazy(() => import('./pages/admin/AdminQuizzesPage'));
 const AdminProjectsPage = lazy(() => import('./pages/admin/AdminProjectsPage'));
 const AdminBatchesPage = lazy(() => import('./pages/admin/AdminBatchesPage'));
 const AdminPlacementsPage = lazy(() => import('./pages/admin/AdminPlacementsPage'));
+const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
+const AdminLeadDetailPage = lazy(() => import('./pages/admin/AdminLeadDetailPage'));
 
 // Demo pages (lazy - only loaded when visiting demo routes)
 const DemoStudentLayout = lazy(() => import('./pages/demo/student/DemoStudentLayout'));
@@ -338,6 +340,8 @@ export default function App() {
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
                     <Route path="placements" element={<AdminPlacementsPage />} />
+                    <Route path="marketing-leads" element={<AdminLeadsPage />} />
+                    <Route path="marketing-leads/:leadId" element={<AdminLeadDetailPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
                     <Route path="storage" element={<Navigate to="/admin/settings" replace />} />
