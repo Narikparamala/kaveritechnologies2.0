@@ -18,10 +18,14 @@ import {
   LEAD_STATUSES,
   LEAD_TYPES,
   STATUS_BADGE_VARIANT,
+  getFollowUpBoard,
+  getLeadCourseOptions,
   getLeadStatusCounts,
+  getOpenFollowUps,
+  getStaffOptions,
   listLeads,
 } from '../../services/marketingLeads';
-import type { MarketingLead } from '../../services/marketingLeads';
+import type { FollowUpBucket, FollowUpItem, MarketingLead } from '../../services/marketingLeads';
 
 const PAGE_SIZE = 25;
 
@@ -35,7 +39,15 @@ export default function AdminLeadsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [courseFilter, setCourseFilter] = useState('all');
+  const [assignedFilter, setAssignedFilter] = useState('all');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
   const [page, setPage] = useState(1);
+  const [courses, setCourses] = useState<{ slug: string; title: string | null }[]>([]);
+  const [staffList, setStaffList] = useState<{ id: string; full_name: string | null; email: string }[]>([]);
+  const [board, setBoard] = useState<FollowUpBucket | null>(null);
+  const [nextFu, setNextFu] = useState<Map<string, FollowUpItem>>(new Map());
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -47,6 +59,10 @@ export default function AdminLeadsPage() {
           search,
           status: statusFilter,
           leadType: typeFilter,
+          course: courseFilter,
+          assigned: assignedFilter,
+          createdFrom,
+          createdTo,
           page,
           pageSize: PAGE_SIZE,
         }),
@@ -55,16 +71,24 @@ export default function AdminLeadsPage() {
       setLeads(listResult.leads);
       setTotal(listResult.total);
       setSummary(counts);
+      const fuMap = await getOpenFollowUps(listResult.leads.map(l => l.id));
+      setNextFu(fuMap);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch leads');
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, typeFilter, page]);
+  }, [search, statusFilter, typeFilter, page, courseFilter, assignedFilter, createdFrom, createdTo]);
 
   useEffect(() => {
     void fetchLeads();
   }, [fetchLeads]);
+
+  useEffect(() => {
+    void getLeadCourseOptions().then(setCourses).catch(() => undefined);
+    void getStaffOptions().then(setStaffList).catch(() => undefined);
+    void getFollowUpBoard().then(setBoard).catch(() => undefined);
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -79,10 +103,40 @@ export default function AdminLeadsPage() {
         <StatCard title="New" value={summary.NEW ?? 0} icon={UserPlus} />
         <StatCard title="Contacted" value={summary.CONTACTED ?? 0} icon={Phone} />
         <StatCard title="Counselling" value={summary.COUNSELLING ?? 0} icon={MessagesSquare} />
-        <StatCard title="Follow-up" value={summary.FOLLOW_UP ?? 0} icon={CalendarClock} />
+        <StatCard title="Follow-up due" value={board ? board.overdue.length + board.today.length : (summary.FOLLOW_UP ?? 0)} icon={CalendarClock} />
         <StatCard title="Joined" value={summary.JOINED ?? 0} icon={UserCheck} />
         <StatCard title="Total" value={summary.total ?? 0} icon={Users} />
       </div>
+
+      {board && (board.overdue.length > 0 || board.today.length > 0 || board.upcoming.length > 0) ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          {([['Overdue', board.overdue], ['Today', board.today], ['Upcoming', board.upcoming]] as const).map(([label, items]) => (
+            <div key={label} className="card p-4">
+              <h3 className="font-semibold mb-3 text-sm">{label} ({items.length})</h3>
+              {items.length === 0 ? (
+                <p className="text-xs text-slate-500">Nothing due.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {items.slice(0, 8).map(({ lead: l, followUp: f }) => (
+                    <li key={f.activityId} className="text-sm">
+                      <button
+                        className="text-blue-600 hover:underline font-medium"
+                        onClick={() => navigate(`/admin/marketing-leads/${l.id}`)}
+                      >
+                        {l.full_name}
+                      </button>
+                      <span className={`text-xs ml-2 ${label === 'Overdue' ? 'text-red-600' : 'text-slate-500'}`}>
+                        {new Date(f.dueAt).toLocaleString()}
+                      </span>
+                      {f.note ? <p className="text-xs text-slate-500">{f.note}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="card p-4">
         <div className="flex flex-wrap gap-3 mb-4">
@@ -121,6 +175,53 @@ export default function AdminLeadsPage() {
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
+          <select
+            className="input w-auto"
+            value={courseFilter}
+            onChange={e => {
+              setCourseFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="all">All courses</option>
+            {courses.map(c => (
+              <option key={c.slug} value={c.slug}>{c.title ?? c.slug}</option>
+            ))}
+          </select>
+          <select
+            className="input w-auto"
+            value={assignedFilter}
+            onChange={e => {
+              setAssignedFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="all">All staff</option>
+            <option value="unassigned">Unassigned</option>
+            {staffList.map(s => (
+              <option key={s.id} value={s.id}>{s.full_name ?? s.email}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            className="input w-auto"
+            title="Created from"
+            value={createdFrom}
+            onChange={e => {
+              setCreatedFrom(e.target.value);
+              setPage(1);
+            }}
+          />
+          <input
+            type="date"
+            className="input w-auto"
+            title="Created to"
+            value={createdTo}
+            onChange={e => {
+              setCreatedTo(e.target.value);
+              setPage(1);
+            }}
+          />
         </div>
 
         {loading ? (
@@ -139,6 +240,9 @@ export default function AdminLeadsPage() {
                   <th className="py-2 pr-4">Email</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Course</th>
+                  <th className="py-2 pr-4">Source / Campaign</th>
+                  <th className="py-2 pr-4">Assigned</th>
+                  <th className="py-2 pr-4">Next follow-up</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Created</th>
                   <th className="py-2" />
@@ -156,6 +260,22 @@ export default function AdminLeadsPage() {
                     <td className="py-2 pr-4">{lead.email ?? '—'}</td>
                     <td className="py-2 pr-4">{lead.lead_type}</td>
                     <td className="py-2 pr-4">{lead.course_title ?? lead.course_slug ?? '—'}</td>
+                    <td className="py-2 pr-4 text-slate-500">
+                      {lead.last_touch?.utm_campaign ?? lead.last_touch?.utm_source ?? lead.first_touch?.utm_source ?? '—'}
+                    </td>
+                    <td className="py-2 pr-4">{lead.assigned?.full_name ?? '—'}</td>
+                    <td className="py-2 pr-4">
+                      {(() => {
+                        const fu = nextFu.get(lead.id);
+                        if (!fu) return '—';
+                        const overdue = new Date(fu.dueAt) < new Date();
+                        return (
+                          <span className={overdue ? 'text-red-600' : 'text-slate-600'} title={fu.note ?? undefined}>
+                            {new Date(fu.dueAt).toLocaleString()}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="py-2 pr-4">
                       <Badge variant={STATUS_BADGE_VARIANT[lead.status]}>{lead.status}</Badge>
                     </td>

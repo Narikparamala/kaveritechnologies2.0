@@ -12,13 +12,38 @@ import {
   STATUS_BADGE_VARIANT,
   addLeadNote,
   assignLead,
+  completeFollowUp,
   getLead,
   getLeadActivities,
   getLeadStatusHistory,
+  getOpenFollowUps,
   getStaffOptions,
+  rescheduleFollowUp,
+  scheduleFollowUp,
   updateLeadStatus,
 } from '../../services/marketingLeads';
-import type { LeadActivity, LeadStatus, LeadStatusHistoryRow, MarketingLead } from '../../services/marketingLeads';
+import type { FollowUpItem, LeadActivity, LeadStatus, LeadStatusHistoryRow, MarketingLead, TouchAttribution } from '../../services/marketingLeads';
+
+function TouchDetails({ title, touch }: { title: string; touch: TouchAttribution | null }) {
+  if (!touch) return <Field label={title} value={null} />;
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-600">{title}</p>
+      <dl className="mt-1 space-y-1">
+        <Field label="Source" value={touch.utm_source ?? null} />
+        <Field label="Medium" value={touch.utm_medium ?? null} />
+        <Field label="Campaign" value={touch.utm_campaign ?? null} />
+        <Field label="Content" value={touch.utm_content ?? null} />
+        <Field label="Term" value={touch.utm_term ?? null} />
+        <Field label="fbclid" value={touch.fbclid ?? null} />
+        <Field label="gclid" value={touch.gclid ?? null} />
+        <Field label="Landing page" value={touch.landing_page ?? null} />
+        <Field label="Referrer" value={touch.referrer ?? null} />
+        <Field label="Captured" value={touch.captured_at ? new Date(touch.captured_at).toLocaleString() : null} />
+      </dl>
+    </div>
+  );
+}
 
 export default function AdminLeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -32,22 +57,29 @@ export default function AdminLeadDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [followUp, setFollowUp] = useState<FollowUpItem | null>(null);
+  const [fuDate, setFuDate] = useState('');
+  const [fuTime, setFuTime] = useState('');
+  const [fuNote, setFuNote] = useState('');
+  const [savingFu, setSavingFu] = useState(false);
 
   const fetchLead = useCallback(async () => {
     if (!leadId) return;
     try {
       setLoading(true);
       setError(null);
-      const [leadData, activityData, historyData, staffData] = await Promise.all([
+      const [leadData, activityData, historyData, staffData, fuMap] = await Promise.all([
         getLead(leadId),
         getLeadActivities(leadId),
         getLeadStatusHistory(leadId),
         getStaffOptions(),
+        getOpenFollowUps([leadId]),
       ]);
       setLead(leadData);
       setActivities(activityData);
       setHistory(historyData);
       setStaff(staffData);
+      setFollowUp(fuMap.get(leadId) ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch lead');
     } finally {
@@ -94,6 +126,45 @@ export default function AdminLeadDetailPage() {
     }
   };
 
+  const fuDueIso = (): string | null => {
+    if (!fuDate) return null;
+    const d = new Date(`${fuDate}T${fuTime || '09:00'}:00`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+
+  const runFuAction = async (action: () => Promise<void>) => {
+    if (!lead) return;
+    setSavingFu(true);
+    try {
+      await action();
+      setFuDate('');
+      setFuTime('');
+      setFuNote('');
+      await fetchLead();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update follow-up');
+    } finally {
+      setSavingFu(false);
+    }
+  };
+
+  const handleScheduleFu = () => {
+    const iso = fuDueIso();
+    if (!lead || !user || !iso) return;
+    void runFuAction(() => scheduleFollowUp(lead.id, user.id, iso, fuNote.trim() || undefined));
+  };
+
+  const handleCompleteFu = () => {
+    if (!lead || !user || !followUp) return;
+    void runFuAction(() => completeFollowUp(lead.id, user.id, followUp.activityId, fuNote.trim() || undefined));
+  };
+
+  const handleRescheduleFu = () => {
+    const iso = fuDueIso();
+    if (!lead || !user || !followUp || !iso) return;
+    void runFuAction(() => rescheduleFollowUp(lead.id, user.id, followUp.activityId, iso, fuNote.trim() || undefined));
+  };
+
   const handleWhatsApp = () => {
     if (!lead) return;
     const text = encodeURIComponent(
@@ -131,6 +202,12 @@ export default function AdminLeadDetailPage() {
               className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm"
             >
               <Phone size={14} /> Call
+            </button>
+            <button
+              onClick={() => document.getElementById('follow-up-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white rounded text-sm"
+            >
+              Set follow-up
             </button>
             <select
               value={lead.status}
@@ -173,9 +250,9 @@ export default function AdminLeadDetailPage() {
 
         <div className="card p-4">
           <h3 className="font-semibold mb-3">Attribution</h3>
-          <dl className="space-y-2">
-            <Field label="First Touch" value={lead.first_touch ? JSON.stringify(lead.first_touch) : null} />
-            <Field label="Last Touch" value={lead.last_touch ? JSON.stringify(lead.last_touch) : null} />
+          <dl className="space-y-3">
+            <TouchDetails title="First Touch" touch={lead.first_touch} />
+            <TouchDetails title="Last Touch" touch={lead.last_touch} />
             <Field label="Page" value={lead.page_url} />
             <Field label="Assigned" value={lead.assigned?.full_name ?? lead.assigned_counsellor} />
           </dl>
@@ -228,6 +305,53 @@ export default function AdminLeadDetailPage() {
           >
             Save
           </button>
+        </div>
+      </div>
+
+      <div className="card p-4" id="follow-up-panel">
+        <h3 className="font-semibold mb-3">Follow-up</h3>
+        {followUp ? (
+          <div className={`mb-3 rounded border p-3 text-sm ${new Date(followUp.dueAt) < new Date() ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+            <p className="font-medium">
+              Due {new Date(followUp.dueAt).toLocaleString()}
+              {new Date(followUp.dueAt) < new Date() ? ' — OVERDUE' : ''}
+            </p>
+            {followUp.note ? <p className="text-slate-600 mt-1">{followUp.note}</p> : null}
+            <button
+              className="btn-secondary text-xs mt-2"
+              disabled={savingFu}
+              onClick={handleCompleteFu}
+            >
+              Mark completed
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 mb-3">No open follow-up.</p>
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-xs text-slate-500 block mb-0.5">Date</label>
+            <input type="date" className="input w-auto" value={fuDate} onChange={e => setFuDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-0.5">Time</label>
+            <input type="time" className="input w-auto" value={fuTime} onChange={e => setFuTime(e.target.value)} />
+          </div>
+          <input
+            className="input flex-1 min-w-[180px]"
+            placeholder="Follow-up note (optional)"
+            value={fuNote}
+            onChange={e => setFuNote(e.target.value)}
+          />
+          {followUp ? (
+            <button className="btn-primary text-sm" disabled={savingFu || !fuDate} onClick={handleRescheduleFu}>
+              Reschedule
+            </button>
+          ) : (
+            <button className="btn-primary text-sm" disabled={savingFu || !fuDate} onClick={handleScheduleFu}>
+              Schedule
+            </button>
+          )}
         </div>
       </div>
 
