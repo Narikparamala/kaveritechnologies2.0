@@ -147,7 +147,11 @@ export default function AdminEnrollmentRequestsPage() {
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       Requested access to <strong className="text-slate-700 dark:text-slate-300">{r.course?.title ?? 'a course'}</strong> · {new Date(r.requested_at).toLocaleString()}
                     </p>
-                    {r.message && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">“{r.message}”</p>}
+                    {r.message && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                        💳 Payment ref: {r.message}
+                      </p>
+                    )}
                     {r.status === 'rejected' && r.review_note && (
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Review note: {r.review_note}</p>
                     )}

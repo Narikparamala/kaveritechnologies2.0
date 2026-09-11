@@ -70,6 +70,7 @@ const FacultyStudentsPage = lazy(() => import('./pages/faculty/FacultyStudentsPa
 const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStudentDetailPage'));
 const FacultyOfflineExamsPage = lazy(() => import('./pages/faculty/FacultyOfflineExamsPage'));
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
+const FacultyEnrollmentRequestsPage = lazy(() => import('./pages/faculty/FacultyEnrollmentRequestsPage'));
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
 const FacultyAssignmentsPage = lazy(() => import('./pages/faculty/FacultyAssignmentsPage'));
 const FacultyQuestionBankPage = lazy(() => import('./pages/faculty/FacultyQuestionBankPage'));
@@ -277,6 +278,7 @@ export default function App() {
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />
+                    <Route path="enrollment-requests" element={<FacultyEnrollmentRequestsPage />} />
                     <Route path="course-builder" element={<Navigate to="/faculty/courses" replace />} />
                     <Route path="courses/:courseId/builder" element={<CourseBuilderPage />} />
                     <Route path="lessons" element={<FacultyLessonsPage />} />

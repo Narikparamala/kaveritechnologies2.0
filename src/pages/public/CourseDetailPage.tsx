@@ -26,6 +26,7 @@ export default function CourseDetailPage() {
   const [requesting, setRequesting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openChapters, setOpenChapters] = useState<Set<string>>(new Set());
+  const [paymentRef, setPaymentRef] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -118,7 +119,12 @@ export default function CourseDetailPage() {
     setRequesting(true);
     const { data, error: err } = await supabase
       .from('enrollment_requests')
-      .insert({ course_id: course!.id, student_id: user.id, status: 'pending' })
+      .insert({
+        course_id: course!.id,
+        student_id: user.id,
+        status: 'pending',
+        message: paymentRef.trim() || null,
+      })
       .select()
       .single();
     setRequesting(false);
@@ -338,6 +344,15 @@ export default function CourseDetailPage() {
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
                           Contact Kaveri to discuss other options, or request access again.
                         </p>
+                        <div className="mb-3">
+                          <label className="label">PhonePe Transaction Reference <span className="text-slate-400">(optional)</span></label>
+                          <input
+                            className="input"
+                            placeholder="e.g. TXN123456789"
+                            value={paymentRef}
+                            onChange={e => setPaymentRef(e.target.value)}
+                          />
+                        </div>
                         <div className="flex flex-col gap-2">
                           <button onClick={() => void handleRequestAccess()} disabled={requesting} className="w-full py-3 rounded-xl font-semibold text-sm btn-primary">
                             {requesting ? 'Sending...' : 'Request Again'}
@@ -356,6 +371,16 @@ export default function CourseDetailPage() {
                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
                         This course requires approval before you get access. Send a request and our team will review it.
                       </p>
+                      <div className="mb-3">
+                        <label className="label">PhonePe Transaction Reference <span className="text-slate-400">(optional)</span></label>
+                        <input
+                          className="input"
+                          placeholder="e.g. TXN123456789"
+                          value={paymentRef}
+                          onChange={e => setPaymentRef(e.target.value)}
+                        />
+                        <p className="text-xs text-slate-400 mt-1">Enter the reference ID from your PhonePe payment to speed up approval.</p>
+                      </div>
                       <button
                         onClick={() => void handleRequestAccess()}
                         disabled={requesting}
