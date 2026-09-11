@@ -184,7 +184,7 @@ export default function ProfilePage() {
                 className="input"
                 value={form.phone}
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                placeholder="+91 98765 43210"
+                placeholder="Your phone number"
               />
             ) : (
               <p className="text-slate-800 dark:text-slate-200 font-medium px-1 py-2">{profile.phone || '—'}</p>

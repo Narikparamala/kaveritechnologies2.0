@@ -546,7 +546,7 @@ export default function FacultyProfilePage() {
                   className="input"
                   value={form.phone}
                   onChange={event => setForm(current => ({ ...current, phone: event.target.value }))}
-                  placeholder="+91 98765 43210"
+                  placeholder="Your phone number"
                   maxLength={30}
                 />
               ) : (

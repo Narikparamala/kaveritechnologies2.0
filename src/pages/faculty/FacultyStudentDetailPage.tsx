@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, BookOpen, Award, CheckCircle, Clock, AlertTriangle, Plus, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, BookOpen, Award, CheckCircle, Clock, AlertTriangle, Plus, MessageSquare, Lock, Unlock, Loader2 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getStudentSupportRecords, createSupportRecord, updateSupportRecord } from '../../services/companyManagement';
-import type { Profile, CourseEnrollment, Course, LessonProgress, AssignmentSubmission, StudentSupportRecord } from '../../types/database';
+import { getCourseLessonsAll, releaseLessonForStudent, revokeLessonRelease } from '../../services/faculty';
+import type { Profile, CourseEnrollment, Course, LessonProgress, AssignmentSubmission, StudentSupportRecord, LessonPlanItem } from '../../types/database';
 
 export default function FacultyStudentDetailPage() {
   const { studentId } = useParams<{ studentId: string }>();
@@ -211,6 +213,11 @@ export default function FacultyStudentDetailPage() {
             )}
           </div>
 
+          {/* Lesson Access & Releases */}
+          {enrollments.map(e => e.course && (
+            <CourseLessonAccess key={e.course.id} courseId={e.course.id} studentId={studentId!} />
+          ))}
+
           {/* Recent Submissions */}
           <div className="card p-6">
             <h2 className="font-bold text-slate-900 dark:text-white mb-4">Recent Submissions</h2>
@@ -361,6 +368,110 @@ export default function FacultyStudentDetailPage() {
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+function CourseLessonAccess({ courseId, studentId }: { courseId: string; studentId: string }) {
+  const { success, error: toastError } = useToast();
+  const [items, setItems] = useState<(LessonPlanItem & { lessonTitle: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [lessons, plan] = await Promise.all([
+        getCourseLessonsAll(courseId),
+        supabase.rpc('get_student_course_plan', { p_course_id: courseId, p_student_id: studentId }),
+      ]);
+      const titleById = new Map((lessons ?? []).map((l: any) => [l.id, l.title]));
+      const rows = ((plan.data ?? []) as LessonPlanItem[]).map(p => ({ ...p, lessonTitle: titleById.get(p.lesson_id) ?? p.title }));
+      setItems(rows);
+    } catch {
+      toastError('Failed to load lesson access');
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [courseId, studentId]);
+
+  const handleRelease = async (item: LessonPlanItem) => {
+    setActing(item.lesson_id);
+    try {
+      if (item.is_released) {
+        await revokeLessonRelease(studentId, item.lesson_id);
+        success('Release revoked');
+      } else {
+        await releaseLessonForStudent(studentId, item.lesson_id);
+        success('Lesson released to student');
+      }
+      await load();
+    } catch (e: any) { toastError(e.message || 'Failed to update release'); }
+    setActing(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="card p-6">
+        <h2 className="font-bold text-slate-900 dark:text-white mb-3">Lesson Access</h2>
+        <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-bold text-slate-900 dark:text-white">Lesson Access</h2>
+        <span className="text-xs text-slate-400">{items.filter(i => i.access === 'completed').length}/{items.length} completed</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400">No published lessons in this course.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map(item => {
+            const completed = item.access === 'completed';
+            const locked = item.access === 'locked';
+            return (
+              <div key={item.lesson_id} className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-900 dark:text-white truncate">{item.lessonTitle}</p>
+                  {locked && item.reason && <p className="text-[11px] text-slate-400 truncate">{item.reason}</p>}
+                </div>
+                {completed ? (
+                  <Badge className="bg-emerald-100 text-emerald-700 flex-shrink-0">Completed</Badge>
+                ) : item.is_released ? (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Released</Badge>
+                    <button
+                      onClick={() => handleRelease(item)}
+                      disabled={acting === item.lesson_id}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                      title="Revoke release"
+                    >
+                      {acting === item.lesson_id ? <Loader2 size={13} className="animate-spin" /> : <Unlock size={13} />}
+                    </button>
+                  </div>
+                ) : locked ? (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <Badge className="bg-amber-100 text-amber-700">Locked</Badge>
+                    <button
+                      onClick={() => handleRelease(item)}
+                      disabled={acting === item.lesson_id}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 disabled:opacity-50"
+                      title="Release for this student"
+                    >
+                      {acting === item.lesson_id ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+                    </button>
+                  </div>
+                ) : (
+                  <Badge className="bg-primary-100 text-primary-700 flex-shrink-0">Available</Badge>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

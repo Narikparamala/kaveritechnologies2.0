@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   Video, Calendar, Clock, Users, ExternalLink, CheckCircle, XCircle,
   AlertCircle, ChevronLeft, Loader2, FileText, Code, HelpCircle,
-  Download, File, BookOpen
+  Download, File, BookOpen, Play, Hourglass, Film,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -11,7 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import {
-  getStudentSession, registerForSession, isSessionJoinable, getTimeUntilSession,
+  getStudentSession, getSessionRecordingStatus, registerForSession, isSessionJoinable, getTimeUntilSession,
   type SessionWithDetails
 } from '../../services/liveSessions';
 import type { SessionResource } from '../../types/database';
@@ -24,6 +24,7 @@ const resourceIcons: Record<string, React.ReactNode> = {
   quiz: <HelpCircle size={16} />,
   assignment: <FileText size={16} />,
   downloadable: <Download size={16} />,
+  recording: <Video size={16} />,
 };
 
 function ResourceCard({ resource }: { resource: SessionResource }) {
@@ -80,6 +81,7 @@ export default function LiveSessionDetailPage() {
   const { error: showError } = useToast();
   const [session, setSession] = useState<SessionWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recordingStatus, setRecordingStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId || !profile) return;
@@ -91,9 +93,12 @@ export default function LiveSessionDetailPage() {
       const data = await getStudentSession(sessionId!, profile!.id);
       if (!data) {
         showError('Session not found or you are not enrolled in this course.');
+        setLoading(false);
         return;
       }
       setSession(data);
+      const status = await getSessionRecordingStatus(sessionId!);
+      setRecordingStatus(status);
     } catch (err) {
       console.error('Failed to load session:', err);
       showError('Failed to load session details.');
@@ -134,6 +139,13 @@ export default function LiveSessionDetailPage() {
   const isLive = session.status === 'live';
   const isCompleted = session.status === 'completed';
   const isScheduled = session.status === 'scheduled';
+  const isCancelled = session.status === 'cancelled';
+
+  const recordingResource = (session.resources ?? []).find(r => r.resource_type === 'recording');
+  const otherResources = (session.resources ?? []).filter(r => r.resource_type !== 'recording');
+  const showRecording = isCompleted && recordingStatus === 'available' && recordingResource;
+  const recordingPending = isCompleted && recordingStatus === 'pending';
+  const recordingNone = isCompleted && recordingStatus === 'none';
 
   const statusConfig: Record<string, { bg: string; text: string }> = {
     live: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400' },
@@ -143,8 +155,6 @@ export default function LiveSessionDetailPage() {
   };
   const cfg = statusConfig[session.status];
 
-  const hasMaterials = session.resources && session.resources.length > 0;
-  const materialsUnlocked = session.materials_unlocked || session.slides_unlocked;
 
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto animate-fade-in">
@@ -172,7 +182,7 @@ export default function LiveSessionDetailPage() {
                 <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
                 <div>
                   <p className="font-semibold text-red-900 dark:text-red-100">Class is live now</p>
-                  <p className="text-xs text-red-700 dark:text-red-300">Join the Google Meet session</p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Join the live session. A recording may be published after the class.</p>
                 </div>
               </div>
             </div>
@@ -185,7 +195,9 @@ export default function LiveSessionDetailPage() {
                 <div>
                   <p className="font-semibold text-emerald-900 dark:text-emerald-100">Session completed</p>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                    This was a live class. No recording is available.
+                    {recordingStatus === 'available'
+                      ? 'The class recording and materials are available below.'
+                      : 'Class is over. Recording and materials appear below when the faculty publishes them.'}
                   </p>
                 </div>
               </div>
@@ -199,9 +211,67 @@ export default function LiveSessionDetailPage() {
                 <div>
                   <p className="font-semibold text-blue-900 dark:text-blue-100">Upcoming live class</p>
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    This is a live session. No recording will be available after class.
+                    Join at the scheduled time. A recording may be published after the class ends.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {isCancelled && (
+            <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                <XCircle className="text-slate-500 dark:text-slate-400" size={20} />
+                <div>
+                  <p className="font-semibold text-slate-700 dark:text-slate-300">This class was cancelled</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">No join link is available for a cancelled class.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recording state for completed sessions */}
+          {isCompleted && (
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${showRecording ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                  {showRecording ? <Play size={20} /> : <Film size={20} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  {showRecording ? (
+                    <>
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm">Class recording available</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{recordingResource.title}</p>
+                    </>
+                  ) : recordingPending ? (
+                    <>
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm">Recording not yet released</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">The faculty is preparing the recording. Check back later.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm">Recording coming soon</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">The faculty has not published a recording for this class yet.</p>
+                    </>
+                  )}
+                </div>
+                {showRecording && (
+                  <a
+                    href={recordingResource.external_url || recordingResource.file_url || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary text-xs flex items-center gap-1.5 flex-shrink-0"
+                  >
+                    <Play size={13} />
+                    Watch Recording
+                  </a>
+                )}
+                {recordingPending && (
+                  <span className="flex items-center gap-1.5 text-xs text-slate-400 flex-shrink-0">
+                    <Hourglass size={13} />
+                    Pending
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -214,28 +284,32 @@ export default function LiveSessionDetailPage() {
             </div>
           )}
 
-          {/* Materials (only for completed sessions) */}
-          {isCompleted && materialsUnlocked && hasMaterials && (
+          {/* Materials (unlocked resources visible per-resource for any active/completed session) */}
+          {!isCancelled && otherResources.length > 0 && (
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
                 <FileText size={18} />
-                Session Materials
+                {isScheduled ? 'Preparation Materials' : 'Session Materials'}
               </h3>
               <div className="space-y-3">
-                {session.resources!.map(resource => (
+                {otherResources.map(resource => (
                   <ResourceCard key={resource.id} resource={resource} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Locked materials message */}
-          {isCompleted && !materialsUnlocked && (
+          {/* Locked/unpublished materials message */}
+          {!isCancelled && (isCompleted || isScheduled || isLive) && otherResources.length === 0 && !showRecording && (
             <div className="card p-6 text-center">
               <AlertCircle className="mx-auto text-slate-400 mb-3" size={32} />
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Materials not yet available</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                {isScheduled ? 'No preparation materials released yet' : 'Materials not yet available'}
+              </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Session materials will unlock after the faculty completes the session and uploads resources.
+                {isScheduled
+                  ? 'The faculty may release preparation materials before the class.'
+                  : 'The faculty will add and unlock session materials here.'}
               </p>
             </div>
           )}

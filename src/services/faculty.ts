@@ -109,6 +109,16 @@ export async function updateLesson(lessonId: string, updates: Partial<Lesson>): 
   if (error) throw error;
 }
 
+export async function releaseLessonForStudent(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('release_lesson_for_student', { p_student_id: studentId, p_lesson_id: lessonId });
+  if (error) throw error;
+}
+
+export async function revokeLessonRelease(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_lesson_release', { p_student_id: studentId, p_lesson_id: lessonId });
+  if (error) throw error;
+}
+
 export async function deleteLesson(lessonId: string): Promise<void> {
   const { error } = await supabase.from('lessons').delete().eq('id', lessonId);
   if (error) throw error;
@@ -252,8 +262,9 @@ export async function deleteQuiz(quizId: string): Promise<void> {
 }
 
 export async function getQuizQuestions(quizId: string): Promise<(QuizQuestion & { options: QuizOption[] })[]> {
-  const { data, error } = await supabase
-    .from('quiz_questions').select('*, options:quiz_options(*)').eq('quiz_id', quizId).order('order_index');
+  // Staff-only RPC: returns questions + options including answer data,
+  // authorized server-side to admin / faculty of the quiz's course.
+  const { data, error } = await supabase.rpc('get_quiz_questions_staff', { p_quiz_id: quizId });
   if (error) throw error;
   return (data ?? []) as any;
 }
@@ -275,7 +286,7 @@ export async function createQuestion(input: {
     explanation: input.explanation ?? null,
     order_index: nextOrder,
     points: input.points ?? 1,
-  }).select().single();
+  }).select('id').single();
   if (error) throw error;
   return data as QuizQuestion;
 }
@@ -303,7 +314,7 @@ export async function createOption(input: {
     option_text: input.option_text,
     is_correct: input.is_correct,
     order_index: nextOrder,
-  }).select().single();
+  }).select('id').single();
   if (error) throw error;
   return data as QuizOption;
 }

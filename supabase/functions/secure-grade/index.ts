@@ -51,6 +51,16 @@ const LANGUAGE_CACHE_MS = 5 * 60_000;
 
 let languageCache: { expiresAt: number; languages: JudgeLanguage[] } | null = null;
 
+const GO_JUDGE_LANGUAGE: JudgeLanguage = { id: 71, name: 'Python (3.x)' };
+
+function getRunnerBackend(): 'go-judge' | 'judge0' {
+  const url = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
+  if (url && token) return 'go-judge';
+  if (url || token) throw new Error('RUNNER_NOT_CONFIGURED');
+  return 'judge0';
+}
+
 function json(body: unknown, status: number, origin: string) {
   return new Response(JSON.stringify(body), {
     status,
@@ -93,6 +103,12 @@ function publicFailure(error: unknown) {
         code: internalCode,
         status: 409,
         message: 'This question does not have final test cases yet. Ask faculty to review it.',
+      };
+    case 'VSCODE_NO_HIDDEN_TESTS':
+      return {
+        code: internalCode,
+        status: 409,
+        message: 'This assignment has no hidden server tests yet. Your submission is saved and available for faculty review.',
       };
     case 'TOO_MANY_TESTS':
       return {
@@ -202,6 +218,7 @@ function judge0Headers() {
 }
 
 async function getJudgeLanguages(): Promise<JudgeLanguage[]> {
+  if (getRunnerBackend() === 'go-judge') return [GO_JUDGE_LANGUAGE];
   if (languageCache && languageCache.expiresAt > Date.now()) return languageCache.languages;
 
   let response: Response;
@@ -233,12 +250,17 @@ async function getJudgeLanguages(): Promise<JudgeLanguage[]> {
 async function requireJudgeLanguage(languageId: unknown) {
   const parsedId = Number(languageId);
   if (!Number.isInteger(parsedId) || parsedId <= 0) throw new Error('INVALID_LANGUAGE');
+  if (getRunnerBackend() === 'go-judge') {
+    if (parsedId !== GO_JUDGE_LANGUAGE.id) throw new Error('INVALID_LANGUAGE');
+    return GO_JUDGE_LANGUAGE;
+  }
   const language = (await getJudgeLanguages()).find(item => item.id === parsedId);
   if (!language) throw new Error('INVALID_LANGUAGE');
   return language;
 }
 
 async function defaultPythonLanguage() {
+  if (getRunnerBackend() === 'go-judge') return GO_JUDGE_LANGUAGE;
   const languages = await getJudgeLanguages();
   const python = languages.find(language => /^Python \(3\./i.test(language.name));
   if (!python) throw new Error('PYTHON_RUNTIME_UNAVAILABLE');
@@ -257,12 +279,104 @@ function mapJudge0Status(description: string, passed: boolean): JudgeStatus {
   return 'execution_error';
 }
 
+function mapGoJudgeStatus(status: string, passed: boolean): JudgeStatus {
+  if (passed) return 'accepted';
+  if (status === 'Accepted') return 'wrong_answer';
+  if (status === 'Time Limit Exceeded') return 'time_limit';
+  if (status === 'Memory Limit Exceeded') return 'memory_limit';
+  if (status === 'Output Limit Exceeded') return 'output_limit';
+  if (status === 'Nonzero Exit Status' || status === 'Signalled') return 'runtime_error';
+  if (status === 'Internal Error') return 'internal_error';
+  return 'execution_error';
+}
+
+async function judgeCodeGoJudge(
+  code: string,
+  test: TestCase,
+  index: number,
+  _language: JudgeLanguage,
+): Promise<JudgeResult> {
+  const url = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
+  if (!url || !token) throw new Error('RUNNER_NOT_CONFIGURED');
+
+  const runUrl = new URL('run', url.endsWith('/') ? url : `${url}/`);
+  let response: Response;
+  try {
+    response = await fetch(runUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        cmd: [{
+          args: ['/usr/bin/python3', '-I', 'solution.py'],
+          env: ['PATH=/usr/bin:/bin', 'PYTHONIOENCODING=utf-8'],
+          files: [
+            { content: test.input_data ?? '' },
+            { name: 'stdout', max: 65_536 },
+            { name: 'stderr', max: 65_536 },
+          ],
+          cpuLimit: 2_000_000_000,
+          clockLimit: 5_000_000_000,
+          memoryLimit: 134_217_728,
+          procLimit: 30,
+          copyIn: {
+            'solution.py': { content: code },
+          },
+          copyOut: ['stdout', 'stderr'],
+        }],
+      }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new Error('RUNNER_TIMEOUT');
+    console.error('secure-grade go-judge request failed', error);
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  if (!response.ok) {
+    console.error('secure-grade go-judge returned an error status', response.status);
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  const payload: unknown = await response.json();
+  const resultCandidate = Array.isArray(payload) ? payload[0] : payload;
+  if (!resultCandidate || typeof resultCandidate !== 'object') {
+    throw new Error('RUNNER_INVALID_RESPONSE');
+  }
+  const result = resultCandidate as Record<string, unknown>;
+  const files = result.files as { stdout?: unknown; stderr?: unknown } | undefined;
+  const status = String(result.status ?? '');
+  const stdout = normalizeOutput(typeof files?.stdout === 'string' ? files.stdout : '');
+  const stderr = normalizeOutput(typeof files?.stderr === 'string' ? files.stderr : '');
+  const expected = normalizeOutput(test.expected_output);
+  const executionAccepted = status === 'Accepted';
+  const passed = executionAccepted && (test.expected_output === '' || stdout === expected);
+
+  return {
+    id: test.id,
+    index,
+    hidden: test.is_hidden,
+    passed,
+    status: mapGoJudgeStatus(status, passed),
+    timeMs: result.time == null ? null : Math.round(Number(result.time) / 1_000_000),
+    memoryKb: result.memory == null ? null : Math.round(Number(result.memory) / 1024),
+    input: test.input_data ?? '',
+    expected,
+    actual: stdout,
+    stderr,
+  };
+}
+
 async function judgeCode(
   code: string,
   test: TestCase,
   index: number,
   language: JudgeLanguage,
 ): Promise<JudgeResult> {
+  if (getRunnerBackend() === 'go-judge') return judgeCodeGoJudge(code, test, index, language);
   const url = judge0Url('submissions/');
   url.searchParams.set('base64_encoded', 'true');
   url.searchParams.set('wait', 'true');
@@ -280,7 +394,7 @@ async function judgeCode(
         stdin: encodeBase64(test.input_data ?? ''),
         cpu_time_limit: 2,
         wall_time_limit: 5,
-        memory_limit: 131_072,
+        memory_limit: 128_000,
         max_file_size: 1_024,
         max_processes_and_or_threads: 30,
         enable_network: false,
@@ -477,7 +591,8 @@ Deno.serve(async req => {
         status: 'running',
       }).select('id').single();
       assertDatabaseSuccess(requestResult, 'create code execution audit');
-      return requestResult.data.id as string;
+      if (!requestResult.data) throw new Error('GRADING_STORAGE_ERROR');
+      return requestResult.data.id;
     };
 
     const finishExecutionRequest = async (requestId: string, status: 'completed' | 'error') => {
@@ -729,6 +844,240 @@ Deno.serve(async req => {
       assertDatabaseSuccess(submissionUpdateResult, 'save final assignment grade');
 
       return json({ verified: true, submissionId: submission.id, passed: totalPassed, total: totalTests, score: totalScore, questions: questionResults }, 200, responseOrigin);
+    }
+
+    if (payload.kind === 'vscode') {
+      if (!payload.submissionId) return json({ error: 'Submission is required' }, 400, responseOrigin);
+      const language = await defaultPythonLanguage();
+
+      const submissionResult = await admin.from('coding_vscode_submissions')
+        .select('id,student_id,assignment_key,language,file_name,code,status,max_marks,verification_status,verified_passed,verified_total,verified_score,verified_summary')
+        .eq('id', payload.submissionId)
+        .maybeSingle();
+      assertDatabaseSuccess(submissionResult, 'load vscode submission');
+      const submission = submissionResult.data;
+      if (!submission || submission.student_id !== user.id) {
+        return json({ error: 'Submission not found' }, 404, responseOrigin);
+      }
+      if (submission.verification_status === 'verified') {
+        // Idempotent replay first (never rate-limited): the stored server
+        // outcome is authoritative even after a teacher has reviewed the row.
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          duplicate: true,
+          hiddenPassed: submission.verified_passed,
+          hiddenTotal: submission.verified_total,
+          allPassed: submission.verified_passed === submission.verified_total,
+          verifiedScore: submission.verified_score,
+          verifiedSummary: submission.verified_summary,
+        }, 200, responseOrigin);
+      }
+      if (submission.status !== 'submitted') {
+        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
+      }
+      if (submission.language !== 'python') {
+        return json({ error: 'This assignment is not available in a supported runner language' }, 422, responseOrigin);
+      }
+
+      const code = String(submission.code ?? '');
+      if (!code.trim()) return json({ error: 'Code is required' }, 400, responseOrigin);
+      if (new TextEncoder().encode(code).byteLength > MAX_CODE_BYTES) {
+        return json({ error: 'Code is too large' }, 413, responseOrigin);
+      }
+
+      const assignmentResult = await admin.from('coding_vscode_assignments')
+        .select('id,assignment_key,title,file_name,is_published,language,marks')
+        .eq('assignment_key', submission.assignment_key)
+        .maybeSingle();
+      assertDatabaseSuccess(assignmentResult, 'load vscode assignment');
+      const assignment = assignmentResult.data;
+      if (!assignment?.is_published || assignment.language !== 'python') {
+        return json({ error: 'Assignment is unavailable' }, 404, responseOrigin);
+      }
+
+      // Mirror the REST access contract server-side (admin client bypasses RLS):
+      // student must be an active member of an active batch linked to the
+      // assignment, with either a permanent release or a per-student release.
+      const [linksResult, memberBatchesResult, activeBatchesResult] = await Promise.all([
+        admin.from('coding_vscode_assignment_batches')
+          .select('batch_id,is_permanently_released')
+          .eq('assignment_id', assignment.id),
+        admin.from('batch_students')
+          .select('batch_id')
+          .eq('student_id', user.id)
+          .eq('status', 'active'),
+        admin.from('batches')
+          .select('id')
+          .eq('status', 'active'),
+      ]);
+      assertDatabaseSuccess(linksResult, 'load vscode batch links');
+      assertDatabaseSuccess(memberBatchesResult, 'load student batch membership');
+      assertDatabaseSuccess(activeBatchesResult, 'load active batches');
+      const activeBatchIds = new Set((activeBatchesResult.data ?? []).map((row: { id: string }) => row.id));
+      const memberActiveBatchIds = new Set(
+        (memberBatchesResult.data ?? [])
+          .map((row: { batch_id: string }) => row.batch_id)
+          .filter((batchId: string) => activeBatchIds.has(batchId)),
+      );
+      const links = (linksResult.data ?? []) as Array<{ batch_id: string; is_permanently_released: boolean }>;
+      const releasableBatchIds = links
+        .filter(link => memberActiveBatchIds.has(link.batch_id))
+        .map(link => link.batch_id);
+      const permanentlyReleased = links.some(link =>
+        link.is_permanently_released && memberActiveBatchIds.has(link.batch_id),
+      );
+      let hasPerStudentRelease = false;
+      if (!permanentlyReleased && releasableBatchIds.length) {
+        const releasedResult = await admin.from('coding_vscode_student_assignment_access')
+          .select('id', { count: 'exact', head: true })
+          .eq('assignment_id', assignment.id)
+          .eq('student_id', user.id)
+          .in('batch_id', releasableBatchIds);
+        assertDatabaseSuccess(releasedResult, 'load vscode per-student release');
+        hasPerStudentRelease = (releasedResult.count ?? 0) > 0;
+      }
+      if (!permanentlyReleased && !hasPerStudentRelease) {
+        return json({ error: 'This assignment is not unlocked for you yet' }, 403, responseOrigin);
+      }
+
+      const hiddenTestsResult = await admin.from('coding_vscode_test_cases')
+        .select('id,input_text,expected_output')
+        .eq('assignment_id', assignment.id)
+        .eq('is_hidden', true)
+        .order('position');
+      assertDatabaseSuccess(hiddenTestsResult, 'load vscode hidden tests');
+      const hiddenTests: TestCase[] = (hiddenTestsResult.data ?? []).map((test: { id: string; input_text: string; expected_output: string }) => ({
+        id: test.id,
+        input_data: test.input_text,
+        expected_output: test.expected_output,
+        is_hidden: true,
+        weight: 1,
+      }));
+      if (!hiddenTests.length) throw new Error('VSCODE_NO_HIDDEN_TESTS');
+
+      // New runner work is rate limited; an already-verified replay above never
+      // reaches this point, so a student at the limit can still fetch an
+      // existing verified result.
+      await enforceFinalRateLimit();
+
+      // Atomic claim: exactly one invocation may grade this submission. The
+      // loser of a concurrent pair gets a safe in-progress response and never
+      // starts a second runner job.
+      const claimResult = await admin.rpc('claim_vscode_submission_verification', {
+        p_submission_id: submission.id,
+        p_student_id: user.id,
+      });
+      assertDatabaseSuccess(claimResult, 'claim vscode submission verification');
+      const claim = (claimResult.data ?? {}) as Record<string, unknown>;
+      if (claim.result === 'verified') {
+        // Another invocation finished between our read and the claim.
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          duplicate: true,
+          hiddenPassed: claim.verified_passed ?? 0,
+          hiddenTotal: claim.verified_total ?? 0,
+          allPassed: claim.verified_passed === claim.verified_total,
+          verifiedScore: claim.verified_score,
+          verifiedSummary: claim.verified_summary ?? '',
+        }, 200, responseOrigin);
+      }
+      if (claim.result === 'in_progress') {
+        return json({
+          verification_in_progress: true,
+          submissionId: submission.id,
+        }, 200, responseOrigin);
+      }
+      if (claim.result !== 'claimed') {
+        if (claim.result === 'forbidden' || claim.result === 'not_found') {
+          return json({ error: 'Submission not found' }, 404, responseOrigin);
+        }
+        return json({ error: 'Submission cannot be graded' }, 409, responseOrigin);
+      }
+
+      const codeHash = await sha256(code);
+      const { data: run, error: runError } = await admin.from('secure_grading_runs').insert({
+        source_kind: 'vscode',
+        student_id: user.id,
+        coding_vscode_submission_id: submission.id,
+        language: language.name,
+        code_hash: codeHash,
+        status: 'running',
+        max_score: Math.round(Number(assignment.marks ?? 0)),
+      }).select('id').single();
+      if (runError) {
+        console.error('secure-grade could not create vscode audit row', runError);
+        throw new Error('GRADING_STORAGE_ERROR');
+      }
+
+      try {
+        const outcome = await runTests(code, hiddenTests, language);
+        // The authoritative score always uses the SERVER assignment marks;
+        // client-supplied max_marks can never inflate a verified score.
+        const marks = Number(assignment.marks ?? 0);
+        const verifiedScore = Math.round(marks * outcome.passed / outcome.total * 100) / 100;
+        const verifiedSummary = outcome.allPassed
+          ? `All ${outcome.total} hidden server test${outcome.total === 1 ? '' : 's'} passed`
+          : `${outcome.passed} of ${outcome.total} hidden server test${outcome.total === 1 ? '' : 's'} passed`;
+
+        const [runUpdateResult, submissionUpdateResult] = await Promise.all([
+          admin.from('secure_grading_runs').update({
+            status: outcome.allPassed ? 'passed' : 'failed',
+            passed_test_cases: outcome.passed,
+            total_test_cases: outcome.total,
+            score: Math.round(verifiedScore),
+            public_result: outcome,
+            completed_at: new Date().toISOString(),
+          }).eq('id', run.id),
+          admin.from('coding_vscode_submissions').update({
+            verification_status: 'verified',
+            verified_passed: outcome.passed,
+            verified_total: outcome.total,
+            verified_score: verifiedScore,
+            verified_at: new Date().toISOString(),
+            verified_summary: verifiedSummary,
+            verified_result: outcome,
+            verification_error: null,
+            verification_started_at: null,
+            // Canonicalize the student-facing snapshot from the real assignment.
+            assignment_title: assignment.title,
+            language: assignment.language,
+            file_name: assignment.file_name ?? submission.file_name,
+            max_marks: assignment.marks,
+          }).eq('id', submission.id),
+        ]);
+        assertDatabaseSuccess(runUpdateResult, 'save vscode grading run');
+        assertDatabaseSuccess(submissionUpdateResult, 'save verified vscode result');
+
+        return json({
+          verified: true,
+          submissionId: submission.id,
+          hiddenPassed: outcome.passed,
+          hiddenTotal: outcome.total,
+          allPassed: outcome.allPassed,
+          verifiedScore,
+          verifiedSummary,
+        }, 200, responseOrigin);
+      } catch (error) {
+        const failure = publicFailure(error);
+        const [failedRunResult, failedSubmissionResult] = await Promise.all([
+          admin.from('secure_grading_runs').update({
+            status: 'error',
+            error_code: failure.code,
+            completed_at: new Date().toISOString(),
+          }).eq('id', run.id),
+          admin.from('coding_vscode_submissions').update({
+            verification_status: 'error',
+            verification_error: failure.code,
+            verified_at: new Date().toISOString(),
+            verification_started_at: null,
+          }).eq('id', submission.id),
+        ]);
+        if (failedRunResult.error) console.error('secure-grade could not mark vscode run as failed', failedRunResult.error);
+        if (failedSubmissionResult.error) console.error('secure-grade could not mark vscode submission as failed', failedSubmissionResult.error);
+        throw error;
+      }
     }
 
     return json({ error: 'Unknown grading request' }, 400, responseOrigin);

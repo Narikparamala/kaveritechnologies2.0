@@ -2,17 +2,21 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { PublicNav } from '../../components/common/PublicNav';
 import { Footer } from '../../components/common/Footer';
+import { COMPANY } from '../../lib/company';
 
 const faqs = [
-  { category: 'Getting Started', q: 'Do I need prior programming experience?', a: 'No! Our Python Fundamentals course starts from absolute zero. We assume no prior coding knowledge.' },
-  { category: 'Getting Started', q: 'What technology do I need?', a: 'Just a computer with a modern browser. Our Python Playground works entirely in the browser — no installation needed.' },
-  { category: 'Courses', q: 'Are the certificates industry-recognized?', a: 'Our certificates are issued by Kaveri Technologies Academy and recognized by numerous tech companies across India.' },
-  { category: 'Courses', q: 'Can I access courses on mobile?', a: 'Yes! Our platform is fully responsive and optimized for mobile, tablet, and desktop.' },
-  { category: 'Courses', q: 'How long do I have access?', a: 'Once enrolled, you have lifetime access to course materials, including all future updates.' },
-  { category: 'Platform', q: 'What is the Python Playground?', a: 'A browser-based Monaco editor where you write Python code, see syntax highlighting, and save your snippets.' },
-  { category: 'Platform', q: 'How does the XP system work?', a: 'You earn XP (experience points) by completing lessons, passing quizzes, and submitting assignments. XP determines your level and leaderboard rank.' },
-  { category: 'Support', q: 'What if I need help?', a: 'You can reach our support team via the contact page. Enrolled students also get access to faculty office hours and the community forum.' },
-  { category: 'Support', q: 'Is there a refund policy?', a: 'We offer a 7-day refund policy on Pro courses if you are not satisfied. Contact us within 7 days of purchase.' },
+  { category: 'Getting Started', q: 'How do I create an account?', a: 'Click "Get Started" on the top of any page and sign up with your email address or your Google account. No payment details are required to create an account.' },
+  { category: 'Getting Started', q: 'Do I need prior programming experience?', a: 'It depends on the course. Beginner courses start from the basics and assume no prior knowledge; other courses state their expected level so you can choose the right starting point.' },
+  { category: 'Getting Started', q: 'What technology do I need?', a: 'Just a computer, tablet or phone with a modern browser and an internet connection. Coding practice runs in the browser — nothing to install.' },
+  { category: 'Courses & Access', q: 'How do I get access to a course?', a: 'Browse the published courses, create an account and enrol. If you are not sure which course fits you, contact us and our team will guide you to the right course and batch.' },
+  { category: 'Courses & Access', q: 'What does a course include?', a: 'Published courses can include recorded lessons, live classes with recordings, slides and resources, coding practice, quizzes and assignments. What is available depends on how each course is built by the faculty.' },
+  { category: 'Courses & Access', q: 'Can I learn on mobile?', a: 'Yes. The platform is fully responsive and works in mobile, tablet and desktop browsers.' },
+  { category: 'Courses & Access', q: 'How long do I have access?', a: 'Access is tied to your enrolment and batch. If you have a question about your specific course access period, contact us and we will confirm the details for your course.' },
+  { category: 'Learning', q: 'How do live classes work?', a: 'Faculty schedule live classes with a date, time and join link. Enrolled students see upcoming and live sessions in their dashboard and can join during the class window. After the class ends, the recording and released materials appear on the same session.' },
+  { category: 'Learning', q: 'What happens after I complete a lesson?', a: 'Completed lessons are marked done, you earn XP, and the next stage of your course journey becomes available. Your progress is tracked automatically.' },
+  { category: 'Learning', q: 'Do I get a certificate?', a: 'Courses set up for certification issue a certificate of completion from Kaveri Technologies Academy when you finish the course requirements. Recognition of any certificate is at the discretion of employers or institutions.' },
+  { category: 'Learning', q: 'What is the XP system?', a: 'You earn XP by completing lessons and passing quizzes. XP builds your level, which appears in progress tracking and the leaderboard.' },
+  { category: 'Support', q: 'What if I need help?', a: `Contact us at ${COMPANY.email} or ${COMPANY.phoneDisplay}, or use the contact page. Enrolled learners can also reach faculty through their courses.` },
 ];
 
 const categories = [...new Set(faqs.map(f => f.category))];
@@ -27,7 +31,7 @@ export default function FAQPage() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-4">Frequently Asked Questions</h1>
-            <p className="text-slate-500 dark:text-slate-400">Everything you need to know about Kaveri Technologies Academy.</p>
+            <p className="text-slate-500 dark:text-slate-400">Everything you need to know about {COMPANY.brandName}.</p>
           </div>
 
           {categories.map(cat => (

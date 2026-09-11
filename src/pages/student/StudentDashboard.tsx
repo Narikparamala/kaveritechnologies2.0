@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -8,8 +8,10 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
-import type { CourseEnrollment, Course, Announcement, Notification, LiveSession } from '../../types/database';
+import { getStudentCoursePlan } from '../../services/lessons';
+import type { CourseEnrollment, Course, Announcement, Notification, LiveSession, EnrollmentRequest } from '../../types/database';
 import type { SessionWithDetails } from '../../services/liveSessions';
 
 type EnrolledCourse = CourseEnrollment & { course: Course };
@@ -17,12 +19,19 @@ type EnrolledCourse = CourseEnrollment & { course: Course };
 export default function StudentDashboard() {
   const { profile } = useAuth();
   const [enrollments, setEnrollments] = useState<EnrolledCourse[]>([]);
+  const [requests, setRequests] = useState<EnrollmentRequest[]>([]);
+  const [workshops, setWorkshops] = useState<{ id: string; workshop: { id: string; name: string; slug: string | null; venue: string | null; mode: string | null; starts_at: string | null } | null }[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [completedLessons, setCompletedLessons] = useState(0);
   const [weeklyData, setWeeklyData] = useState<{ day: string; lessons: number }[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<SessionWithDetails[]>([]);
   const [liveSessions, setLiveSessions] = useState<SessionWithDetails[]>([]);
+  const [nextLesson, setNextLesson] = useState<{ courseId: string; courseTitle: string; lessonTitle: string } | null>(null);
+  const [nextGate, setNextGate] = useState<{
+    courseId: string; courseTitle: string; activityType: string;
+    activityTitle: string; activityId: string; lessonTitle: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,17 +42,63 @@ export default function StudentDashboard() {
         { data: annData },
         { data: notifData },
         { data: progData },
+        { data: reqData },
+        { data: wsData },
       ] = await Promise.all([
         supabase.from('course_enrollments').select('*, course:courses(*)').eq('student_id', profile.id).order('enrolled_at', { ascending: false }).limit(5),
         supabase.from('announcements').select('*').eq('is_global', true).order('created_at', { ascending: false }).limit(3),
         supabase.from('notifications').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5),
         supabase.from('lesson_progress').select('id, completed_at').eq('student_id', profile.id).eq('completed', true),
+        supabase.from('enrollment_requests').select('*, course:courses(id,title,slug)').eq('student_id', profile.id).order('requested_at', { ascending: false }).limit(5),
+        supabase.from('workshop_registrations').select('id, workshop:workshops(id,name,slug,venue,mode,starts_at)').eq('user_id', profile.id).order('registered_at', { ascending: false }).limit(3),
       ]);
 
       setEnrollments((enrData ?? []) as any);
+      setRequests(((reqData ?? []).filter((r: any) => r.status !== 'approved')) as EnrollmentRequest[]);
+      setWorkshops(((wsData ?? []) as any[]).filter(w => w.workshop) as any);
       setAnnouncements((annData ?? []) as Announcement[]);
       setNotifications((notifData ?? []) as Notification[]);
       setCompletedLessons(progData?.length ?? 0);
+
+      // Next action across enrolled courses (server-authoritative plan),
+      // walking each course IN ORDER so we never recommend a gate from a
+      // future stage while earlier work is still available.  A blocking gate
+      // only counts when it is the earliest unfinished item of its course.
+      // Cross-course priority: live -> blocking gate -> next lesson.
+      let foundGate: typeof nextGate = null;
+      let foundNext: typeof nextLesson = null;
+      for (const enr of (enrData ?? [])) {
+        try {
+          const plan = await getStudentCoursePlan(enr.course_id);
+          if (!plan.length) continue;
+          // Earliest meaningful unfinished progression item, in course order.
+          const earliest = plan.find(i => i.access !== 'completed');
+          if (!earliest) continue;
+          if (earliest.access === 'available') {
+            if (!foundNext) {
+              foundNext = { courseId: enr.course_id, courseTitle: enr.course?.title ?? 'Course', lessonTitle: earliest.title };
+            }
+          } else if (earliest.access === 'locked' && earliest.requires_activity_type && earliest.requires_activity_id) {
+            // Immediate blocker: earlier lessons in this course are done.
+            if (!foundGate) {
+              foundGate = {
+                courseId: enr.course_id,
+                courseTitle: enr.course?.title ?? 'Course',
+                activityType: earliest.requires_activity_type as string,
+                activityTitle: earliest.requires_activity_title ?? (earliest.requires_activity_type as string),
+                activityId: earliest.requires_activity_id as string,
+                lessonTitle: earliest.title,
+              };
+            }
+          }
+          // 'locked' without a gate means the previous lesson is incomplete,
+          // so the earlier available lesson is already the current action.
+        } catch {
+          // skip course if the plan cannot be resolved
+        }
+      }
+      setNextGate(foundGate);
+      setNextLesson(foundNext);
 
       // Build weekly activity data from lesson_progress completed_at
       const now = new Date();
@@ -79,7 +134,7 @@ export default function StudentDashboard() {
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
         title={`Welcome back, ${profile.full_name?.split(' ')[0] ?? 'Learner'}!`}
-        subtitle="Continue your Python learning journey"
+        subtitle="Pick up where you left off"
       />
 
       {/* Stats */}
@@ -113,6 +168,179 @@ export default function StudentDashboard() {
           iconColor="text-primary-600 dark:text-primary-400"
         />
       </div>
+
+      {/* Work On Now */}
+      {(() => {
+        const live = liveSessions[0];
+        if (live) {
+          return (
+            <div className="card p-5 mb-8 ring-2 ring-red-500 bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/40 dark:to-rose-950/40">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/40 flex items-center justify-center flex-shrink-0">
+                    <Video size={22} className="text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-red-600 dark:text-red-400">Work on now</p>
+                    <p className="font-bold text-slate-900 dark:text-white">{live.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{live.course?.title} · live right now</p>
+                  </div>
+                </div>
+                {live.google_meet_url && (
+                  <a href={live.google_meet_url} target="_blank" rel="noopener noreferrer" className="btn-primary flex items-center gap-2">
+                    <Video size={15} /> Join Live Class
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        }
+        if (nextGate) {
+          const gateHref = nextGate.activityType === 'assignment'
+            ? `/student/assignments/${nextGate.activityId}`
+            : nextGate.activityType === 'quiz'
+            ? '/student/quizzes'
+            : `/student/coding-practice/${nextGate.activityId}`;
+          const gateLabel = nextGate.activityType === 'assignment' ? 'Assignment'
+            : nextGate.activityType === 'quiz' ? 'Quiz' : 'Coding practice';
+          return (
+            <div className="card p-5 mb-8 bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-200/50 dark:shadow-none">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Target size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-white/70">Required to continue</p>
+                    <p className="font-bold text-white">{nextGate.activityTitle}</p>
+                    <p className="text-xs text-white/70">Complete this {gateLabel.toLowerCase()} to unlock &ldquo;{nextGate.lessonTitle}&rdquo; · {nextGate.courseTitle}</p>
+                  </div>
+                </div>
+                <Link to={gateHref} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors">
+                  Open {gateLabel} <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          );
+        }
+        if (nextLesson) {
+          return (
+            <div className="card p-5 mb-8 bg-gradient-to-r from-primary-600 to-indigo-700 shadow-lg shadow-primary-200/50 dark:shadow-none">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Play size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-white/70">Continue learning</p>
+                    <p className="font-bold text-white">{nextLesson.lessonTitle}</p>
+                    <p className="text-xs text-white/70">{nextLesson.courseTitle}</p>
+                  </div>
+                </div>
+                <Link to={`/student/course/${nextLesson.courseId}`} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50 transition-colors">
+                  Continue <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          );
+        }
+        const upcoming = upcomingSessions.find(s => {
+          const start = new Date(s.session_date).getTime();
+          return start > Date.now() && start - Date.now() < 3 * 24 * 60 * 60 * 1000;
+        });
+        if (upcoming) {
+          return (
+            <div className="card p-5 mb-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                    <Video size={22} className="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">Up next</p>
+                    <p className="font-bold text-slate-900 dark:text-white">{upcoming.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{upcoming.course?.title} · {getTimeUntilSession(upcoming)}</p>
+                  </div>
+                </div>
+                <Link to={`/student/live-classes/${upcoming.id}`} className="btn-secondary flex items-center gap-2">
+                  View Session <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Course requests (pending / rejected / cancelled) */}
+      {requests.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="section-title mb-0">Course Requests</h2>
+            <Link to="/courses" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">Browse Courses</Link>
+          </div>
+          <div className="space-y-3">
+            {requests.map(r => {
+              const statusMeta = {
+                pending: { label: 'Pending', cls: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
+                approved: { label: 'Approved', cls: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' },
+                rejected: { label: 'Not approved', cls: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' },
+                cancelled: { label: 'Cancelled', cls: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' },
+              }[r.status] ?? { label: r.status, cls: 'bg-slate-100 dark:bg-slate-800 text-slate-500' };
+              return (
+                <div key={r.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+                    <Hourglass size={17} className="text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{r.course?.title ?? 'Course'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Requested {new Date(r.requested_at).toLocaleDateString()}</p>
+                  </div>
+                  <span className={`badge text-xs ${statusMeta.cls}`}>{statusMeta.label}</span>
+                  {r.course?.slug && (
+                    <Link to={`/courses/${r.course.slug}`} className="btn-ghost text-xs py-1.5 px-3 flex-shrink-0">View Course</Link>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            Need help? <Link to="/contact" className="underline">Contact Kaveri</Link>
+          </p>
+        </div>
+      )}
+
+      {/* My Workshops (linked registrations via the platform workshop bridge) */}
+      {workshops.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="section-title mb-0">My Workshops</h2>
+          </div>
+          <div className="space-y-3">
+            {workshops.map(w => (
+              <div key={w.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                  <CalendarCheck2 size={17} className="text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{w.workshop?.name}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    {w.workshop?.starts_at
+                      ? `Scheduled ${new Date(w.workshop.starts_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                      : 'Registration confirmed'}
+                    {w.workshop?.venue ? ` · ${w.workshop.venue}` : ''}
+                    {w.workshop?.mode ? ` · ${w.workshop.mode}` : ''}
+                  </p>
+                </div>
+                <span className="badge text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">Registered</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            Registering for a Kaveri workshop links it here automatically.
+          </p>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left column */}
@@ -153,9 +381,14 @@ export default function StudentDashboard() {
             ) : enrollments.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
-                title="No courses enrolled yet"
-                description="Browse our Python courses and start learning today."
-                action={<Link to="/courses" className="btn-primary text-sm">Browse Courses</Link>}
+                title="No active courses yet"
+                description="Browse the published course catalog and enrol, or talk to Kaveri about the right course for you."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Link to="/courses" className="btn-primary text-sm">Browse Courses</Link>
+                    <Link to="/contact" className="btn-secondary text-sm">Contact Kaveri</Link>
+                  </div>
+                }
               />
             ) : (
               <div className="space-y-3">
@@ -269,6 +502,16 @@ export default function StudentDashboard() {
                   <ArrowRight size={14} className="ml-auto text-slate-400" />
                 </Link>
               ))}
+              <a
+                href={CODING_DASHBOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Terminal size={16} className="text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Coding Workspace (VS Code)</span>
+                <ArrowRight size={14} className="ml-auto text-slate-400" />
+              </a>
             </div>
           </div>
 

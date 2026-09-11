@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Video, Calendar, Clock, Users, Link, Save, Loader2, AlertCircle,
-  CheckCircle2, LogOut, RefreshCw, ExternalLink,
+  CheckCircle2, LogOut, RefreshCw, ExternalLink, Plus, Trash2,
+  Lock, Unlock, FileText, BookOpen, Code, HelpCircle, Download,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,9 +12,10 @@ import { supabase } from '../../lib/supabase';
 import {
   createSession, updateSession, getFacultySessions, isValidGoogleMeetUrl,
   getGoogleConnectionStatus, getGoogleOAuthUrl, disconnectGoogleAccount, createGoogleMeet,
+  getSessionResources, addSessionResource, updateSessionResource, deleteSessionResource,
   type CreateSessionInput,
 } from '../../services/liveSessions';
-import type { Course, Chapter, Lesson } from '../../types/database';
+import type { Course, Chapter, Lesson, SessionResource, SessionResourceType } from '../../types/database';
 
 export default function FacultyLiveSessionFormPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -50,6 +52,87 @@ export default function FacultyLiveSessionFormPage() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Materials / recording manager (edit mode)
+  const [resources, setResources] = useState<SessionResource[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [showResourceForm, setShowResourceForm] = useState(false);
+  const [resourceSaving, setResourceSaving] = useState(false);
+  const [resourceForm, setResourceForm] = useState<{
+    title: string;
+    resource_type: SessionResourceType;
+    external_url: string;
+    content: string;
+    is_locked: boolean;
+  }>({ title: '', resource_type: 'slides', external_url: '', content: '', is_locked: true });
+
+  const loadResources = async () => {
+    if (!sessionId) return;
+    setResourcesLoading(true);
+    try {
+      const rows = await getSessionResources(sessionId);
+      setResources(rows);
+    } catch {
+      setResources([]);
+    } finally {
+      setResourcesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isEdit && sessionId && !loading) {
+      loadResources();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, sessionId, loading]);
+
+  const handleAddResource = async () => {
+    if (!sessionId || !resourceForm.title.trim()) {
+      showError('Resource title is required.');
+      return;
+    }
+    setResourceSaving(true);
+    try {
+      await addSessionResource(sessionId, {
+        title: resourceForm.title.trim(),
+        resource_type: resourceForm.resource_type,
+        external_url: resourceForm.external_url.trim() || undefined,
+        content: resourceForm.content.trim() || undefined,
+        is_locked: resourceForm.is_locked,
+      });
+      setResourceForm({ title: '', resource_type: 'slides', external_url: '', content: '', is_locked: true });
+      setShowResourceForm(false);
+      await loadResources();
+      success(resourceForm.resource_type === 'recording'
+        ? 'Recording added. Students will see it once you unlock it.'
+        : 'Material added.');
+    } catch (err: any) {
+      showError(err.message || 'Failed to add resource.');
+    } finally {
+      setResourceSaving(false);
+    }
+  };
+
+  const handleToggleResourceLock = async (resource: SessionResource) => {
+    try {
+      await updateSessionResource(resource.id, { is_locked: !resource.is_locked });
+      await loadResources();
+    } catch (err: any) {
+      showError(err.message || 'Failed to update resource.');
+    }
+  };
+
+  const handleDeleteResource = async (resource: SessionResource) => {
+    if (!confirm(`Delete "${resource.title}"? This cannot be undone.`)) return;
+    try {
+      await deleteSessionResource(resource.id);
+      await loadResources();
+    } catch (err: any) {
+      showError(err.message || 'Failed to delete resource.');
+    }
+  };
+
+  const resourceTypeLabel = (t: SessionResourceType) => t.replace(/_/g, ' ');
 
   const checkGoogleConnection = useCallback(async () => {
     if (!profile) return;
@@ -593,6 +676,170 @@ export default function FacultyLiveSessionFormPage() {
             onChange={e => setForm(f => ({ ...f, preparation_notes: e.target.value }))}
           />
         </div>
+
+        {/* Materials & Recording manager (edit mode only) */}
+        {isEdit && sessionId && (
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText size={18} className="text-primary-600" />
+                Materials & Recording
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowResourceForm(v => !v)}
+                className="btn-secondary text-xs flex items-center gap-1.5 py-1.5 px-3"
+              >
+                <Plus size={14} />
+                Add Material
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Add slides, notes, code examples or a class recording. Each item stays locked
+              until you unlock it — students only ever see unlocked items.
+            </p>
+
+            {showResourceForm && (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/40">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Title *</label>
+                    <input
+                      type="text"
+                      className="input-field py-2 text-sm"
+                      placeholder="e.g., Session slides"
+                      value={resourceForm.title}
+                      onChange={e => setResourceForm(f => ({ ...f, title: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Type</label>
+                    <select
+                      className="input-field py-2 text-sm capitalize"
+                      value={resourceForm.resource_type}
+                      onChange={e => setResourceForm(f => ({ ...f, resource_type: e.target.value as SessionResourceType }))}
+                    >
+                      {(['slides', 'notes', 'practice_questions', 'code_example', 'quiz', 'assignment', 'downloadable', 'recording'] as SessionResourceType[]).map(t => (
+                        <option key={t} value={t} className="capitalize">{resourceTypeLabel(t)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    External URL {resourceForm.resource_type === 'recording' ? '(Google Drive / YouTube / HTTPS recording link)' : '(optional)'}
+                  </label>
+                  <input
+                    type="url"
+                    className="input-field py-2 text-sm"
+                    placeholder="https://..."
+                    value={resourceForm.external_url}
+                    onChange={e => setResourceForm(f => ({ ...f, external_url: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Content (optional)</label>
+                  <textarea
+                    className="input-field py-2 text-sm min-h-[80px] font-mono"
+                    placeholder="Paste notes or code for content-type materials..."
+                    value={resourceForm.content}
+                    onChange={e => setResourceForm(f => ({ ...f, content: e.target.value }))}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={resourceForm.is_locked}
+                    onChange={e => setResourceForm(f => ({ ...f, is_locked: e.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Keep locked until I unlock it
+                </label>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleAddResource}
+                    disabled={resourceSaving}
+                    className="btn-primary text-xs flex items-center gap-1.5 py-2 px-4"
+                  >
+                    {resourceSaving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    {resourceForm.resource_type === 'recording' ? 'Add Recording' : 'Add Material'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowResourceForm(false)}
+                    className="btn-secondary text-xs py-2 px-4"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {resourcesLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="animate-spin text-primary-500" size={18} />
+              </div>
+            ) : resources.length === 0 ? (
+              <p className="text-sm text-slate-400 dark:text-slate-500 py-4 text-center">
+                No materials yet. Add slides, notes, or a recording to share with students.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {resources.map(resource => {
+                  const Icon = resource.resource_type === 'slides'
+                    ? FileText
+                    : resource.resource_type === 'notes' || resource.resource_type === 'practice_questions' || resource.resource_type === 'quiz'
+                      ? HelpCircle
+                      : resource.resource_type === 'code_example'
+                        ? Code
+                        : resource.resource_type === 'recording'
+                          ? Video
+                          : resource.resource_type === 'downloadable'
+                            ? Download
+                            : BookOpen;
+                  return (
+                    <div key={resource.id} className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${resource.resource_type === 'recording' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'}`}>
+                        <Icon size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{resource.title}</p>
+                        <p className="text-xs text-slate-400 capitalize">{resourceTypeLabel(resource.resource_type)}</p>
+                      </div>
+                      {resource.resource_type === 'recording' && !resource.is_locked && (
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Published
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleResourceLock(resource)}
+                        title={resource.is_locked ? 'Unlock for students' : 'Lock from students'}
+                        className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 border transition-colors ${
+                          resource.is_locked
+                            ? 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                            : 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+                        }`}
+                      >
+                        {resource.is_locked ? <Lock size={12} /> : <Unlock size={12} />}
+                        {resource.is_locked ? 'Locked' : 'Unlocked'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteResource(resource)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3">
           <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">

@@ -1,5 +1,5 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import { LogOut, type LucideIcon } from 'lucide-react';
+import { NavLink, useNavigate, Link } from 'react-router-dom';
+import { LogOut, Repeat, type LucideIcon } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { useAuth } from '../../contexts/AuthContext';
@@ -14,10 +14,12 @@ interface NavItem {
 interface SidebarProps {
   navItems: NavItem[];
   basePath: string;
+  /** Show the portal chooser entry (faculty & admin layouts). */
+  showPortalSwitch?: boolean;
 }
 
-export function Sidebar({ navItems, basePath }: SidebarProps) {
-  const { profile, signOut } = useAuth();
+export function Sidebar({ navItems, basePath, showPortalSwitch = false }: SidebarProps) {
+  const { profile, signOut, isPortalPreview } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -70,10 +72,26 @@ export function Sidebar({ navItems, basePath }: SidebarProps) {
             </p>
             <p className="text-xs text-slate-400 truncate">
               {roleLabel[profile?.role ?? ''] ?? 'User'}
+              {isPortalPreview && (
+                <span className="ml-1.5 inline-flex items-center rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                  Preview
+                </span>
+              )}
             </p>
           </div>
           <ThemeToggle />
         </div>
+
+        {showPortalSwitch && (
+          <Link
+            to="/portal"
+            className="sidebar-link w-full"
+            title={isPortalPreview ? 'Return to your portal or switch preview' : 'Switch portal (preview other portals)'}
+          >
+            <Repeat size={17} className="flex-shrink-0" />
+            <span>{isPortalPreview ? 'Exit Preview / Switch Portal' : 'Switch Portal'}</span>
+          </Link>
+        )}
 
         <button
           onClick={handleSignOut}

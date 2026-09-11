@@ -18,7 +18,7 @@ type QuestionWithOptions = QuizQuestion & { options: QuizOption[] };
 
 export default function QuizzesPage() {
   const { profile } = useAuth();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const practiceMode = searchParams.get('practice') === '1';
@@ -33,6 +33,7 @@ export default function QuizzesPage() {
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [xpAwarded, setXpAwarded] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [qIdx, setQIdx] = useState(0);
   const [showNav, setShowNav] = useState(false);
@@ -73,7 +74,11 @@ export default function QuizzesPage() {
   }, [profile, practiceMode, requestedQuizId]);
 
   const startQuiz = async (quiz: QuizWithCourse) => {
-    const { data: qData } = await supabase.from('quiz_questions').select('*, options:quiz_options(*)').eq('quiz_id', quiz.id).order('order_index');
+    // RPC path: staff RPC includes answers (faculty practice mode); the
+    // student RPC never returns is_correct / correct_answer_text.
+    const fn = practiceMode ? 'get_quiz_questions_staff' : 'get_quiz_questions_for_student';
+    const { data: qData, error: qErr } = await supabase.rpc(fn, { p_quiz_id: quiz.id });
+    if (qErr) { toastError(qErr.message); return; }
     setQuestions((qData ?? []) as any);
     setActiveQuiz(quiz);
     setAnswers(new Map());
@@ -81,6 +86,7 @@ export default function QuizzesPage() {
     setFlagged(new Set());
     setSubmitted(false);
     setScore(0);
+    setXpAwarded(0);
     setQIdx(0);
     setShowNav(false);
     setTimeLeft(quiz.time_limit_minutes ? quiz.time_limit_minutes * 60 : null);
@@ -146,45 +152,72 @@ export default function QuizzesPage() {
     if (!activeQuiz || !profile) return;
     if (timerRef.current) clearInterval(timerRef.current);
 
-    let totalPoints = 0;
-    let earnedPoints = 0;
-    questions.forEach(q => {
-      totalPoints += q.points;
-      if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
-        const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
-        const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
-        if (ans === correct) earnedPoints += q.points;
-      } else if (q.question_type === 'coding') {
-        // Coding questions need manual grading
-      } else {
-        const selected = answers.get(q.id) ?? [];
-        const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
-        if (selected.length === correctIds.length && selected.every(id => correctIds.includes(id))) {
-          earnedPoints += q.points;
-        }
-      }
-    });
-
-    const pct = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
-    setScore(pct);
-    setSubmitted(true);
-
     const timeTaken = activeQuiz.time_limit_minutes && timeLeft !== null
       ? activeQuiz.time_limit_minutes * 60 - timeLeft : null;
 
     if (practiceMode) {
+      // Staff practice mode: client-side grading with full answer data (no record).
+      let totalPoints = 0;
+      let earnedPoints = 0;
+      questions.forEach(q => {
+        totalPoints += q.points;
+        if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
+          const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
+          const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
+          if (ans === correct) earnedPoints += q.points;
+        } else if (q.question_type === 'coding') {
+          // Coding questions need manual grading
+        } else {
+          const selected = answers.get(q.id) ?? [];
+          const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
+          if (selected.length === correctIds.length && selected.every(id => correctIds.includes(id))) {
+            earnedPoints += q.points;
+          }
+        }
+      });
+
+      const pct = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
+      setScore(pct);
+      setSubmitted(true);
+      setXpAwarded(0);
       success(`Practice complete: ${Math.round(pct)}%. No attempt, XP, or progress was recorded.`);
       return;
     }
 
-    await supabase.from('quiz_attempts').insert({
-      quiz_id: activeQuiz.id, student_id: profile.id, score: pct,
-      max_score: totalPoints, passed: pct >= activeQuiz.pass_percentage,
-      time_taken_seconds: timeTaken, completed_at: new Date().toISOString(),
+    // Student path: authoritative server-side grading. The browser never
+    // holds is_correct/correct_answer_text, so it cannot fabricate a score.
+    const answersPayload: Record<string, { selected?: string[]; text?: string }> = {};
+    questions.forEach(q => {
+      if (['fill_in_blank', 'code_output', 'coding'].includes(q.question_type)) {
+        answersPayload[q.id] = { text: textAnswers.get(q.id) ?? '' };
+      } else {
+        answersPayload[q.id] = { selected: answers.get(q.id) ?? [] };
+      }
     });
 
-    if (pct >= activeQuiz.pass_percentage) success(`Quiz passed! +${activeQuiz.xp_reward} XP`);
-  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success, practiceMode]);
+    const { data, error } = await supabase.rpc('submit_quiz_attempt', {
+      p_quiz_id: activeQuiz.id,
+      p_answers: answersPayload,
+      p_time_taken_seconds: timeTaken,
+    });
+    if (error) {
+      toastError(error.message);
+      return;
+    }
+    setScore(data.score);
+    setSubmitted(true);
+    const awarded = data.xp_awarded ?? 0;
+    setXpAwarded(awarded);
+    if (data.passed) {
+      if (awarded > 0) {
+        success(`Quiz passed! +${awarded} XP`);
+      } else {
+        success('Quiz passed!');
+      }
+    } else {
+      success(`Quiz submitted: ${Math.round(data.score)}%`);
+    }
+  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success, practiceMode, toastError]);
 
   useEffect(() => { submitQuizRef.current = submitQuiz; }, [submitQuiz]);
 
@@ -440,7 +473,11 @@ export default function QuizzesPage() {
               <ProgressBar value={score} color={score >= (activeQuiz.pass_percentage ?? 70) ? 'green' : 'amber'} />
             </div>
             {score >= (activeQuiz.pass_percentage ?? 70) && (
-              <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{activeQuiz.xp_reward} XP earned!</p>
+              xpAwarded > 0 ? (
+                <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{xpAwarded} XP earned!</p>
+              ) : (
+                <p className="text-slate-400 text-sm font-medium mb-4">No additional XP — you already passed this quiz.</p>
+              )
             )}
             <div className="flex gap-3 justify-center">
               <button onClick={() => { startQuiz(activeQuiz); }} className="btn-secondary">Retry Quiz</button>

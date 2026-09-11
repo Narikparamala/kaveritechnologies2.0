@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, Info, CheckCircle, AlertTriangle, XCircle, Megaphone, Star } from 'lucide-react';
+import { Bell, CheckCheck, Info, CheckCircle, AlertTriangle, XCircle, Megaphone, Star, UserPlus, CalendarDays, FileSpreadsheet } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +15,9 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
   assignment: { icon: Bell, color: 'text-primary-500', bg: 'bg-primary-100 dark:bg-primary-900/30' },
   announcement: { icon: Megaphone, color: 'text-teal-500', bg: 'bg-teal-100 dark:bg-teal-900/30' },
   grade: { icon: Star, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+  enrollment: { icon: UserPlus, color: 'text-indigo-500', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  workshop: { icon: CalendarDays, color: 'text-violet-500', bg: 'bg-violet-100 dark:bg-violet-900/30' },
+  exam: { icon: FileSpreadsheet, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30' },
 };
 
 export default function NotificationsPage() {

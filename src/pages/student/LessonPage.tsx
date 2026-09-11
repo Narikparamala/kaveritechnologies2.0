@@ -14,7 +14,8 @@ import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import {
   getLessonById, getLessonProgress, markLessonComplete,
-  getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources
+  getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources,
+  getStudentLessonAccess,
 } from '../../services/lessons';
 import { runPython, onRuntimeStatus, type RuntimeStatus } from '../../services/pythonExecution';
 import type {
@@ -31,6 +32,7 @@ export default function LessonPage() {
   const navigate = useNavigate();
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [lockedReason, setLockedReason] = useState<string | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [allLessons, setAllLessons] = useState<Lesson[]>([]);
@@ -73,7 +75,14 @@ export default function LessonPage() {
     const load = async () => {
       setLoading(true);
       const l = await getLessonById(lessonId);
-      if (!l) { setLoading(false); return; }
+      if (!l) {
+        // Lesson row is hidden by RLS when locked — surface the reason instead of "not found"
+        const access = await getStudentLessonAccess(lessonId);
+        setLockedReason(access?.access === 'locked' ? (access.reason || 'This lesson is locked.') : null);
+        setLoading(false);
+        return;
+      }
+      setLockedReason(null);
       setLesson(l);
       if (l.code_example) setPlaygroundCode(l.code_example);
 
@@ -163,8 +172,18 @@ export default function LessonPage() {
 
   if (!lesson) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-slate-500 dark:text-slate-400 mb-4">Lesson not found or you don't have access.</p>
+      <div className="p-8 text-center max-w-lg mx-auto">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-5">
+          <Lock size={28} className="text-amber-600 dark:text-amber-400" />
+        </div>
+        {lockedReason ? (
+          <>
+            <p className="font-semibold text-slate-900 dark:text-white mb-2">This lesson is locked</p>
+            <p className="text-slate-500 dark:text-slate-400 mb-4">{lockedReason}</p>
+          </>
+        ) : (
+          <p className="text-slate-500 dark:text-slate-400 mb-4">Lesson not found or you don't have access.</p>
+        )}
         <Link to="/student/courses" className="btn-primary">Back to My Courses</Link>
       </div>
     );

@@ -71,9 +71,14 @@ export default function MyCoursesPage() {
       ) : enrollments.length === 0 ? (
         <EmptyState
           icon={BookOpen}
-          title="No courses enrolled"
-          description="Browse our Python course catalog and start your learning journey today."
-          action={<Link to="/courses" className="btn-primary">Browse Courses</Link>}
+          title="No active courses yet"
+          description="Browse the published course catalog and enrol, or talk to Kaveri about the right course for you."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link to="/courses" className="btn-primary">Browse Courses</Link>
+              <Link to="/contact" className="btn-secondary">Contact Kaveri</Link>
+            </div>
+          }
         />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">

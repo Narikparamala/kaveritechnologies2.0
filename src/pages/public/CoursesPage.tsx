@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Filter, BookOpen, Users, Clock, Star } from 'lucide-react';
+import { Search, Filter, BookOpen, Clock } from 'lucide-react';
 import { PublicNav } from '../../components/common/PublicNav';
 import { Footer } from '../../components/common/Footer';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -34,7 +34,7 @@ export default function CoursesPage() {
         .from('courses')
         .select('*')
         .eq('is_published', true)
-        .order('enrollment_count', { ascending: false });
+        .order('created_at', { ascending: false });
       setCourses((data ?? []) as Course[]);
 
       if (user) {
@@ -50,6 +50,7 @@ export default function CoursesPage() {
   }, [user]);
 
   const handleEnroll = async (courseId: string) => {
+    const course = courses.find(c => c.id === courseId);
     if (!user || !profile) { navigate('/login'); return; }
     if (profile.role !== 'student') {
       info('Enrollment', 'Only students can enroll in courses.');
@@ -59,10 +60,20 @@ export default function CoursesPage() {
       navigate('/student/courses');
       return;
     }
+    // Non-open courses are handled on the course page (request / closed flows)
+    if (course && course.enrollment_mode && course.enrollment_mode !== 'open') {
+      navigate(`/courses/${course.slug}`);
+      return;
+    }
     setEnrollingId(courseId);
     const { error: err } = await supabase
       .from('course_enrollments')
-      .insert({ course_id: courseId, student_id: user.id });
+      .insert({
+        course_id: courseId,
+        student_id: user.id,
+        access_status: 'active',
+        enrollment_source: 'free_enrollment',
+      });
 
     if (err) {
       if (err.code === '23505') {
@@ -73,8 +84,6 @@ export default function CoursesPage() {
       }
     } else {
       setEnrolledIds(prev => new Set([...prev, courseId]));
-      // Update enrollment count
-      await supabase.from('courses').update({ enrollment_count: (courses.find(c => c.id === courseId)?.enrollment_count ?? 0) + 1 }).eq('id', courseId);
       success('Enrolled!', 'Go to My Courses to start learning.');
       setTimeout(() => navigate('/student/courses'), 1200);
     }
@@ -94,9 +103,9 @@ export default function CoursesPage() {
       <div className="pt-24 pb-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-4">Python Courses</h1>
+            <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-4">Our Courses</h1>
             <p className="text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
-              From beginner to expert — structured Python courses for every level.
+              Published courses from Kaveri Technologies Academy — programming, full stack, testing, data and more.
             </p>
           </div>
 
@@ -150,36 +159,38 @@ export default function CoursesPage() {
                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 flex-1 line-clamp-2">{course.short_description}</p>
                       <div className="flex items-center gap-4 text-xs text-slate-400 mb-4">
                         <span className="flex items-center gap-1"><Clock size={12} /> {course.duration_hours}h</span>
-                        <span className="flex items-center gap-1"><Users size={12} /> {course.enrollment_count.toLocaleString()}</span>
-                        <span className="flex items-center gap-1"><Star size={12} className="text-amber-400" /> 4.8</span>
                       </div>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-bold text-primary-600 dark:text-primary-400 text-lg">
-                          {course.price === 0 ? 'Free' : `₹${course.price}`}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleEnroll(course.id)}
-                        disabled={isEnrolling}
-                        className={`w-full py-2.5 rounded-xl font-medium text-sm transition-all ${
-                          isEnrolled
-                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200'
-                            : 'btn-primary'
-                        }`}
-                      >
-                        {isEnrolling ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {isEnrolled ? (
+                        <Link to={`/student/course/${course.id}`} className="w-full py-2.5 rounded-xl font-medium text-sm text-center bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-all">
+                          ✓ Go to Course
+                        </Link>
+                      ) : course.enrollment_mode && course.enrollment_mode !== 'open' ? (
+                        <Link
+                          to={`/courses/${course.slug}`}
+                          className={`w-full py-2.5 rounded-xl font-medium text-sm text-center btn-primary`}
+                        >
+                          {course.enrollment_mode === 'approval_required' ? 'Request Access' : course.enrollment_mode === 'closed' ? 'View Course' : 'View Course'}
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => handleEnroll(course.id)}
+                          disabled={isEnrolling}
+                          className={`w-full py-2.5 rounded-xl font-medium text-sm transition-all ${
+                            'btn-primary'
+                          }`}
+                        >
+                          {isEnrolling ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             Enrolling...
-                          </span>
-                        ) : isEnrolled ? (
-                          '✓ Go to Course'
-                        ) : user ? (
-                          'Enroll Now'
-                        ) : (
-                          'Sign Up to Enroll'
-                        )}
-                      </button>
+                            </span>
+                          ) : user ? (
+                            'Enroll Now'
+                          ) : (
+                            'Sign Up to Enroll'
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

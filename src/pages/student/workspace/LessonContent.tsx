@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronLeft, CheckCircle, BookOpen, Video, FileText, Code,
   ExternalLink, ChevronDown, Lightbulb, Eye, EyeOff, Play, Clock, Zap,
   Bookmark, BookmarkCheck, Loader2, Award, ClipboardList, HelpCircle,
-  PanelLeftOpen, PanelRightOpen, Copy, Terminal,
+  PanelLeftOpen, PanelRightOpen, Copy, Terminal, Lock,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,7 +19,7 @@ export function LessonContent() {
     lessonQuizzes, lessonAssignments, lessonSessions, lessonLoading,
     goToNextLesson, goToPrevLesson, markComplete, toggleStudentBookmark,
     currentLessonIndex, totalLessons, sidebarCollapsed, rightPanelCollapsed,
-    toggleSidebar, toggleRightPanel, progress, isBookmarked,
+    toggleSidebar, toggleRightPanel, progress, isBookmarked, accessMap,
   } = ws;
 
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
@@ -46,6 +46,29 @@ export function LessonContent() {
   }, [goToNextLesson, goToPrevLesson]);
 
   if (!currentLesson || !course) return null;
+
+  const accessInfo = accessMap.get(currentLesson.id);
+  const isLocked = accessInfo?.access === 'locked';
+
+  if (isLocked) {
+    return (
+      <div className="flex items-center justify-center h-full px-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-5">
+            <Lock size={28} className="text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{currentLesson.title}</h2>
+          <p className="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">This lesson is locked</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            {accessInfo?.reason || 'Complete the required previous work to unlock this lesson.'}
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-4">
+            Locked lessons become available once the required work is completed or your faculty releases them.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const isCompleted = progress.has(currentLesson.id);
   const slides = resources.filter(r => r.resource_type === 'slides');
@@ -174,18 +197,34 @@ export function LessonContent() {
             <Section id="live" title="Live Classes" icon={Video}>
               {lessonSessions.map(s => (
                 <div key={s.id} className="card p-4 flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.status === 'live' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-primary-50 dark:bg-primary-900/20'}`}>
-                    <Video size={18} className={s.status === 'live' ? 'text-red-600' : 'text-primary-600'} />
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.status === 'live' ? 'bg-red-100 dark:bg-red-900/30' : s.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-primary-50 dark:bg-primary-900/20'}`}>
+                    {s.status === 'live' ? (
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                    ) : s.status === 'completed' ? (
+                      <CheckCircle size={16} className="text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <Video size={16} className="text-primary-600 dark:text-primary-400" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 dark:text-white">{s.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{new Date(s.session_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {s.status === 'live' ? 'Live now' : s.status === 'completed' ? 'Completed' : 'Upcoming'}
+                      {' · '}{new Date(s.session_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </p>
                   </div>
-                  {s.google_meet_url && (
+                  {s.status === 'completed' ? (
+                    <Link
+                      to={`/student/live-classes/${s.id}`}
+                      className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1"
+                    >
+                      <Play size={11} /> View Session
+                    </Link>
+                  ) : s.google_meet_url ? (
                     <a href={s.google_meet_url} target="_blank" rel="noopener noreferrer" className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1">
                       <Play size={11} /> {s.status === 'live' ? 'Join Now' : 'Open Meet'}
                     </a>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </Section>

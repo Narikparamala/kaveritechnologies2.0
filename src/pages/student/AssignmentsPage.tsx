@@ -8,6 +8,7 @@ import {
   FileText,
   Info,
   Loader2,
+  Lock,
   Play,
   Save,
   Send,
@@ -207,6 +208,11 @@ function AssignmentWorkspace({
 
   const currentQuestion = questions[questionIndex];
 
+  // A submission may only be edited while it is a draft (or not started yet).
+  // Once submitted or graded the workspace becomes a read-only review of the
+  // saved work: no autosave, no question-submission writes, no RLS errors.
+  const readOnly = !practiceMode && !!submission && submission.status !== 'draft';
+
   const loadWorkspace = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
@@ -243,7 +249,7 @@ function AssignmentWorkspace({
   }, [loadWorkspace]);
 
   const updateCode = (value: string) => {
-    if (!currentQuestion) return;
+    if (readOnly || !currentQuestion) return;
     setAnswers(current => ({
       ...current,
       [currentQuestion.id]: {
@@ -262,7 +268,7 @@ function AssignmentWorkspace({
   };
 
   const saveCurrentDraft = async () => {
-    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
+    if (practiceMode || readOnly || !currentQuestion || !answers[currentQuestion.id]) return;
     setSaving(true);
     try {
       const currentSubmission = await ensureSubmission();
@@ -279,10 +285,10 @@ function AssignmentWorkspace({
   };
 
   useEffect(() => {
-    if (practiceMode || !currentQuestion || !answers[currentQuestion.id]) return;
+    if (practiceMode || readOnly || !currentQuestion || !answers[currentQuestion.id]) return;
     const timer = window.setTimeout(() => { void saveCurrentDraft(); }, 1500);
     return () => window.clearTimeout(timer);
-  }, [answers, currentQuestion?.id, practiceMode]);
+  }, [answers, currentQuestion?.id, practiceMode, readOnly]);
 
   const runVisibleTests = async () => {
     if (!currentQuestion) return;
@@ -345,7 +351,7 @@ function AssignmentWorkspace({
   };
 
   const evaluateAndSubmit = async () => {
-    if (!assignment || !profile) return;
+    if (!assignment || !profile || readOnly) return;
     setSubmitting(true);
     setConfirmSubmit(false);
     setRunResults([]);
@@ -431,6 +437,19 @@ function AssignmentWorkspace({
   if (!assignment || !currentQuestion) return <div className="p-8 text-center text-slate-400">Assignment is not available.</div>;
 
   const code = answers[currentQuestion.id]?.submitted_code ?? currentQuestion.starter_code ?? '';
+  const questionAnswer = answers[currentQuestion.id];
+
+  let serverTestSummary: { passed: number; total: number } | null = null;
+  if (readOnly && questionAnswer?.execution_output) {
+    try {
+      const parsed = JSON.parse(questionAnswer.execution_output) as { passed?: unknown; total?: unknown };
+      if (typeof parsed.passed === 'number' && typeof parsed.total === 'number') {
+        serverTestSummary = { passed: parsed.passed, total: parsed.total };
+      }
+    } catch {
+      // A malformed stored payload should not break the read-only view.
+    }
+  }
 
   return (
     <div className="flex h-screen flex-col bg-white dark:bg-slate-950">
@@ -442,10 +461,19 @@ function AssignmentWorkspace({
         <div className="flex items-center gap-3">
           {practiceMode ? (
             <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Faculty Practice</span>
+          ) : readOnly ? (
+            <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Lock size={12} />
+              {submission?.status === 'graded'
+                ? `Graded${submission.score != null ? ` \u00b7 ${submission.score}/${assignment.max_marks}` : ''}`
+                : submission?.status === 'submitted'
+                  ? 'Submitted \u2014 awaiting result'
+                  : 'Submission closed'}
+            </span>
           ) : (
             <span className={`flex items-center gap-1 text-xs ${saving ? 'text-amber-500' : 'text-emerald-500'}`}><Save size={12} />{saving ? 'Saving...' : 'Saved'}</span>
           )}
-          <button className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs" disabled={submitting} onClick={() => setConfirmSubmit(true)}><Send size={14} /> {practiceMode ? 'Check Practice' : 'Submit'}</button>
+          {!readOnly && <button className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs" disabled={submitting} onClick={() => setConfirmSubmit(true)}><Send size={14} /> {practiceMode ? 'Check Practice' : 'Submit'}</button>}
         </div>
       </header>
 
@@ -468,35 +496,90 @@ function AssignmentWorkspace({
         <section className="flex w-1/2 flex-col bg-slate-950">
           <div className="min-h-0 flex-1">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading code editor...</div>}>
-              <MonacoEditor height="100%" language="python" theme="vs-dark" value={code} onChange={value => updateCode(value ?? '')} options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true }} />
+              <MonacoEditor height="100%" language="python" theme="vs-dark" value={code} onChange={value => updateCode(value ?? '')} options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, readOnly }} />
             </Suspense>
           </div>
           <div className="flex h-80 flex-col border-t border-slate-800 bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Input, Output & Test Results</span><button className="btn-secondary flex items-center gap-2 !px-3 !py-1.5 text-xs" disabled={running || submitting} onClick={runVisibleTests}>{running ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}Run Sample Tests</button></div>
-            <div className="flex items-end gap-3 border-b border-slate-800 p-3">
-              <div className="flex-1">
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom Input</label>
-                <textarea
-                  className="h-16 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 outline-none focus:border-primary-500"
-                  value={customInput}
-                  onChange={event => setCustomInput(event.target.value)}
-                  placeholder={'Example:\n10\n20'}
-                />
-              </div>
-              <button className="btn-primary flex items-center gap-2 !px-3 !py-2 text-xs" disabled={running || submitting} onClick={runWithCustomInput}>{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}Run Custom Input</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 text-xs">
-              {consoleText && <pre className="mb-4 whitespace-pre-wrap font-mono text-slate-300">{consoleText}</pre>}
-              <div className="space-y-3">
-                {runResults.map((result, index) => <div key={index} className={`rounded-xl border p-3 ${result.passed ? 'border-emerald-700/50 bg-emerald-900/20' : 'border-red-700/50 bg-red-900/20'}`}><div className={`mb-2 flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>{result.passed ? <CheckCircle2 size={14} /> : <XCircle size={14} />}Test Case {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}</div><div className="grid gap-2 font-mono text-slate-300 md:grid-cols-3"><pre>Input:{'\n'}{result.input || '(none)'}</pre><pre>Expected:{'\n'}{result.expected}</pre><pre className={result.passed ? 'text-emerald-300' : 'text-red-300'}>Your Output:{'\n'}{result.actual || '(no output)'}</pre></div></div>)}
-              </div>
-              {!consoleText && runResults.length === 0 && <span className="text-slate-500">Run your code to see its actual output and test results.</span>}
-            </div>
+            {readOnly ? (
+              <>
+                <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Submission Result</span>
+                  {submission?.status === 'graded'
+                    ? <CheckCircle2 size={14} className="text-emerald-400" />
+                    : <Info size={14} className="text-sky-400" />}
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 text-xs">
+                  {submission?.status === 'graded' ? (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-emerald-700/50 bg-emerald-900/20 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Verified Result</p>
+                            <p className="mt-1 text-sm font-semibold text-emerald-300">
+                              {serverTestSummary ? `${serverTestSummary.passed} of ${serverTestSummary.total} server tests passed` : 'Submission graded'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Score</p>
+                            <p className="text-lg font-bold leading-tight text-emerald-300">{questionAnswer?.marks_awarded ?? submission.score ?? '\u2014'}<span className="text-xs font-normal text-slate-400">/{assignment.max_marks}</span></p>
+                          </div>
+                        </div>
+                      </div>
+                      {questionAnswer?.feedback && (
+                        <div className="rounded-xl border border-slate-700/60 bg-slate-800/60 p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Question Feedback</p>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-200">{questionAnswer.feedback}</p>
+                        </div>
+                      )}
+                      {submission.feedback && (
+                        <div className="rounded-xl border border-slate-700/60 bg-slate-800/60 p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Overall Feedback</p>
+                          <p className="mt-1 whitespace-pre-wrap text-slate-200">{submission.feedback}</p>
+                        </div>
+                      )}
+                      <p className="text-slate-500">Submitted {submission.submitted_at ? formatDate(submission.submitted_at) : '\u2014'}{submission.graded_at ? ` \u00b7 Graded ${formatDate(submission.graded_at)}` : ''}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-sky-700/50 bg-sky-900/20 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">Submitted for grading</p>
+                        <p className="mt-1 text-sm font-semibold text-sky-300">Your work is safe with the faculty.</p>
+                        <p className="mt-1 text-slate-400">The verified result and score will appear here once grading is complete.</p>
+                      </div>
+                      {submission.submitted_at && <p className="text-slate-500">Submitted {formatDate(submission.submitted_at)}</p>}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Input, Output & Test Results</span><button className="btn-secondary flex items-center gap-2 !px-3 !py-1.5 text-xs" disabled={running || submitting} onClick={runVisibleTests}>{running ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}Run Sample Tests</button></div>
+                <div className="flex items-end gap-3 border-b border-slate-800 p-3">
+                  <div className="flex-1">
+                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom Input</label>
+                    <textarea
+                      className="h-16 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200 outline-none focus:border-primary-500"
+                      value={customInput}
+                      onChange={event => setCustomInput(event.target.value)}
+                      placeholder={'Example:\n10\n20'}
+                    />
+                  </div>
+                  <button className="btn-primary flex items-center gap-2 !px-3 !py-2 text-xs" disabled={running || submitting} onClick={runWithCustomInput}>{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}Run Custom Input</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 text-xs">
+                  {consoleText && <pre className="mb-4 whitespace-pre-wrap font-mono text-slate-300">{consoleText}</pre>}
+                  <div className="space-y-3">
+                    {runResults.map((result, index) => <div key={index} className={`rounded-xl border p-3 ${result.passed ? 'border-emerald-700/50 bg-emerald-900/20' : 'border-red-700/50 bg-red-900/20'}`}><div className={`mb-2 flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>{result.passed ? <CheckCircle2 size={14} /> : <XCircle size={14} />}Test Case {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}</div><div className="grid gap-2 font-mono text-slate-300 md:grid-cols-3"><pre>Input:{'\n'}{result.input || '(none)'}</pre><pre>Expected:{'\n'}{result.expected}</pre><pre className={result.passed ? 'text-emerald-300' : 'text-red-300'}>Your Output:{'\n'}{result.actual || '(no output)'}</pre></div></div>)}
+                  </div>
+                  {!consoleText && runResults.length === 0 && <span className="text-slate-500">Run your code to see its actual output and test results.</span>}
+                </div>
+              </>
+            )}
           </div>
           <footer className="flex h-14 items-center justify-between border-t border-slate-800 bg-slate-900 px-4">
             <button className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30" disabled={questionIndex === 0} onClick={() => { setQuestionIndex(index => index - 1); setRunResults([]); setConsoleText(''); }}><ChevronLeft size={15} /> Previous</button>
             <div className="flex gap-1.5">{questions.map((_, index) => <span key={index} className={`h-2 w-2 rounded-full ${index === questionIndex ? 'bg-primary-600' : 'bg-slate-700'}`} />)}</div>
-            {questionIndex < questions.length - 1 ? <button className="btn-secondary flex items-center gap-1 text-xs" onClick={() => { setQuestionIndex(index => index + 1); setRunResults([]); setConsoleText(''); }}>Next <ChevronRight size={15} /></button> : <button className="btn-primary flex items-center gap-2 text-xs" onClick={() => setConfirmSubmit(true)}>Review & Submit <Send size={14} /></button>}
+            {questionIndex < questions.length - 1 ? <button className="btn-secondary flex items-center gap-1 text-xs" onClick={() => { setQuestionIndex(index => index + 1); setRunResults([]); setConsoleText(''); }}>Next <ChevronRight size={15} /></button> : readOnly ? <span className="flex items-center gap-1.5 text-xs text-slate-500"><Lock size={13} /> Editing locked</span> : <button className="btn-primary flex items-center gap-2 text-xs" onClick={() => setConfirmSubmit(true)}>Review & Submit <Send size={14} /></button>}
           </footer>
         </section>
       </div>
