@@ -16,6 +16,7 @@ import AboutPage from './pages/public/AboutPage';
 import ContactPage from './pages/public/ContactPage';
 import PricingPage from './pages/public/PricingPage';
 import FAQPage from './pages/public/FAQPage';
+import HelpPage from './pages/public/HelpPage';
 import PrivacyPage from './pages/public/PrivacyPage';
 import TermsPage from './pages/public/TermsPage';
 
@@ -181,6 +182,7 @@ export default function App() {
                   <Route path="/contact" element={<ContactPage />} />
                   <Route path="/pricing" element={<PricingPage />} />
                   <Route path="/faq" element={<FAQPage />} />
+                  <Route path="/help" element={<HelpPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/terms" element={<TermsPage />} />
 

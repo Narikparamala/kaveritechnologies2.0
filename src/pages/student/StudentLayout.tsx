@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, Map, FileText, HelpCircle,
-  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal
+  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal, LifeBuoy
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { label: 'Notifications', icon: Bell, to: '/notifications' },
   { label: 'Profile', icon: User, to: '/profile' },
   { label: 'Settings', icon: Settings, to: '/settings' },
+  { label: 'Help & Extension', icon: LifeBuoy, to: '/help' },
 ];
 
 export default function StudentLayout() {
