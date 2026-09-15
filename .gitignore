@@ -33,3 +33,4 @@ scripts/diff_columns.py
 supabase/config.toml.backup
 .tmp*
 *.vsix
+__pycache__/
