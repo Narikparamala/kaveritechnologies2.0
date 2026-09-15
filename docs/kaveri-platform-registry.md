@@ -40,7 +40,7 @@ deployment URLs.
 | Repo | Narikparamala/kaveritechnologies2.0 |
 | Owner | Kaveri Technologies |
 | Host (public) | Main LMS is intended to be served at www.kaveritech.co.in (DNS not yet changed) |
-| Production status | Not deployed — local/staging verification complete through local Supabase |
+| Production status | Live at kaveri-academy.vercel.app (auto-deploy from main via Vercel GitHub integration) |
 | Identity authority | Supabase Auth (same project as Coding Workspace) |
 | Data authority | LMS Supabase schema: courses, lessons, enrollments, assignments, quizzes, coding practice, live classes, notifications, workshop bridge, secure grading |
 | Integration status | Central notification outbox + email mailer (local verified); workshop bridge ingested; coding workspace consumes secure-grade for VS Code submissions (this branch) |
