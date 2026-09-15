@@ -137,9 +137,12 @@ export default function CodingPracticePage() {
   return <QuestionBank onOpen={id => navigate(`/student/coding-practice/${id}`)} />;
 }
 
+type SolvedMap = Record<string, { solved: boolean; attempts: number }>;
+
 function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
   const { error: toastError } = useToast();
   const [questions, setQuestions] = useState<CodingQuestion[]>([]);
+  const [solvedMap, setSolvedMap] = useState<SolvedMap>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [difficulty, setDifficulty] = useState('all');
@@ -151,12 +154,26 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
     const load = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase.rpc('get_student_coding_questions', {
-          p_question_id: null,
-        });
+        const [questionsResult, attemptsResult] = await Promise.all([
+          supabase.rpc('get_student_coding_questions', { p_question_id: null }),
+          supabase
+            .from('coding_question_attempts')
+            .select('question_id,first_solved_at,attempts_count'),
+        ]);
 
-        if (error) throw error;
-        if (active) setQuestions((data ?? []) as CodingQuestion[]);
+        if (questionsResult.error) throw questionsResult.error;
+        if (attemptsResult.error) throw attemptsResult.error;
+        if (active) {
+          setQuestions((questionsResult.data ?? []) as CodingQuestion[]);
+          const nextSolved: SolvedMap = {};
+          for (const attempt of (attemptsResult.data ?? []) as Array<{ question_id: string; first_solved_at: string | null; attempts_count: number | null }>) {
+            nextSolved[attempt.question_id] = {
+              solved: Boolean(attempt.first_solved_at),
+              attempts: attempt.attempts_count ?? 0,
+            };
+          }
+          setSolvedMap(nextSolved);
+        }
       } catch (error) {
         toastError('Could not load coding questions', errorMessage(error));
       } finally {
@@ -234,7 +251,7 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
       </section>
 
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
-        <span>{filtered.length} question{filtered.length === 1 ? '' : 's'}</span>
+        <span>{filtered.length} question{filtered.length === 1 ? '' : 's'} · {Object.values(solvedMap).filter(item => item.solved).length} solved</span>
         <span>Your practice attempts are unlimited</span>
       </div>
 
@@ -256,9 +273,12 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
             >
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-900/30">
-                  <Code2 size={20} />
+                  {solvedMap[question.id]?.solved ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Code2 size={20} />}
                 </div>
-                {difficultyBadge(question.difficulty)}
+                <div className="flex items-center gap-2">
+                  {solvedMap[question.id]?.solved && <Badge variant="success">Solved</Badge>}
+                  {difficultyBadge(question.difficulty)}
+                </div>
               </div>
 
               <h2 className="text-lg font-bold text-slate-900 transition group-hover:text-primary-600 dark:text-white">

@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, Map, FileText, HelpCircle,
-  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal, LifeBuoy
+  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal, LifeBuoy, FolderGit2,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: 'My Journey', icon: Map, to: '/roadmap' },
   { label: 'Code Playground', icon: Terminal, to: '/playground' },
   { label: 'Coding Practice', icon: Terminal, to: '/coding-practice' },
+  { label: 'Mini Projects', icon: FolderGit2, to: '/mini-projects' },
   { label: 'Assignments', icon: FileText, to: '/assignments' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },

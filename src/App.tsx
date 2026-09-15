@@ -41,6 +41,7 @@ const RoadmapPage = lazy(() => import('./pages/student/RoadmapPage'));
 const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
 const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
+const MiniProjectsPage = lazy(() => import('./pages/student/MiniProjectsPage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
 const ProjectWorkspacePage = lazy(() => import('./pages/shared/ProjectWorkspacePage'));
@@ -248,6 +249,9 @@ export default function App() {
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
                     <Route path="coding-practice" element={<CodingPracticePage />} />
+                    <Route path="mini-projects" element={<MiniProjectsPage />} />
+                    <Route path="mini-projects/:assignmentId" element={<MiniProjectsPage />} />
+                    <Route path="coding-practice/:questionId" element={<CodingPracticePage />} />
                     <Route path="quizzes" element={<QuizzesPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
                     <Route path="jobs" element={<JobsPage />} />
