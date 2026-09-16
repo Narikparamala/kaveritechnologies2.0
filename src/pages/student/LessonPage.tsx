@@ -12,6 +12,7 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
+import { isCanvaUrl, toCanvaEmbedUrl } from '../../lib/canva';
 import {
   getLessonById, getLessonProgress, markLessonComplete,
   getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources,
@@ -257,20 +258,7 @@ export default function LessonPage() {
           </h2>
           <div className="space-y-2">
             {resources.filter(r => r.resource_type === 'slides').map(r => (
-              <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                <FileText size={16} className="text-primary-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                  {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
-                </div>
-                {r.is_locked ? (
-                  <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><Lock size={11} /> Locked</span>
-                ) : r.external_url ? (
-                  <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><ExternalLink size={11} /> Open</a>
-                ) : r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
-                ) : null}
-              </div>
+              <SlidesResourceCard key={r.id} resource={r} />
             ))}
           </div>
         </div>
@@ -692,6 +680,64 @@ export default function LessonPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">{lessonContent}</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One slide deck in the lesson. Canva links render inline in an iframe so
+ * students never leave the site; other links/files open in a new tab.
+ */
+function SlidesResourceCard({ resource }: { resource: LessonResource }) {
+  const [showSlides, setShowSlides] = useState(false);
+  const canvaEmbed = resource.external_url && isCanvaUrl(resource.external_url)
+    ? toCanvaEmbedUrl(resource.external_url)
+    : null;
+
+  return (
+    <div className="rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        <FileText size={16} className="text-primary-600 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">{resource.title}</p>
+          {resource.description && <p className="text-xs text-slate-400">{resource.description}</p>}
+        </div>
+        {resource.is_locked ? (
+          <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><Lock size={11} /> Locked</span>
+        ) : canvaEmbed ? (
+          <button
+            onClick={() => setShowSlides(s => !s)}
+            className="btn-primary text-xs py-1.5 flex items-center gap-1"
+          >
+            {showSlides ? <ChevronLeft size={11} /> : <Play size={11} />}
+            {showSlides ? 'Hide slides' : 'View slides'}
+          </button>
+        ) : resource.external_url ? (
+          <a href={resource.external_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><ExternalLink size={11} /> Open</a>
+        ) : resource.file_url ? (
+          <a href={resource.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
+        ) : null}
+      </div>
+      {canvaEmbed && showSlides && (
+        <div className="px-3 pb-3">
+          <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+            <iframe
+              src={canvaEmbed.embedUrl}
+              title={resource.title}
+              className="absolute inset-0 w-full h-full rounded-lg border border-slate-200 dark:border-slate-700"
+              loading="lazy"
+              allow="fullscreen"
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          </div>
+          <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+            <span>Presentation mode, fullscreen and page navigation work inside the frame.</span>
+            <a href={resource.external_url!} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary-600">
+              Open in Canva <ExternalLink size={10} />
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

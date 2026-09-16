@@ -8,6 +8,7 @@ import {
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../components/ui/Modal';
+import { isCanvaUrl, toCanvaEmbedUrl } from '../../lib/canva';
 import {
   updateLesson,
   getLessonTopics, createTopic, updateTopic, deleteTopic,
@@ -443,11 +444,15 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
     if (!editModal) return;
     setSaving(true);
     try {
+      const trimmedUrl = form.external_url.trim();
+      // Store the embeddable form for Canva so students get the inline viewer.
+      const externalUrl = toCanvaEmbedUrl(trimmedUrl)?.embedUrl ?? (trimmedUrl || undefined);
+      const payload = { ...form, external_url: externalUrl };
       if (editModal.mode === 'create') {
-        await createMaterial({ lesson_id: lesson.id, ...form, description: form.description || undefined, content_text: form.content_text || undefined, external_url: form.external_url || undefined, file_url: form.file_url || undefined, file_type: form.file_type || undefined });
+        await createMaterial({ lesson_id: lesson.id, ...payload, description: form.description || undefined, content_text: form.content_text || undefined, external_url: externalUrl, file_url: form.file_url || undefined, file_type: form.file_type || undefined });
         success('Material added');
       } else if (editModal.material) {
-        await updateMaterial(editModal.material.id, { ...form } as any);
+        await updateMaterial(editModal.material.id, payload as any);
         success('Material updated');
       }
       setEditModal(null); await load();
@@ -548,7 +553,22 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
             />
             <div>
               <label className="label">Or External URL (Google Drive, Canva, etc.)</label>
-              <input className="input" placeholder="https://..." value={form.external_url} onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))} />
+              <input
+                className="input"
+                placeholder="https://..."
+                value={form.external_url}
+                onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))}
+              />
+              {isCanvaUrl(form.external_url) && (
+                <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <Check size={11} /> Canva link detected — students will view the slides right inside the lesson.
+                </p>
+              )}
+              {form.external_url.trim() !== '' && !isCanvaUrl(form.external_url) && form.resource_type === 'slides' && form.external_url.includes('canva.com') && (
+                <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  Paste the design link from Canva → Share → “Anyone with the link → Viewer”, e.g. https://www.canva.com/design/CAF…/view
+                </p>
+            )}
             </div>
           </div>
           <div className="flex items-center gap-6">
