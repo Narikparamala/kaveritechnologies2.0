@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Code2, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Code2, ChevronLeft, ChevronRight, Download, RefreshCw, Save } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { formatDate } from '../../lib/utils';
 
@@ -28,6 +29,10 @@ type TrackerRow = {
   scoreLabel: string;
   code: string | null;
   detail: string | null;
+  maxMarks: number | null;
+  teacherScore: number | null;
+  teacherFeedback: string | null;
+  reviewStatus: string | null;
 };
 
 type VscodeRow = {
@@ -45,6 +50,9 @@ type VscodeRow = {
   max_marks: number | null;
   code: string;
   verified_summary: string | null;
+  teacher_score: number | null;
+  teacher_feedback: string | null;
+  review_status: string | null;
   student: { full_name: string | null; email: string | null } | null;
 };
 
@@ -96,7 +104,9 @@ function outcomeFromPractice(row: PracticeRow): { outcome: Outcome; label: strin
 }
 
 export default function CodingSubmissionsPage() {
-  const { error: toastError } = useToast();
+  const { error: toastError, success } = useToast();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'super_admin';
   const [rows, setRows] = useState<TrackerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
@@ -105,38 +115,94 @@ export default function CodingSubmissionsPage() {
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('all');
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<TrackerRow | null>(null);
+  const [reviewForm, setReviewForm] = useState<{ score: string; feedback: string }>({ score: '', feedback: '' });
+  const [savingReview, setSavingReview] = useState(false);
+  // Faculty see only their own batches' students; admins see everyone.
+  // Empty adminScopedIds means "no restriction" for admins.
+  const [scopedStudentIds, setScopedStudentIds] = useState<Set<string> | 'all' | null>(null);
+
+  // Resolve the faculty's batches → student IDs (RLS already limits
+  // batch_students reads to the signed-in faculty's batches). Admins skip this.
+  useEffect(() => {
+    let active = true;
+    const resolveScope = async () => {
+      if (isAdmin) {
+        if (active) setScopedStudentIds('all');
+        return;
+      }
+      if (!profile) return;
+      try {
+        const { data: facultyBatches, error } = await supabase
+          .from('batch_faculty')
+          .select('batch_id')
+          .eq('faculty_id', profile.id);
+        if (error) throw error;
+        const batchIds = (facultyBatches ?? []).map(b => b.batch_id);
+        if (!batchIds.length) {
+          if (active) setScopedStudentIds(new Set());
+          return;
+        }
+        const { data: students, error: studentsError } = await supabase
+          .from('batch_students')
+          .select('student_id')
+          .in('batch_id', batchIds);
+        if (studentsError) throw studentsError;
+        if (active) setScopedStudentIds(new Set((students ?? []).map(s => s.student_id)));
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Failed to resolve batch scope';
+        toastError('Error', message);
+        if (active) setScopedStudentIds(new Set());
+      }
+    };
+    resolveScope();
+    return () => { active = false; };
+  }, [isAdmin, profile, toastError]);
 
   const load = useCallback(async () => {
+    // Wait until the batch scope is resolved (null = still resolving).
+    if (scopedStudentIds === null) return;
     setLoading(true);
     try {
       const from = page * PAGE_SIZE;
+      // Scope is pushed into the queries so counts and pagination match what
+      // the viewer is allowed to see ('all' for admins, otherwise batch students).
+      const scopeFilter = <T extends { in: (col: string, vals: string[]) => T }>(query: T): T =>
+        scopedStudentIds === 'all' || scopedStudentIds.size === 0
+          ? query
+          : query.in('student_id', [...scopedStudentIds]);
       const [vscodeResult, practiceResult] = await Promise.all([
-        supabase
-          .from('coding_vscode_submissions')
-          .select(
-            `id,student_id,student_name_snapshot,assignment_key,assignment_title,language,submitted_at,
-             verification_status,verified_passed,verified_total,verified_score,max_marks,code,verified_summary,
-             student:profiles!coding_vscode_submissions_student_id_fkey(full_name,email)`,
-            { count: 'exact' },
-          )
-          .order('submitted_at', { ascending: false, nullsFirst: false })
-          .range(from, from + PAGE_SIZE - 1),
-        supabase
-          .from('coding_question_attempts')
-          .select(
-            `id,student_id,status,passed_test_cases,total_test_cases,first_solved_at,last_attempted_at,submitted_code,
-             question:coding_questions(title,slug,difficulty),
-             student:profiles!coding_question_attempts_student_id_fkey(full_name,email)`,
-            { count: 'exact' },
-          )
-          .order('last_attempted_at', { ascending: false, nullsFirst: false })
-          .range(from, from + PAGE_SIZE - 1),
+        scopeFilter(
+          supabase
+            .from('coding_vscode_submissions')
+            .select(
+              `id,student_id,student_name_snapshot,assignment_key,assignment_title,language,submitted_at,
+               verification_status,verified_passed,verified_total,verified_score,max_marks,code,verified_summary,
+               teacher_score,teacher_feedback,review_status,
+               student:profiles!coding_vscode_submissions_student_id_fkey(full_name,email)`,
+              { count: 'exact' },
+            )
+            .order('submitted_at', { ascending: false, nullsFirst: false })
+            .range(from, from + PAGE_SIZE - 1),
+        ),
+        scopeFilter(
+          supabase
+            .from('coding_question_attempts')
+            .select(
+              `id,student_id,status,passed_test_cases,total_test_cases,first_solved_at,last_attempted_at,submitted_code,
+               question:coding_questions(title,slug,difficulty),
+               student:profiles!coding_question_attempts_student_id_fkey(full_name,email)`,
+              { count: 'exact' },
+            )
+            .order('last_attempted_at', { ascending: false, nullsFirst: false })
+            .range(from, from + PAGE_SIZE - 1),
+        ),
       ]);
 
       if (vscodeResult.error) throw vscodeResult.error;
       if (practiceResult.error) throw practiceResult.error;
 
-      const vscodeRows: TrackerRow[] = (vscodeResult.data as unknown as VscodeRow[] ?? []).map(row => {
+      const vscodeRows: TrackerRow[] = (vscodeResult.data as unknown as VscodeRow[] ?? [])
+        .map(row => {
         const { outcome, label } = outcomeFromVscode(row);
         return {
           key: `vscode:${row.id}`,
@@ -152,10 +218,15 @@ export default function CodingSubmissionsPage() {
           scoreLabel: label,
           code: row.code,
           detail: row.verified_summary,
+          maxMarks: row.max_marks == null ? null : Number(row.max_marks),
+          teacherScore: row.teacher_score == null ? null : Number(row.teacher_score),
+          teacherFeedback: row.teacher_feedback,
+          reviewStatus: row.review_status,
         };
       });
 
-      const practiceRows: TrackerRow[] = (practiceResult.data as unknown as PracticeRow[] ?? []).map(row => {
+      const practiceRows: TrackerRow[] = (practiceResult.data as unknown as PracticeRow[] ?? [])
+        .map(row => {
         const { outcome, label } = outcomeFromPractice(row);
         return {
           key: `practice:${row.id}`,
@@ -171,6 +242,10 @@ export default function CodingSubmissionsPage() {
           scoreLabel: label,
           code: row.submitted_code,
           detail: row.question?.difficulty ? `Difficulty: ${row.question.difficulty}` : null,
+          maxMarks: null,
+          teacherScore: null,
+          teacherFeedback: null,
+          reviewStatus: null,
         };
       });
 
@@ -182,7 +257,7 @@ export default function CodingSubmissionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, toastError]);
+  }, [page, toastError, scopedStudentIds]);
 
   useEffect(() => {
     load();
@@ -208,6 +283,83 @@ export default function CodingSubmissionsPage() {
   }, [filtered]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const openDetail = (row: TrackerRow) => {
+    setDetail(row);
+    setReviewForm({
+      score: row.teacherScore == null ? '' : String(row.teacherScore),
+      feedback: row.teacherFeedback ?? '',
+    });
+  };
+
+  const saveReview = async () => {
+    if (!detail || !profile) return;
+    if (detail.source !== 'vscode') return;
+    const maxMarks = detail.maxMarks ?? 0;
+    const raw = reviewForm.score.trim();
+    let teacherScore: number | null = null;
+    if (raw !== '') {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > maxMarks) {
+        toastError('Invalid score', `Score must be between 0 and ${maxMarks}.`);
+        return;
+      }
+      teacherScore = parsed;
+    }
+    setSavingReview(true);
+    try {
+      const { error } = await supabase
+        .from('coding_vscode_submissions')
+        .update({
+          teacher_score: teacherScore,
+          teacher_feedback: reviewForm.feedback.trim() || null,
+          reviewed_by: profile.id,
+          reviewed_at: new Date().toISOString(),
+          review_status: 'reviewed',
+        })
+        .eq('id', detail.key.replace('vscode:', ''));
+      if (error) throw error;
+      success('Review saved');
+      setDetail(null);
+      await load();
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to save review';
+      toastError('Error', message);
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
+  const exportCsv = () => {
+    const header = ['Student', 'Email', 'Source', 'Item', 'Key', 'Language', 'Submitted', 'Outcome', 'Verified Score', 'Teacher Score', 'Teacher Feedback'];
+    const escape = (value: string | number | null) => {
+      const text = value == null ? '' : String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const lines = [header.join(',')];
+    for (const row of filtered) {
+      lines.push([
+        escape(row.studentName),
+        escape(row.studentEmail),
+        escape(SOURCE_LABEL[row.source]),
+        escape(row.itemTitle),
+        escape(row.itemKey),
+        escape(row.language),
+        escape(row.submittedAt ? formatDate(row.submittedAt) : ''),
+        escape(row.scoreLabel),
+        escape(row.outcome === 'pass' ? row.scoreLabel : ''),
+        escape(row.teacherScore == null ? '' : String(row.teacherScore)),
+        escape(row.teacherFeedback),
+      ].join(','));
+    }
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `coding-submissions-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
@@ -253,6 +405,18 @@ export default function CodingSubmissionsPage() {
         <button onClick={load} className="btn-secondary py-2 px-3 text-xs flex items-center gap-1.5">
           <RefreshCw size={13} /> Refresh
         </button>
+        <button
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="btn-secondary py-2 px-3 text-xs flex items-center gap-1.5 disabled:opacity-40"
+        >
+          <Download size={13} /> Export CSV
+        </button>
+        {!isAdmin && (
+          <span className="text-[11px] text-slate-400">
+            Showing students from your batches only
+          </span>
+        )}
       </div>
 
       {/* Stats */}
@@ -276,7 +440,7 @@ export default function CodingSubmissionsPage() {
           {filtered.map(row => (
             <button
               key={row.key}
-              onClick={() => setDetail(row)}
+              onClick={() => openDetail(row)}
               className="card p-4 flex items-center justify-between gap-4 text-left hover:border-primary-300 transition"
             >
               <div className="flex-1 min-w-0">
@@ -288,6 +452,7 @@ export default function CodingSubmissionsPage() {
                   {row.outcome === 'pass' && <Badge variant="success" className="text-[10px]">✓ {row.scoreLabel}</Badge>}
                   {row.outcome === 'fail' && <Badge variant="danger" className="text-[10px]">{row.scoreLabel}</Badge>}
                   {row.outcome === 'pending' && <Badge variant="warning" className="text-[10px]">{row.scoreLabel}</Badge>}
+                  {row.reviewStatus === 'reviewed' && <Badge variant="default" className="text-[10px]">Reviewed</Badge>}
                 </div>
                 <p className="text-xs text-primary-600 dark:text-primary-400 truncate">{row.itemTitle}</p>
                 <p className="text-[11px] text-slate-400">
@@ -349,6 +514,43 @@ export default function CodingSubmissionsPage() {
                 {detail.code ?? 'No code submitted'}
               </pre>
             </div>
+            {detail.source === 'vscode' && (
+              <div className="space-y-3 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase">Teacher review</p>
+                <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">
+                      Score {detail.maxMarks != null ? `(0–${detail.maxMarks})` : ''}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={detail.maxMarks ?? undefined}
+                      step="0.5"
+                      className="input py-1.5 text-sm"
+                      placeholder={detail.maxMarks != null ? `out of ${detail.maxMarks}` : 'score'}
+                      value={reviewForm.score}
+                      onChange={e => setReviewForm(f => ({ ...f, score: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Feedback</label>
+                    <input
+                      type="text"
+                      className="input py-1.5 text-sm"
+                      placeholder="Feedback for the student…"
+                      value={reviewForm.feedback}
+                      onChange={e => setReviewForm(f => ({ ...f, feedback: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={saveReview} disabled={savingReview} className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5">
+                    {savingReview ? 'Saving…' : <><Save size={13} /> Save review</>}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>
