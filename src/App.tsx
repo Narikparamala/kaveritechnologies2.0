@@ -63,6 +63,7 @@ const StudentOfflineExamsPage = lazy(() => import('./pages/student/StudentOfflin
 const FacultyDashboard = lazy(() => import('./pages/faculty/FacultyDashboard'));
 const FacultyCoursesPage = lazy(() => import('./pages/faculty/FacultyCoursesPage'));
 const SubmissionsPage = lazy(() => import('./pages/faculty/SubmissionsPage'));
+const CodingSubmissionsPage = lazy(() => import('./pages/faculty/CodingSubmissionsPage'));
 const AnnouncementsPage = lazy(() => import('./pages/faculty/AnnouncementsPage'));
 const StudentProgressPage = lazy(() => import('./pages/faculty/StudentProgressPage'));
 const FacultyLiveClassesPage = lazy(() => import('./pages/faculty/FacultyLiveClassesPage'));
@@ -294,6 +295,7 @@ export default function App() {
                     <Route path="assignments/new" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="assignments/builder/:assignmentId" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="submissions" element={<SubmissionsPage />} />
+                    <Route path="coding-submissions" element={<CodingSubmissionsPage />} />
                     <Route path="quizzes" element={<FacultyQuizzesPage />} />
                     <Route path="projects" element={<FacultyProjectsPage />} />
                     <Route path="projects/new" element={<FacultyProjectBuilderPage />} />
@@ -342,6 +344,7 @@ export default function App() {
                     <Route path="course-assignments" element={<CourseAssignmentsPage />} />
                     <Route path="lessons" element={<AdminLessonsPage />} />
                     <Route path="assignments" element={<AdminAssignmentsPage />} />
+                    <Route path="coding-submissions" element={<CodingSubmissionsPage />} />
                     <Route path="quizzes" element={<AdminQuizzesPage />} />
                     <Route path="projects" element={<AdminProjectsPage />} />
                     <Route path="certificates" element={<AdminCertificatesPage />} />
