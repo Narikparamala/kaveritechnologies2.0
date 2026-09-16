@@ -26,6 +26,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
   getSecureJudgeLanguages,
@@ -141,12 +142,15 @@ type SolvedMap = Record<string, { solved: boolean; attempts: number }>;
 
 function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
   const { error: toastError } = useToast();
+  const { profile } = useAuth();
   const [questions, setQuestions] = useState<CodingQuestion[]>([]);
   const [solvedMap, setSolvedMap] = useState<SolvedMap>({});
+  const [completedTopics, setCompletedTopics] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [difficulty, setDifficulty] = useState('all');
   const [topic, setTopic] = useState('all');
+  const [progressFilter, setProgressFilter] = useState<'all' | 'recommended' | 'ahead'>('all');
 
   useEffect(() => {
     let active = true;
@@ -162,8 +166,7 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
         ]);
 
         if (questionsResult.error) throw questionsResult.error;
-        if (attemptsResult.error) throw attemptsResult.error;
-        if (active) {
+        if (attemptsResult.error) throw attemptsResult.error;          if (active) {
           setQuestions((questionsResult.data ?? []) as CodingQuestion[]);
           const nextSolved: SolvedMap = {};
           for (const attempt of (attemptsResult.data ?? []) as Array<{ question_id: string; first_solved_at: string | null; attempts_count: number | null }>) {
@@ -173,6 +176,28 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
             };
           }
           setSolvedMap(nextSolved);
+
+          // Fetch student's completed lesson topics for progress gating
+          if (profile) {
+            const { data: progressData } = await supabase
+              .from('lesson_progress')
+              .select('lesson_id')
+              .eq('student_id', profile.id)
+              .eq('completed', true);
+
+            if (progressData && progressData.length > 0) {
+              const lessonIds = progressData.map(p => p.lesson_id);
+              const { data: topicData } = await supabase
+                .from('lesson_topics')
+                .select('title')
+                .in('lesson_id', lessonIds);
+
+              if (topicData) {
+                const topics = new Set(topicData.map(t => t.title.toLowerCase()));
+                setCompletedTopics(topics);
+              }
+            }
+          }
         }
       } catch (error) {
         toastError('Could not load coding questions', errorMessage(error));
@@ -203,9 +228,17 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
       ].some(value => value.toLowerCase().includes(query));
       const matchesDifficulty = difficulty === 'all' || question.difficulty === difficulty;
       const matchesTopic = topic === 'all' || question.topic === topic;
-      return matchesSearch && matchesDifficulty && matchesTopic;
+
+      // Progress gating: recommended = topic matches completed lessons, ahead = doesn't
+      const questionTopic = question.topic.toLowerCase();
+      const isRecommended = completedTopics.has(questionTopic);
+      const matchesProgress = progressFilter === 'all'
+        || (progressFilter === 'recommended' && isRecommended)
+        || (progressFilter === 'ahead' && !isRecommended);
+
+      return matchesSearch && matchesDifficulty && matchesTopic && matchesProgress;
     });
-  }, [questions, search, difficulty, topic]);
+  }, [questions, search, difficulty, topic, progressFilter, completedTopics]);
 
   const difficultyBadge = (value: Difficulty) => {
     if (value === 'easy') return <Badge variant="success">Easy</Badge>;
@@ -247,12 +280,25 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
             <option value="all">All topics</option>
             {topics.map(item => <option key={item} value={item}>{item}</option>)}
           </select>
+
+          <select className="input w-full" value={progressFilter} onChange={event => setProgressFilter(event.target.value as typeof progressFilter)}>
+            <option value="all">All levels</option>
+            <option value="recommended">Recommended for you</option>
+            <option value="ahead">Ahead (challenge)</option>
+          </select>
         </div>
       </section>
 
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
         <span>{filtered.length} question{filtered.length === 1 ? '' : 's'} · {Object.values(solvedMap).filter(item => item.solved).length} solved</span>
-        <span>Your practice attempts are unlimited</span>
+        <span className="flex items-center gap-2">
+          {completedTopics.size > 0 && (
+            <span className="text-xs text-slate-400">
+              {completedTopics.size} topic{completedTopics.size !== 1 ? 's' : ''} completed
+            </span>
+          )}
+          Your practice attempts are unlimited
+        </span>
       </div>
 
       {loading ? (
@@ -277,6 +323,11 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
                 </div>
                 <div className="flex items-center gap-2">
                   {solvedMap[question.id]?.solved && <Badge variant="success">Solved</Badge>}
+                  {completedTopics.size > 0 && (
+                    completedTopics.has(question.topic.toLowerCase())
+                      ? <Badge variant="default" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Recommended</Badge>
+                      : <Badge variant="default" className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Challenge</Badge>
+                  )}
                   {difficultyBadge(question.difficulty)}
                 </div>
               </div>

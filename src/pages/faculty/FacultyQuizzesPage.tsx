@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   HelpCircle, Plus, Edit2, Trash2, Eye, EyeOff, Clock, Trophy, ChevronDown,
   ChevronRight, Check, X, Copy, ArrowUp, ArrowDown, Code, Image, Play,
+  GripVertical,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -118,6 +119,8 @@ export default function FacultyQuizzesPage() {
 
   // Question management
   const [manageQuiz, setManageQuiz] = useState<Quiz | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<QuestionWithOptions[]>([]);
   const [expandedQuestions, setExpandedQuestions] = useState<Set<string>>(new Set());
 
@@ -442,6 +445,42 @@ export default function FacultyQuizzesPage() {
     setAttempts(atts);
   };
 
+  const handleDragStart = (qId: string) => {
+    setDraggedId(qId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, qId: string) => {
+    e.preventDefault();
+    if (qId !== draggedId) setDragOverId(qId);
+  };
+
+  const handleDrop = async (targetId: string) => {
+    if (!draggedId || draggedId === targetId || !manageQuiz) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    const fromIdx = questions.findIndex(q => q.id === draggedId);
+    const toIdx = questions.findIndex(q => q.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    try {
+      await updateQuestion(questions[fromIdx].id, { order_index: toIdx } as any);
+      await updateQuestion(questions[toIdx].id, { order_index: fromIdx } as any);
+      await refreshQuestions(manageQuiz);
+    } catch (e: any) { toastError(e.message); }
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
   const toggleQuestion = (id: string) => {
     setExpandedQuestions(prev => {
       const next = new Set(prev);
@@ -573,11 +612,32 @@ export default function FacultyQuizzesPage() {
           ) : (
             <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {questions.map((q, idx) => (
-                <div key={q.id} className="rounded-xl border border-slate-200 dark:border-slate-700">
+                <div
+                  key={q.id}
+                  draggable
+                  onDragStart={() => handleDragStart(q.id)}
+                  onDragOver={(e) => handleDragOver(e, q.id)}
+                  onDrop={() => handleDrop(q.id)}
+                  onDragEnd={handleDragEnd}
+                  className={`rounded-xl border transition-all ${
+                    draggedId === q.id
+                      ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 opacity-50'
+                      : dragOverId === q.id
+                        ? 'border-primary-400 bg-primary-50/50 dark:bg-primary-900/10'
+                        : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
                   <div className="flex items-center gap-2 p-3">
-                    <button onClick={() => toggleQuestion(q.id)} className="text-slate-400 flex-shrink-0">
+                    <button
+                      onClick={() => toggleQuestion(q.id)}
+                      className="text-slate-400 flex-shrink-0 cursor-pointer"
+                      title="Expand/collapse"
+                    >
                       {expandedQuestions.has(q.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </button>
+                    <span className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 flex-shrink-0" title="Drag to reorder">
+                      <GripVertical size={14} />
+                    </span>
                     <span className="text-xs text-slate-400 font-mono flex-shrink-0">Q{idx + 1}</span>
                     <Badge variant="default" className="text-[10px] capitalize flex-shrink-0">{typeLabel(q.question_type)}</Badge>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${q.difficulty === 'easy' ? 'bg-emerald-100 text-emerald-700' : q.difficulty === 'hard' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{q.difficulty}</span>
