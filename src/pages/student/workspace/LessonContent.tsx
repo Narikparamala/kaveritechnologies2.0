@@ -10,6 +10,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from './WorkspaceContext';
 import { VideoEmbed } from './VideoEmbed';
+import { DeliveryBanner } from './DeliveryBanner';
+import { SecureResourceCard } from './SecureResourceCard';
 
 export function LessonContent() {
   const navigate = useNavigate();
@@ -175,6 +177,9 @@ export function LessonContent() {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 lg:px-6 py-6 space-y-8">
+          {/* Delivery mode banner — recorded / live / ended states */}
+          <DeliveryBanner lesson={currentLesson} sessions={lessonSessions} />
+
           {/* Video player */}
           {videoUrl && (
             <section id="section-video" className="scroll-mt-40">
@@ -230,10 +235,10 @@ export function LessonContent() {
             </Section>
           )}
 
-          {/* Slides */}
+          {/* Slides — inline secure viewer, raw links are never exposed */}
           {slides.length > 0 && (
             <Section id="slides" title="Slides" icon={BookOpen}>
-              {slides.map(r => <ResourceCard key={r.id} resource={r} />)}
+              {slides.map(r => <SecureResourceCard key={r.id} resource={r} />)}
             </Section>
           )}
 
@@ -246,10 +251,10 @@ export function LessonContent() {
             </Section>
           )}
 
-          {/* Study materials */}
+          {/* Study materials — inline secure viewer, raw links are never exposed */}
           {notes.length > 0 && (
             <Section id="materials" title="Study Materials" icon={FileText}>
-              {notes.map(r => <ResourceCard key={r.id} resource={r} />)}
+              {notes.map(r => <SecureResourceCard key={r.id} resource={r} />)}
             </Section>
           )}
 
@@ -276,7 +281,7 @@ export function LessonContent() {
                   </pre>
                 </div>
               )}
-              {codeExamples.map(r => <ResourceCard key={r.id} resource={r} />)}
+              {codeExamples.map(r => <SecureResourceCard key={r.id} resource={r} />)}
             </Section>
           )}
 
@@ -459,7 +464,9 @@ function Section({ id, title, icon: Icon, children }: { id: string; title: strin
 }
 
 function ResourceCard({ resource }: { resource: any }) {
-  const url = resource.file_url || resource.external_url;
+  const url = resource.file_url;
+  // Only non-embeddable files land here — download only, raw links never shown.
+  if (!url) return null;
   return (
     <div className="card p-4 flex items-center gap-3">
       <div className="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
@@ -469,11 +476,9 @@ function ResourceCard({ resource }: { resource: any }) {
         <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{resource.title}</p>
         {resource.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{resource.description}</p>}
       </div>
-      {url && (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 flex-shrink-0">
-          <ExternalLink size={11} /> Open
-        </a>
-      )}
+      <a href={url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1 flex-shrink-0">
+        Download
+      </a>
     </div>
   );
 }
