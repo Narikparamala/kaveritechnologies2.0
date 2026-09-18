@@ -13,6 +13,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { detectEmbed, isCanvaUrl, toCanvaEmbedUrl } from '../../lib/mediaEmbeds';
+import { SecureResourceCard } from './workspace/SecureResourceCard';
 import {
   getLessonById, getLessonProgress, markLessonComplete,
   getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources,
@@ -284,20 +285,22 @@ export default function LessonPage() {
           </h2>
           <div className="space-y-2">
             {resources.filter(r => r.resource_type === 'notes').map(r => (
-              <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                <FileText size={14} className="text-primary-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                  {r.content_text && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-wrap line-clamp-3">{r.content_text}</p>}
-                </div>
-                {r.is_locked ? (
-                  <span className="flex items-center gap-1 text-xs text-amber-600"><Lock size={11} /> Locked</span>
-                ) : r.external_url ? (
-                  <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><ExternalLink size={11} /> Open</a>
-                ) : r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
-                ) : null}
-              </div>
+              r.external_url && detectEmbed(r.external_url)
+                ? <SecureResourceCard key={r.id} resource={r} />
+                : (
+                  <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <FileText size={14} className="text-primary-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
+                      {r.content_text && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-wrap line-clamp-3">{r.content_text}</p>}
+                    </div>
+                    {r.is_locked ? (
+                      <span className="flex items-center gap-1 text-xs text-amber-600"><Lock size={11} /> Locked</span>
+                    ) : r.file_url ? (
+                      <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
+                    ) : null}
+                  </div>
+                )
             ))}
           </div>
         </div>
@@ -329,18 +332,22 @@ export default function LessonPage() {
             <Film size={16} className="text-primary-600" /> Video Recording
           </h2>
           {resources.filter(r => r.resource_type === 'recorded_video' && !r.is_locked).map(r => (
-            <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-              <Film size={16} className="text-primary-600" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
-              </div>
-              {r.external_url && (
-                <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-primary text-xs flex items-center gap-1">
-                  <Play size={11} /> Watch
-                </a>
-              )}
-            </div>
+            r.external_url && detectEmbed(r.external_url)
+              ? <SecureResourceCard key={r.id} resource={r} />
+              : (
+                <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                  <Film size={16} className="text-primary-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
+                    {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
+                  </div>
+                  {r.file_url && (
+                    <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
+                      <Download size={11} /> Download
+                    </a>
+                  )}
+                </div>
+              )
           ))}
         </div>
       )}

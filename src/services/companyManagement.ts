@@ -326,9 +326,12 @@ export async function getAllStudents(filters?: {
   facultyId?: string;
   status?: 'active' | 'inactive';
 }): Promise<(Profile & { enrollments?: CourseEnrollment[] })[]> {
+  // course_enrollments has multiple FKs to profiles (student_id, granted_by,
+  // revoked_by) — the embed must name the column or PostgREST rejects the
+  // whole request, which used to silently empty the admin student list.
   let query = supabase
     .from('profiles')
-    .select('*, enrollments:course_enrollments(*)')
+    .select('*, enrollments:course_enrollments!student_id(*)')
     .eq('role', 'student')
     .order('created_at', { ascending: false });
 

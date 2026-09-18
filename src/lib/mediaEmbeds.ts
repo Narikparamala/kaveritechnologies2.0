@@ -19,8 +19,22 @@ export type EmbedInfo = {
 // ── Canva ──────────────────────────────────────────────────────────────
 const CANVA_DESIGN_RE =
   /^https:\/\/www\.canva\.com\/design\/([A-Za-z0-9_-]+)(?:\/(?!view\b|edit\b|preview\b)([A-Za-z0-9_-]+))?(?:\/(view|edit|preview))?/;
+// Canva short links (canva.link/XXXX) redirect to /design/{id}/{token}/edit —
+// the embed form is derived from the short code alone.
+const CANVA_SHORT_RE = /^https:\/\/canva\.link\/([A-Za-z0-9]+)/;
 
 function parseCanva(url: string): EmbedInfo | null {
+  const short = CANVA_SHORT_RE.exec(url.trim());
+  if (short) {
+    const [, code] = short;
+    return {
+      type: 'canva',
+      // Canva resolves the short code server-side for /design/... URLs.
+      embedUrl: `https://www.canva.com/design/${code}/view?embed`,
+      ratio: parseRatio(url),
+      title: 'Canva Slides',
+    };
+  }
   const match = CANVA_DESIGN_RE.exec(url.trim());
   if (!match) return null;
   const [, designId, token] = match;
@@ -90,7 +104,7 @@ export function detectEmbed(url: string | null | undefined): EmbedInfo | null {
  * Legacy helpers kept for backward compat with canva.ts imports.
  */
 export function isCanvaUrl(url: string | null | undefined): boolean {
-  return Boolean(url && CANVA_DESIGN_RE.test(url.trim()));
+  return Boolean(url && (CANVA_DESIGN_RE.test(url.trim()) || CANVA_SHORT_RE.test(url.trim())));
 }
 
 export function toCanvaEmbedUrl(url: string): { embedUrl: string; ratio: number | null } | null {
