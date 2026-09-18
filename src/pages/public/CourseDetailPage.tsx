@@ -79,7 +79,6 @@ export default function CourseDetailPage() {
 
   const handleEnroll = async () => {
     if (!user || !profile) { navigate('/login'); return; }
-    if (profile.role !== 'student') { info('Enrollment', 'Only student accounts can enroll in courses.'); return; }
     if (enrollment) { navigate('/student/courses'); return; }
 
     setEnrolling(true);
@@ -112,7 +111,6 @@ export default function CourseDetailPage() {
 
   const handleRequestAccess = async () => {
     if (!user || !profile) { navigate('/login'); return; }
-    if (profile.role !== 'student') { info('Request', 'Only student accounts can request course access.'); return; }
     if (enrollment) { navigate('/student/courses'); return; }
     if (request?.status === 'pending') { info('Request', 'You already have a pending request for this course.'); return; }
 
@@ -248,7 +246,8 @@ export default function CourseDetailPage() {
                   if (!isStudent) {
                     return (
                       <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Only student accounts can enrol or request access to courses.
+                        Staff accounts enrol and learn like students here — the Enrol / Request
+                        access buttons below work with your account.
                       </p>
                     );
                   }

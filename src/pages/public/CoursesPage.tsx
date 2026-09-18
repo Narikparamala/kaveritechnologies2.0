@@ -52,10 +52,6 @@ export default function CoursesPage() {
   const handleEnroll = async (courseId: string) => {
     const course = courses.find(c => c.id === courseId);
     if (!user || !profile) { navigate('/login'); return; }
-    if (profile.role !== 'student') {
-      info('Enrollment', 'Only students can enroll in courses.');
-      return;
-    }
     if (enrolledIds.has(courseId)) {
       navigate('/student/courses');
       return;

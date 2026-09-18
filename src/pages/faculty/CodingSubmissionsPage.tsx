@@ -235,7 +235,7 @@ export default function CodingSubmissionsPage() {
           studentName: row.student?.full_name ?? 'Unknown student',
           studentEmail: row.student?.email ?? null,
           itemTitle: row.question?.title ?? 'Untitled question',
-          itemKey: row.question?.slug,
+          itemKey: row.question?.slug ?? null,
           language: null,
           submittedAt: row.last_attempted_at ?? row.first_solved_at,
           outcome,
@@ -422,7 +422,7 @@ export default function CodingSubmissionsPage() {
       {/* Stats */}
       <div className="flex flex-wrap gap-2 mb-5 text-xs">
         <Badge variant="success">Passed / Solved: {stats.pass}</Badge>
-        <Badge variant="danger">Failed: {stats.fail}</Badge>
+        <Badge variant="error">Failed: {stats.fail}</Badge>
         <Badge variant="warning">Pending: {stats.pending}</Badge>
         <Badge variant="default">Showing {filtered.length} of {total} latest</Badge>
       </div>
@@ -450,7 +450,7 @@ export default function CodingSubmissionsPage() {
                     {SOURCE_LABEL[row.source]}
                   </Badge>
                   {row.outcome === 'pass' && <Badge variant="success" className="text-[10px]">✓ {row.scoreLabel}</Badge>}
-                  {row.outcome === 'fail' && <Badge variant="danger" className="text-[10px]">{row.scoreLabel}</Badge>}
+                  {row.outcome === 'fail' && <Badge variant="error" className="text-[10px]">{row.scoreLabel}</Badge>}
                   {row.outcome === 'pending' && <Badge variant="warning" className="text-[10px]">{row.scoreLabel}</Badge>}
                   {row.reviewStatus === 'reviewed' && <Badge variant="default" className="text-[10px]">Reviewed</Badge>}
                 </div>
@@ -501,7 +501,7 @@ export default function CodingSubmissionsPage() {
               </div>
             </div>
             <div className="flex items-center gap-3 text-sm">
-              <Badge variant={detail.outcome === 'pass' ? 'success' : detail.outcome === 'fail' ? 'danger' : 'warning'}>
+              <Badge variant={detail.outcome === 'pass' ? 'success' : detail.outcome === 'fail' ? 'error' : 'warning'}>
                 {detail.scoreLabel}
               </Badge>
               {detail.language && <Badge variant="default">{detail.language}</Badge>}

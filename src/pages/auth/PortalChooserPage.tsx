@@ -126,9 +126,10 @@ export default function PortalChooserPage() {
 
         <div className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-400">
           <p>
-            <span className="font-semibold text-slate-200">How preview works:</span> switching to another
-            portal only changes which interface you see. It does not change your account role or
-            permissions — every action is still authorised by your real account in the database.
+            <span className="font-semibold text-slate-200">Switching portals:</span> you get the
+            <span className="font-semibold text-emerald-400"> full experience</span> of each portal —
+            enrol in courses, complete lessons, take quizzes, submit code and earn XP exactly like a
+            student does. Your admin powers stay available from your home portal.
           </p>
           <button
             onClick={() => { navigate(ROLE_DASHBOARDS[realRole]); }}

@@ -63,8 +63,8 @@ export function DashboardLayout({ sidebar, children }: DashboardLayoutProps) {
             <p className="flex items-center gap-2 text-xs sm:text-sm text-amber-800 dark:text-amber-300">
               <Eye size={14} className="flex-shrink-0" />
               <span>
-                You are viewing the <strong>{PORTAL_LABEL[role ?? ''] ?? ''} portal</strong> in preview mode.
-                This does not change your account permissions.
+                You are in the <strong>{PORTAL_LABEL[role ?? ''] ?? ''} portal</strong> — everything here
+                works for real. Your admin powers remain available from your home portal.
               </span>
             </p>
             <button

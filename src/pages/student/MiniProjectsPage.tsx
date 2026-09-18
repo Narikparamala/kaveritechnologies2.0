@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CheckCircle2, Code2, Cpu,
-  Loader2, RefreshCw, Send, Terminal, XCircle,
+  Eye, Loader2, RefreshCw, Send, Terminal, XCircle,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
@@ -360,6 +360,7 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
           verified_score: gradeResult.verifiedScore,
           verified_summary: gradeResult.verifiedSummary,
           status: 'submitted',
+          submitted_at: new Date().toISOString(),
         });
       }
       if (gradeResult.allPassed) {
