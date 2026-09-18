@@ -16,6 +16,19 @@ import type { Quiz, QuizQuestion, QuizOption, Course } from '../../types/databas
 type QuizWithCourse = Quiz & { course: Course };
 type QuestionWithOptions = QuizQuestion & { options: QuizOption[] };
 
+/** Per-question grading feedback returned by submit_quiz_attempt. */
+type QuizQuestionResult = {
+  question_id: string;
+  question_type: string;
+  is_correct: boolean | null;
+  points: number;
+  earned: number;
+  selected_option_ids: string[];
+  correct_option_ids: string[] | null;
+  correct_answer_text: string | null;
+  explanation: string | null;
+};
+
 export default function QuizzesPage() {
   const { profile } = useAuth();
   const { success, error: toastError } = useToast();
@@ -34,6 +47,7 @@ export default function QuizzesPage() {
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [xpAwarded, setXpAwarded] = useState(0);
+  const [questionResults, setQuestionResults] = useState<QuizQuestionResult[]>([]);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [qIdx, setQIdx] = useState(0);
   const [showNav, setShowNav] = useState(false);
@@ -87,6 +101,7 @@ export default function QuizzesPage() {
     setSubmitted(false);
     setScore(0);
     setXpAwarded(0);
+    setQuestionResults([]);
     setQIdx(0);
     setShowNav(false);
     setTimeLeft(quiz.time_limit_minutes ? quiz.time_limit_minutes * 60 : null);
@@ -180,6 +195,31 @@ export default function QuizzesPage() {
       setScore(pct);
       setSubmitted(true);
       setXpAwarded(0);
+      // Practice mode has full answer data client-side, so build the same
+      // per-question review the graded path gets from the server.
+      const practiceResults: QuizQuestionResult[] = questions.map(q => {
+        const base = {
+          question_id: q.id,
+          question_type: q.question_type,
+          points: q.points,
+          explanation: q.explanation ?? null,
+          selected_option_ids: answers.get(q.id) ?? [],
+        };
+        if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
+          const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
+          const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
+          const ok = ans === correct && ans !== '';
+          return { ...base, is_correct: ok, earned: ok ? q.points : 0, correct_option_ids: null, correct_answer_text: q.correct_answer_text ?? null };
+        }
+        if (q.question_type === 'coding') {
+          return { ...base, is_correct: null, earned: 0, correct_option_ids: null, correct_answer_text: null };
+        }
+        const selected = answers.get(q.id) ?? [];
+        const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
+        const ok = selected.length === correctIds.length && selected.every(id => correctIds.includes(id));
+        return { ...base, is_correct: ok, earned: ok ? q.points : 0, correct_option_ids: correctIds, correct_answer_text: null };
+      });
+      setQuestionResults(practiceResults);
       success(`Practice complete: ${Math.round(pct)}%. No attempt, XP, or progress was recorded.`);
       return;
     }
@@ -208,6 +248,7 @@ export default function QuizzesPage() {
     setSubmitted(true);
     const awarded = data.xp_awarded ?? 0;
     setXpAwarded(awarded);
+    setQuestionResults((data.results ?? []) as QuizQuestionResult[]);
     if (data.passed) {
       if (awarded > 0) {
         success(`Quiz passed! +${awarded} XP`);
@@ -479,6 +520,52 @@ export default function QuizzesPage() {
                 <p className="text-slate-400 text-sm font-medium mb-4">No additional XP — you already passed this quiz.</p>
               )
             )}
+
+            {/* Per-question review: what you answered, what was right, why */}
+            {questionResults.length > 0 && (
+              <div className="text-left max-w-2xl mx-auto mt-2 mb-6 space-y-3">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Answer review</p>
+                {questionResults.map((r, i) => {
+                  const q = questions.find(qq => qq.id === r.question_id);
+                  const correct = r.is_correct === true;
+                  const pending = r.is_correct === null;
+                  return (
+                    <div key={r.question_id} className={`rounded-xl border p-4 ${pending ? 'border-slate-200 dark:border-slate-700' : correct ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20'}`}>
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 flex-shrink-0 ${pending ? 'text-slate-400' : correct ? 'text-emerald-500' : 'text-red-500'}`}>
+                          {pending ? <Clock size={17} /> : correct ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">Q{i + 1}. {q?.question_text ?? ''}</p>
+                          {pending && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Coding question — will be graded manually by faculty.</p>
+                          )}
+                          {!correct && !pending && r.question_type !== 'fill_in_blank' && r.question_type !== 'code_output' && r.correct_option_ids && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5">
+                              Correct answer:{' '}
+                              <span className="font-medium">
+                                {(q?.options ?? []).filter(o => r.correct_option_ids!.includes(o.id)).map(o => o.option_text).join('; ') || '—'}
+                              </span>
+                            </p>
+                          )}
+                          {!correct && !pending && (r.question_type === 'fill_in_blank' || r.question_type === 'code_output') && r.correct_answer_text && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5">
+                              Correct answer: <span className="font-medium font-mono">{r.correct_answer_text}</span>
+                            </p>
+                          )}
+                          {r.explanation && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                              <span className="font-medium text-slate-600 dark:text-slate-300">Why:</span> {r.explanation}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="flex gap-3 justify-center">
               <button onClick={() => { startQuiz(activeQuiz); }} className="btn-secondary">Retry Quiz</button>
               <button onClick={() => setActiveQuiz(null)} className="btn-primary">Done</button>

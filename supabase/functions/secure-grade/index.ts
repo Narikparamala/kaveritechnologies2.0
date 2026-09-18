@@ -540,7 +540,12 @@ Deno.serve(async req => {
     return json({ error: 'Secure grading is temporarily unavailable', code: 'GRADING_STORAGE_ERROR' }, 500, responseOrigin);
   }
   if (!profileResult.data?.is_active) return json({ error: 'Account is inactive' }, 403, responseOrigin);
-  if (profileResult.data.role !== 'student') return json({ error: 'Student access required' }, 403, responseOrigin);
+  // Staff may grade work from the student portal too (portal switch = real
+  // student actions). All submission rows below key off the caller's own id,
+  // so a staff member's submissions are simply their own.
+  if (!['student', 'faculty', 'super_admin'].includes(profileResult.data.role)) {
+    return json({ error: 'Student access required' }, 403, responseOrigin);
+  }
 
   let payload: {
     kind?: string;
