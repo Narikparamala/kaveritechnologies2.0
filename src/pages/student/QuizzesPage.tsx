@@ -308,13 +308,13 @@ export default function QuizzesPage() {
       {/* Quiz Taking Modal */}
       <Modal open={!!activeQuiz} onClose={() => { if (submitted) setActiveQuiz(null); }} title="" size="xl" className="!max-w-5xl">
         {activeQuiz && !submitted && questions.length > 0 && currentQ ? (
-          <div className="flex flex-col" style={{ minHeight: '70vh', maxHeight: '80vh' }}>
+          <div className="flex min-h-[60vh] flex-col lg:min-h-[70vh] lg:max-h-[80vh]">
             {/* Header bar */}
-            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <h2 className="font-bold text-slate-900 dark:text-white text-lg truncate">{activeQuiz.title}</h2>
               </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {timeLeft !== null && (
                   <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${timeLeft <= 60 ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 animate-pulse' : timeLeft <= 300 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                     <Clock size={14} />
@@ -467,7 +467,7 @@ export default function QuizzesPage() {
             </div>
 
             {/* Bottom navigation */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 mt-auto">
+            <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 mt-auto">
               <button
                 disabled={qIdx === 0}
                 onClick={() => setQIdx(i => i - 1)}
