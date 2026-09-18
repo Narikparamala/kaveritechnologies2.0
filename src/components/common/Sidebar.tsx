@@ -9,6 +9,8 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   to: string;
+  /** Link as-is instead of prefixing basePath (for shared public routes like /help). */
+  absolute?: boolean;
 }
 
 interface SidebarProps {
@@ -42,10 +44,10 @@ export function Sidebar({ navItems, basePath, showPortalSwitch = false }: Sideba
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-        {navItems.map(({ label, icon: Icon, to }) => (
+        {navItems.map(({ label, icon: Icon, to, absolute }) => (
           <NavLink
             key={to}
-            to={`${basePath}${to}`}
+            to={absolute ? to : `${basePath}${to}`}
             className={({ isActive }) => cn('sidebar-link', isActive && 'active')}
           >
             <Icon size={17} className="flex-shrink-0" />

@@ -27,7 +27,7 @@ const NAV_ITEMS = [
   { label: 'Notifications', icon: Bell, to: '/notifications' },
   { label: 'Profile', icon: User, to: '/profile' },
   { label: 'Settings', icon: Settings, to: '/settings' },
-  { label: 'Help & Extension', icon: LifeBuoy, to: '/help' },
+  { label: 'Help & Extension', icon: LifeBuoy, to: '/help', absolute: true },
 ];
 
 export default function StudentLayout() {
