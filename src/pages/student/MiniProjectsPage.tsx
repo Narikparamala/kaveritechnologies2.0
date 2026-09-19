@@ -9,7 +9,7 @@ import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
-import { getSecureJudgeLanguages, type JudgeLanguage } from '../../services/secureGrading';
+import { getSecureJudgeLanguages, invokeSecureGrader, type JudgeLanguage } from '../../services/secureGrading';
 
 const MonacoEditor = lazy(() =>
   import('@monaco-editor/react').then(module => ({ default: module.default })),
@@ -62,22 +62,6 @@ function errorMessage(error: unknown) {
   return 'Something went wrong';
 }
 
-async function invokeSecureGrader<T>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('secure-grade', { body });
-  if (error) {
-    const context = error.context as Response | undefined;
-    if (context) {
-      try {
-        const payload = await context.clone().json();
-        if (payload?.error) throw new Error(String(payload.error));
-      } catch (parseError) {
-        if (parseError instanceof Error && parseError.message !== 'Unexpected end of JSON input') throw parseError;
-      }
-    }
-    throw error;
-  }
-  return data as T;
-}
 
 export default function MiniProjectsPage() {
   const { assignmentId } = useParams<{ assignmentId?: string }>();

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './components/ui/Toast';
+import { SecureGradeRetryToasts } from './components/common/SecureGradeRetryToasts';
 import { RoleGuard } from './components/common/RoleGuard';
 import { LoadingSpinner } from './components/ui/LoadingSpinner';
 
@@ -165,6 +166,7 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <ToastProvider>
+            <SecureGradeRetryToasts />
             <BrowserRouter>
               <Suspense fallback={<LazyFallback />}>
                 <Routes>
