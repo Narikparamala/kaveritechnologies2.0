@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { markLessonComplete, getLessonProgress, getLessonNotes, getBookmark, getLessonResources, getStudentCoursePlan, saveNote, toggleBookmark } from '../../../services/lessons';
@@ -196,6 +196,29 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       setLessonLoading(false);
     }
   }, [profile]);
+
+  // Silent refresh: faculty can edit lesson materials while a student has the
+  // page open. Re-fetch the current lesson's data when the tab regains focus
+  // (no spinner — just swap in fresh data), so edits appear without a manual
+  // reload. Throttled to once per 30s.
+  const lastFocusRefresh = useRef(0);
+  useEffect(() => {
+    const refresh = () => {
+      if (!currentLesson) return;
+      const now = Date.now();
+      if (now - lastFocusRefresh.current < 30_000) return;
+      lastFocusRefresh.current = now;
+      loadLessonData(currentLesson.id);
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refresh();
+    });
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [currentLesson, loadLessonData]);
 
   const selectLesson = useCallback((lessonId: string) => {
     const lesson = allLessonsFlat.find(l => l.id === lessonId);
