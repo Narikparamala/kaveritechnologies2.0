@@ -564,6 +564,11 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
                   <Check size={11} /> Canva link detected — students will view the slides right inside the lesson.
                 </p>
               )}
+              {isCanvaUrl(form.external_url) && (
+                <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  In Canva the deck must be shared: <strong>Share → Anyone with the link → Viewer</strong>. If it stays private, students see “This design is private” instead of the slides.
+                </p>
+              )}
               {form.external_url.trim() !== '' && !isCanvaUrl(form.external_url) && form.resource_type === 'slides' && form.external_url.includes('canva.com') && (
                 <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
                   Paste the design link from Canva → Share → “Anyone with the link → Viewer”, e.g. https://www.canva.com/design/CAF…/view
