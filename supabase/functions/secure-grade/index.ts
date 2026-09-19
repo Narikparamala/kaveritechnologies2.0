@@ -143,7 +143,7 @@ function publicFailure(error: unknown) {
       return {
         code: internalCode,
         status: 504,
-        message: 'Secure grading timed out. Please try again.',
+        message: 'Grading took longer than usual and was stopped. Please try again in a few seconds — nothing is lost.',
       };
     case 'FINAL_RATE_LIMIT':
       return {
@@ -162,7 +162,7 @@ function publicFailure(error: unknown) {
       return {
         code: internalCode,
         status: 502,
-        message: 'The secure runner is temporarily unavailable. Please try again.',
+        message: 'The grading runner is waking up — we already retried automatically. Please try again in a few seconds; your work is saved.',
       };
     case 'GRADING_STORAGE_ERROR':
       return {
@@ -451,7 +451,37 @@ async function judgeCodeBuiltin(
   };
 }
 
+const MAX_RUNNER_ATTEMPTS = 3;
+const RUNNER_BACKOFF_MS = 500;
+
+function isTransientRunnerError(error: unknown) {
+  const code = error instanceof Error ? error.message : '';
+  return code === 'RUNNER_UNAVAILABLE' || code === 'RUNNER_TIMEOUT' || code === 'RUNNER_INVALID_RESPONSE';
+}
+
 async function judgeCode(
+  code: string,
+  test: TestCase,
+  index: number,
+  language: JudgeLanguage,
+): Promise<JudgeResult> {
+  // Server-side retry for transient runner failures (cold serverless
+  // starts, network blips to the runner). Deterministic outcomes
+  // (compile/runtime errors, wrong answers) are never retried.
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RUNNER_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) await new Promise(resolve => setTimeout(resolve, RUNNER_BACKOFF_MS * (attempt - 1)));
+    try {
+      return await judgeCodeOnce(code, test, index, language);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRunnerError(error) || attempt === MAX_RUNNER_ATTEMPTS) throw error;
+    }
+  }
+  throw lastError;
+}
+
+async function judgeCodeOnce(
   code: string,
   test: TestCase,
   index: number,
