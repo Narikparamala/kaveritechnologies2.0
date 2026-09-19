@@ -312,7 +312,10 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
         const expected = (test.expected_output ?? '').replace(/\r\n/g, '\n').trimEnd();
         nextResults.push({
           id: test.id,
-          passed: result.passed || (result.status === 'accepted' && actual === expected),
+          // The custom endpoint has no expected output server-side, so
+          // result.passed only means "ran cleanly" — the visible sample only
+          // passes when the program exited cleanly AND the output matches.
+          passed: result.status === 'accepted' && actual === expected,
           input: test.input_text ?? '',
           expected,
           actual: actual || result.stderr || '',

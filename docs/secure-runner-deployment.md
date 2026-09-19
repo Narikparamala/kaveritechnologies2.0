@@ -9,10 +9,32 @@ production. It does not change grading code.
 | Item | Status |
 | --- | --- |
 | secure-grade function (server-authoritative grading) | Implemented & verified |
-| go-judge adapter (`GO_JUDGE_URL` + `GO_JUDGE_TOKEN`) | Implemented & verified locally |
-| Judge0 adapter/fallback code | Implemented, kept intact, **not used** for Kaveri V1 |
+| **Built-in runner (`KAVERI_EXECUTE_URL` + `KAVERI_EXECUTE_TOKEN`)** | **Current production runner — Vercel serverless Python (`api/execute.py`)** |
+| go-judge adapter (`GO_JUDGE_URL` + `GO_JUDGE_TOKEN`) | Implemented; optional override for a dedicated host |
+| Judge0 adapter/fallback code | Implemented, kept intact, **not used** |
 | Judge0 on local Windows | Not used (incompatible isolation) — do not revisit |
-| Production V1 runner | **go-judge on a dedicated Linux host** |
+| Production V1 runner | **Built-in Vercel runner** (see "Built-in runner" below) |
+
+## Built-in runner (current production)
+
+The runner lives inside the web app itself: `api/execute.py`, a Flask function
+deployed on Vercel's Python runtime at `https://<app-domain>/api/execute`.
+ secure-grade calls it with `KAVERI_EXECUTE_URL` (exact endpoint) and
+`KAVERI_EXECUTE_TOKEN`; the same token is set as `EXECUTE_TOKEN` on Vercel.
+
+- No Docker, no laptop, no separate host: grading survives reboots and works
+  from anywhere.
+- Isolation: Vercel microVM + subprocess with `python -I`, sanitized env
+  (student code cannot read runner secrets), CPU/address-space/process
+  rlimits, wall-clock kill, output truncation.
+- Scores are still computed ONLY in secure-grade from actual stdout; the
+  runner cannot fabricate grades. Hidden tests never leave the server.
+- Verified in production: correct solution → verified score; wrong solution →
+  0; infinite loop → killed; secret-read attempt → secret not found; hidden
+  inputs/expected outputs absent from student responses.
+- To migrate to a dedicated always-on host later (Oracle free VM etc.), set
+  `GO_JUDGE_URL` + `GO_JUDGE_TOKEN` and unset the two `KAVERI_EXECUTE_*`
+  secrets — no code changes needed.
 
 Verified locally with go-judge: sample input runs, custom input runs, hidden
 final tests, assignment grading, coding-practice grading, and audit

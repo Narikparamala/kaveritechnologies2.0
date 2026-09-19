@@ -13,6 +13,25 @@ type JudgeLanguage = {
   name: string;
 };
 
+// Built-in runner: a serverless Python function deployed alongside the web
+// app. Default when its secret is present; go-judge (dedicated host) and
+// Judge0 remain available overrides for when the institute outgrows it.
+type RunnerBackend = 'builtin' | 'go-judge' | 'judge0';
+
+const BUILTIN_LANGUAGE: JudgeLanguage = { id: 901, name: 'Python (3.x)' };
+
+function getRunnerBackend(): RunnerBackend {
+  const builtinUrl = Deno.env.get('KAVERI_EXECUTE_URL');
+  const builtinToken = Deno.env.get('KAVERI_EXECUTE_TOKEN');
+  if (builtinUrl && builtinToken) return 'builtin';
+
+  const url = Deno.env.get('GO_JUDGE_URL');
+  const token = Deno.env.get('GO_JUDGE_TOKEN');
+  if (url && token) return 'go-judge';
+  if (url || token) throw new Error('RUNNER_NOT_CONFIGURED');
+  return 'judge0';
+}
+
 type JudgeStatus =
   | 'accepted'
   | 'wrong_answer'
@@ -52,14 +71,6 @@ const LANGUAGE_CACHE_MS = 5 * 60_000;
 let languageCache: { expiresAt: number; languages: JudgeLanguage[] } | null = null;
 
 const GO_JUDGE_LANGUAGE: JudgeLanguage = { id: 71, name: 'Python (3.x)' };
-
-function getRunnerBackend(): 'go-judge' | 'judge0' {
-  const url = Deno.env.get('GO_JUDGE_URL');
-  const token = Deno.env.get('GO_JUDGE_TOKEN');
-  if (url && token) return 'go-judge';
-  if (url || token) throw new Error('RUNNER_NOT_CONFIGURED');
-  return 'judge0';
-}
 
 function json(body: unknown, status: number, origin: string) {
   return new Response(JSON.stringify(body), {
@@ -219,6 +230,7 @@ function judge0Headers() {
 
 async function getJudgeLanguages(): Promise<JudgeLanguage[]> {
   if (getRunnerBackend() === 'go-judge') return [GO_JUDGE_LANGUAGE];
+  if (getRunnerBackend() === 'builtin') return [BUILTIN_LANGUAGE];
   if (languageCache && languageCache.expiresAt > Date.now()) return languageCache.languages;
 
   let response: Response;
@@ -254,6 +266,10 @@ async function requireJudgeLanguage(languageId: unknown) {
     if (parsedId !== GO_JUDGE_LANGUAGE.id) throw new Error('INVALID_LANGUAGE');
     return GO_JUDGE_LANGUAGE;
   }
+  if (getRunnerBackend() === 'builtin') {
+    if (parsedId !== BUILTIN_LANGUAGE.id) throw new Error('INVALID_LANGUAGE');
+    return BUILTIN_LANGUAGE;
+  }
   const language = (await getJudgeLanguages()).find(item => item.id === parsedId);
   if (!language) throw new Error('INVALID_LANGUAGE');
   return language;
@@ -261,6 +277,7 @@ async function requireJudgeLanguage(languageId: unknown) {
 
 async function defaultPythonLanguage() {
   if (getRunnerBackend() === 'go-judge') return GO_JUDGE_LANGUAGE;
+  if (getRunnerBackend() === 'builtin') return BUILTIN_LANGUAGE;
   const languages = await getJudgeLanguages();
   const python = languages.find(language => /^Python \(3\./i.test(language.name));
   if (!python) throw new Error('PYTHON_RUNTIME_UNAVAILABLE');
@@ -370,6 +387,70 @@ async function judgeCodeGoJudge(
   };
 }
 
+async function judgeCodeBuiltin(
+  code: string,
+  test: TestCase,
+  index: number,
+  _language: JudgeLanguage,
+): Promise<JudgeResult> {
+  const url = Deno.env.get('KAVERI_EXECUTE_URL');
+  const token = Deno.env.get('KAVERI_EXECUTE_TOKEN');
+  if (!url || !token) throw new Error('RUNNER_NOT_CONFIGURED');
+
+  // KAVERI_EXECUTE_URL is the exact endpoint (e.g. https://app.example.com/api/execute).
+  const runUrl = new URL(url);
+  let response: Response;
+  try {
+    response = await fetch(runUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        code,
+        stdin: test.input_data ?? '',
+      }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new Error('RUNNER_TIMEOUT');
+    console.error('secure-grade builtin runner request failed', error);
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  if (!response.ok) {
+    console.error('secure-grade builtin runner returned an error status', response.status);
+    if (response.status === 401 || response.status === 403) throw new Error('RUNNER_NOT_CONFIGURED');
+    throw new Error('RUNNER_UNAVAILABLE');
+  }
+
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== 'object') throw new Error('RUNNER_INVALID_RESPONSE');
+  const result = payload as Record<string, unknown>;
+  const status = String(result.status ?? '');
+  if (!status) throw new Error('RUNNER_INVALID_RESPONSE');
+  const stdout = normalizeOutput(typeof result.stdout === 'string' ? result.stdout : '');
+  const stderr = normalizeOutput(typeof result.stderr === 'string' ? result.stderr : '');
+  const expected = normalizeOutput(test.expected_output);
+  const executionAccepted = status === 'Accepted';
+  const passed = executionAccepted && (test.expected_output === '' || stdout === expected);
+
+  return {
+    id: test.id,
+    index,
+    hidden: test.is_hidden,
+    passed,
+    status: mapGoJudgeStatus(status, passed),
+    timeMs: result.timeMs == null ? null : Math.max(0, Math.round(Number(result.timeMs))),
+    memoryKb: null,
+    input: test.input_data ?? '',
+    expected,
+    actual: stdout,
+    stderr,
+  };
+}
+
 async function judgeCode(
   code: string,
   test: TestCase,
@@ -377,6 +458,7 @@ async function judgeCode(
   language: JudgeLanguage,
 ): Promise<JudgeResult> {
   if (getRunnerBackend() === 'go-judge') return judgeCodeGoJudge(code, test, index, language);
+  if (getRunnerBackend() === 'builtin') return judgeCodeBuiltin(code, test, index, language);
   const url = judge0Url('submissions/');
   url.searchParams.set('base64_encoded', 'true');
   url.searchParams.set('wait', 'true');
