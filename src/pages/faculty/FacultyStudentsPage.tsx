@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle, Users } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { AddToBatchModal } from '../../components/common/AddToBatchModal';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
-import type { Profile, CourseEnrollment, Course, LessonProgress } from '../../types/database';
+import type { Profile, CourseEnrollment, Course, LessonProgress, Batch } from '../../types/database';
 
 type StudentWithProgress = Profile & {
   enrollments?: (CourseEnrollment & { course: Course })[];
@@ -16,11 +18,15 @@ type StudentWithProgress = Profile & {
 
 export default function FacultyStudentsPage() {
   const { profile: faculty } = useAuth();
+  const { success } = useToast();
   const [students, setStudents] = useState<StudentWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [batchModalStudent, setBatchModalStudent] = useState<StudentWithProgress | null>(null);
+  const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!faculty) return;
@@ -41,6 +47,12 @@ export default function FacultyStudentsPage() {
         .filter((course): course is Course => Boolean(course));
       setAssignedCourses(courses);
       const courseIds = courses.map(c => c.id);
+
+      // Batches of my courses (RLS scopes to course_faculty/batch_faculty).
+      if (courseIds.length > 0) {
+        const { data: myBatches } = await supabase.from('batches').select('*').in('course_id', courseIds).order('name');
+        setBatches((myBatches ?? []) as Batch[]);
+      }
 
       if (courseIds.length === 0) {
         setStudents([]);
@@ -221,7 +233,20 @@ export default function FacultyStudentsPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setBatchModalStudent(student);
+                      const { data } = await supabase
+                        .from('batch_students')
+                        .select('batch_id')
+                        .eq('student_id', student.id);
+                      setJoinedBatchIds((data ?? []).map(r => r.batch_id));
+                    }}
+                    className="btn-ghost text-xs flex items-center gap-1"
+                  >
+                    <Users size={12} /> Add to Batch
+                  </button>
                   <Link
                     to={`/faculty/students/${student.id}`}
                     className="btn-primary text-xs"
@@ -234,6 +259,18 @@ export default function FacultyStudentsPage() {
           ))}
         </div>
       )}
+
+      <AddToBatchModal
+        open={!!batchModalStudent}
+        onClose={() => setBatchModalStudent(null)}
+        student={batchModalStudent}
+        batches={batches}
+        joinedBatchIds={joinedBatchIds}
+        onAdded={(batchId, batchName) => {
+          setJoinedBatchIds(ids => [...ids, batchId]);
+          success(`Added to ${batchName}`);
+        }}
+      />
     </div>
   );
 }
