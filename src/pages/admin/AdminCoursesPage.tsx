@@ -17,15 +17,18 @@ export default function AdminCoursesPage() {
   const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python', enrollment_mode: 'open' });
 
   useEffect(() => {
-    supabase.from('courses').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { setCourses((data ?? []) as Course[]); setLoading(false); });
+    // creator: courses.created_by -> profiles (FK embed; staff-only SELECT via RLS)
+    supabase.from('courses').select('*, creator:created_by(full_name, email)').order('created_at', { ascending: false })
+      .then(({ data }) => { setCourses((data ?? []) as unknown as Course[]); setLoading(false); });
   }, []);
 
   const handleCreate = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase.from('courses').insert({
       ...form,
       slug: slugify(form.title),
       is_published: false,
+      created_by: user?.id,
     }).select().maybeSingle();
     if (error) { toastError('Error', error.message); return; }
     if (data) { setCourses(cs => [data as Course, ...cs]); success('Course created!'); setShowModal(false); }
@@ -68,14 +71,16 @@ export default function AdminCoursesPage() {
             <div key={c.id} className="flex items-center gap-4 px-5 py-4">
               <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
                 <BookOpen size={18} className="text-primary-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-900 dark:text-white truncate">{c.title}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
-                  <span className="text-xs text-slate-400">{c.enrollment_count} students · {c.duration_hours}h</span>
+              </div>                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-slate-900 dark:text-white truncate">{c.title}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
+                    <span className="text-xs text-slate-400">{c.enrollment_count} students · {c.duration_hours}h</span>
+                    <span className="text-xs text-slate-400">
+                      · Created by {(c as any).creator?.full_name || (c as any).creator?.email || 'Unknown'}
+                    </span>
+                  </div>
                 </div>
-              </div>
               <div className="flex items-center gap-2">
                 <Badge variant={c.is_published ? 'success' : 'default'}>{c.is_published ? 'Published' : 'Draft'}</Badge>
                 <select

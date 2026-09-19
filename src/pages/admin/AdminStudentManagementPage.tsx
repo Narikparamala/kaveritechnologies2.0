@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, GraduationCap, BookOpen, CheckCircle, Clock, AlertTriangle, Mail, Award } from 'lucide-react';
+import { Search, GraduationCap, BookOpen, CheckCircle, Clock, AlertTriangle, Mail, Award, Users } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
+import { AddToBatchModal } from '../../components/common/AddToBatchModal';
+import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { getAllStudents, getStudentSupportRecords, createSupportRecord } from '../../services/companyManagement';
-import type { Profile, CourseEnrollment, Course, StudentSupportRecord } from '../../types/database';
+import type { Profile, CourseEnrollment, Course, StudentSupportRecord, Batch } from '../../types/database';
 
 type StudentWithDetails = Profile & {
   enrollments?: (CourseEnrollment & { course: Course })[];
@@ -20,6 +22,7 @@ type StudentWithDetails = Profile & {
 
 export default function AdminStudentManagementPage() {
   const navigate = useNavigate();
+  const { success } = useToast();
   const [students, setStudents] = useState<StudentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -29,6 +32,9 @@ export default function AdminStudentManagementPage() {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentWithDetails | null>(null);
   const [saving, setSaving] = useState(false);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [batchModalStudent, setBatchModalStudent] = useState<StudentWithDetails | null>(null);
+  const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadData();
@@ -37,12 +43,14 @@ export default function AdminStudentManagementPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [studentsData, coursesData] = await Promise.all([
+      const [studentsData, coursesData, batchesData] = await Promise.all([
         getAllStudents(),
         supabase.from('courses').select('*').eq('is_published', true).order('title'),
+        supabase.from('batches').select('*').order('name'),
       ]);
 
       setAllCourses((coursesData.data ?? []) as Course[]);
+      setBatches((batchesData.data ?? []) as Batch[]);
       setStudents(studentsData as StudentWithDetails[]);
     } catch (err) {
       if (import.meta.env.DEV) console.error('Failed to load students:', err);
@@ -224,6 +232,19 @@ export default function AdminStudentManagementPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
+                    onClick={async () => {
+                      setBatchModalStudent(student);
+                      const { data } = await supabase
+                        .from('batch_students')
+                        .select('batch_id')
+                        .eq('student_id', student.id);
+                      setJoinedBatchIds((data ?? []).map(r => r.batch_id));
+                    }}
+                    className="btn-ghost text-xs flex items-center gap-1"
+                  >
+                    <Users size={12} /> Add to Batch
+                  </button>
+                  <button
                     onClick={() => handleOpenSupportModal(student)}
                     className="btn-ghost text-xs flex items-center gap-1"
                   >
@@ -241,6 +262,19 @@ export default function AdminStudentManagementPage() {
           ))}
         </div>
       )}
+
+      {/* Add to Batch Modal */}
+      <AddToBatchModal
+        open={!!batchModalStudent}
+        onClose={() => setBatchModalStudent(null)}
+        student={batchModalStudent}
+        batches={batches}
+        joinedBatchIds={joinedBatchIds}
+        onAdded={(batchId, batchName) => {
+          setJoinedBatchIds(ids => [...ids, batchId]);
+          success(`Added to ${batchName}`);
+        }}
+      />
 
       {/* Support Modal */}
       <Modal open={showSupportModal} onClose={() => setShowSupportModal(false)} title="Student Support Records" size="lg">
