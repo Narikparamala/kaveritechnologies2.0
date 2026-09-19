@@ -8,7 +8,7 @@ import {
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../components/ui/Modal';
-import { isCanvaUrl, toCanvaEmbedUrl } from '../../lib/canva';
+import { isCanvaUrl } from '../../lib/canva';
 import {
   updateLesson,
   getLessonTopics, createTopic, updateTopic, deleteTopic,
@@ -445,8 +445,25 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
     setSaving(true);
     try {
       const trimmedUrl = form.external_url.trim();
-      // Store the embeddable form for Canva so students get the inline viewer.
-      const externalUrl = toCanvaEmbedUrl(trimmedUrl)?.embedUrl ?? (trimmedUrl || undefined);
+      let externalUrl: string | undefined = trimmedUrl || undefined;
+      if (trimmedUrl && isCanvaUrl(trimmedUrl)) {
+        // Short links (canva.link/CODE) are opaque — resolve the real design
+        // server-side. Fabricating from the code stores a nonexistent design.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('Session expired — please sign in again.');
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resolve-canva-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ url: trimmedUrl }),
+        });
+        const resolved = await res.json();
+        if (!res.ok) throw new Error(resolved?.error || 'Could not verify the Canva link.');
+        if (!resolved.embedUrl) {
+          throw new Error('This Canva short link could not be resolved. Open it in your browser, copy the full www.canva.com/design/... link it forwards to, and paste that instead.');
+        }
+        externalUrl = resolved.embedUrl;
+      }
       const payload = { ...form, external_url: externalUrl };
       if (editModal.mode === 'create') {
         await createMaterial({ lesson_id: lesson.id, ...payload, description: form.description || undefined, content_text: form.content_text || undefined, external_url: externalUrl, file_url: form.file_url || undefined, file_type: form.file_type || undefined });
