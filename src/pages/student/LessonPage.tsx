@@ -12,7 +12,7 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
-import { detectEmbed, isCanvaUrl, toCanvaEmbedUrl } from '../../lib/mediaEmbeds';
+import { detectEmbed, isCanvaUrl } from '../../lib/mediaEmbeds';
 import { SecureResourceCard } from './workspace/SecureResourceCard';
 import {
   getLessonById, getLessonProgress, markLessonComplete,
