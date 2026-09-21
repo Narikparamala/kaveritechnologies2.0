@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 import type { Course } from '../../types/database';
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'from-emerald-500 to-teal-500',
+  beginner: 'from-teal-500 to-teal-600',
   intermediate: 'from-primary-500 to-primary-700',
   advanced: 'from-slate-700 to-slate-900',
 };
@@ -103,11 +103,11 @@ export default function LandingPage() {
                 coding practice, assignments and quizzes to take you from learning to working.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link to="/courses" className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-4 rounded-2xl hover:bg-primary-50 transition-all hover:shadow-xl hover:-translate-y-0.5 text-base">
+                <Link to="/courses" className="inline-flex items-center gap-2 bg-gold-400 text-primary-800 font-bold px-8 py-4 rounded hover:bg-gold-300 transition-all hover:shadow-glow-gold hover:-translate-y-0.5 text-base">
                   Browse Courses
                   <ArrowRight size={18} />
                 </Link>
-                <Link to="/contact" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded-2xl hover:bg-white/10 transition-all text-base">
+                <Link to="/contact" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded hover:bg-white/10 transition-all text-base">
                   Talk to Us
                 </Link>
               </div>
@@ -348,7 +348,7 @@ print(next_step(my_course))`}
             Create your account, explore our published courses, and talk to our team about the right path for you.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <Link to="/register" className="inline-flex items-center gap-2 bg-white text-primary-700 font-semibold px-8 py-4 rounded-2xl hover:bg-primary-50 transition-all">
+            <Link to="/register" className="inline-flex items-center gap-2 bg-gold-400 text-primary-800 font-bold px-8 py-4 rounded hover:bg-gold-300 transition-all hover:shadow-glow-gold">
               Create Your Account <ArrowRight size={18} />
             </Link>
             <Link to="/courses" className="inline-flex items-center gap-2 border border-white/30 text-white font-semibold px-8 py-4 rounded-2xl hover:bg-white/10 transition-all">

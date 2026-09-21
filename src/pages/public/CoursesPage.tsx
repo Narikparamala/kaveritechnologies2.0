@@ -12,7 +12,7 @@ import { getDifficultyColor } from '../../lib/utils';
 import type { Course } from '../../types/database';
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'from-emerald-500 to-teal-500',
+  beginner: 'from-teal-500 to-teal-600',
   intermediate: 'from-primary-500 to-primary-700',
   advanced: 'from-slate-700 to-slate-900',
 };

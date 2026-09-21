@@ -48,7 +48,12 @@ export function Sidebar({ navItems, basePath, showPortalSwitch = false }: Sideba
           <NavLink
             key={to}
             to={absolute ? to : `${basePath}${to}`}
-            className={({ isActive }) => cn('sidebar-link', isActive && 'active')}
+            className={({ isActive }) =>
+              cn(
+                'sidebar-link',
+                isActive && 'active border-l-4 border-primary-600 dark:border-primary-400 pl-3 rounded-l-none',
+              )
+            }
           >
             <Icon size={17} className="flex-shrink-0" />
             <span className="truncate">{label}</span>
