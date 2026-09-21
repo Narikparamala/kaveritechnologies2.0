@@ -13,7 +13,7 @@ interface ProgressBarProps {
 const colorMap = {
   blue: 'bg-primary-600',
   teal: 'bg-teal-500',
-  green: 'bg-emerald-500',
+  green: 'bg-teal-500',
   amber: 'bg-amber-500',
 };
 

@@ -27,12 +27,12 @@ interface JourneyCourse {
 }
 
 const COURSE_COLORS = [
-  'from-primary-600 to-indigo-700',
-  'from-emerald-600 to-teal-700',
-  'from-violet-600 to-purple-700',
-  'from-rose-600 to-pink-700',
-  'from-amber-600 to-orange-700',
-  'from-sky-600 to-blue-700',
+  'from-primary-600 to-primary-800',
+  'from-teal-500 to-teal-700',
+  'from-primary-500 to-teal-600',
+  'from-teal-600 to-primary-700',
+  'from-gold-400 to-gold-600',
+  'from-sky-500 to-primary-600',
 ];
 
 function stateIcon(item: LessonPlanItem) {

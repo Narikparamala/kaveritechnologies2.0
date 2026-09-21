@@ -136,7 +136,7 @@ export default function AdminStudentManagementPage() {
           <p className="text-xs text-slate-500">Top Learner ({xpLeader?.xp_points || 0} XP)</p>
         </div>
         <div className="card p-4">
-          <BookOpen className="text-purple-500 mb-2" size={20} />
+          <BookOpen className="text-teal-500 mb-2" size={20} />
           <p className="text-2xl font-bold text-slate-900 dark:text-white">{allCourses.length}</p>
           <p className="text-xs text-slate-500">Available Courses</p>
         </div>

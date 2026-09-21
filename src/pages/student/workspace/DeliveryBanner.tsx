@@ -52,10 +52,10 @@ export function DeliveryBanner({ lesson, sessions }: DeliveryBannerProps) {
 
   if (state === 'recorded') {
     return (
-      <div className="flex items-start gap-3 p-4 rounded-xl border border-purple-200 dark:border-purple-800/50 bg-purple-50/70 dark:bg-purple-900/20">
-        <Film size={18} className="text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
+      <div className="flex items-start gap-3 p-4 rounded-xl border border-teal-200 dark:border-teal-800/50 bg-teal-50/70 dark:bg-teal-900/20">
+        <Film size={18} className="text-teal-600 dark:text-teal-400 flex-shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">Recorded lesson</p>
+          <p className="text-sm font-semibold text-teal-700 dark:text-teal-300">Recorded lesson</p>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
             Watch the recording below at your own pace — slides, notes and quizzes are all available here.
           </p>

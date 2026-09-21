@@ -206,10 +206,10 @@ export default function ContentImportPage() {
   const activeTab = useMemo(() => TABS.find(t => t.id === tab)!, [tab]);
 
   if (!profile) {
-    return <div className="p-8 text-sm text-slate-500">Loading…</div>;
+    return <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
   }
   if (!isStaff) {
-    return    <div className="p-8 text-sm text-slate-500">Staff only.</div>;
+    return    <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Staff only.</div>;
   }
 
   const template = tab === 'questions' ? QUESTIONS_CSV_TEMPLATE : tab === 'quizzes' ? QUIZZES_CSV_TEMPLATE : LESSONS_CSV_TEMPLATE;
@@ -232,12 +232,12 @@ export default function ContentImportPage() {
             key={t.id}
             onClick={() => { setTab(t.id); reset(); }}
             className={`rounded-xl border p-4 text-left transition ${
-              tab === t.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200' : 'border-slate-200 bg-white hover:border-slate-300'
+              tab === t.id ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-200 dark:bg-primary-900/20 dark:ring-primary-800' : 'border-slate-200 bg-white dark:bg-slate-800 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
             }`}
           >
-            <t.icon className="h-5 w-5 text-indigo-600" />
+            <t.icon className="h-5 w-5 text-primary-600 dark:text-primary-400" />
             <p className="mt-2 font-semibold text-slate-900">{t.label}</p>
-            <p className="mt-1 text-xs text-slate-500">{t.description}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t.description}</p>
           </button>
         ))}
       </div>
@@ -245,7 +245,7 @@ export default function ContentImportPage() {
       {/* Course picker for quizzes/lessons */}
       {tab !== 'questions' && tab !== 'ai' && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Course</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Course</label>
           <select
             value={courseId}
             onChange={e => { setCourseId(e.target.value); reset(); }}
@@ -261,9 +261,9 @@ export default function ContentImportPage() {
 
       {/* AI generation */}
       {tab === 'ai' && (
-        <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
-          <p className="font-semibold text-purple-900">Draft questions with AI</p>
-          <p className="mt-1 text-xs text-purple-700">
+        <div className="rounded-xl border border-teal-200 bg-teal-50 p-4">
+          <p className="font-semibold text-teal-900">Draft questions with AI</p>
+          <p className="mt-1 text-xs text-teal-700">
             The AI drafts questions with reference solutions and test cases. Every draft is then
             <strong> executed and validated</strong> before you can import it — the AI never publishes anything.
           </p>
@@ -272,18 +272,18 @@ export default function ContentImportPage() {
               value={aiTopic}
               onChange={e => setAiTopic(e.target.value)}
               placeholder="e.g. for loops and range() — give students variety"
-              className="rounded-lg border border-purple-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-teal-300 px-3 py-2 text-sm"
             />
             <select
               value={aiCount}
               onChange={e => setAiCount(Number(e.target.value))}
-              className="rounded-lg border border-purple-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-teal-300 px-3 py-2 text-sm"
             >
               {[3, 5, 10, 15, 20].map(n => <option key={n} value={n}>{n} questions</option>)}</select>
             <select
               value={aiDifficulty}
               onChange={e => setAiDifficulty(e.target.value as typeof aiDifficulty)}
-              className="rounded-lg border border-purple-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-teal-300 px-3 py-2 text-sm"
             >
               <option value="mixed">Mixed difficulty</option>
               <option value="easy">Easy</option>
@@ -294,27 +294,27 @@ export default function ContentImportPage() {
           <button
             onClick={generateWithAi}
             disabled={aiBusy || aiTopic.trim().length < 3}
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             {aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {aiBusy ? 'Drafting…' : 'Generate drafts'}
           </button>
-          <p className="mt-2 text-xs text-purple-600">Drafts land in the Coding Questions tab — review, validate, then import.</p>
+          <p className="mt-2 text-xs text-teal-600">Drafts land in the Coding Questions tab — review, validate, then import.</p>
         </div>
       )}
 
       {/* CSV input */}
       <div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <label className="text-sm font-medium text-slate-700">Paste your CSV</label>
+          <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Paste your CSV</label>
           <div className="flex gap-2">
             <button
               onClick={() => downloadTemplate(template, templateName)}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
             >
               <Download className="h-3.5 w-3.5" /> Template
             </button>
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
               <Upload className="h-3.5 w-3.5" /> Upload file
               <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
             </label>
@@ -336,7 +336,7 @@ export default function ContentImportPage() {
           <button
             onClick={validateQuestions}
             disabled={busy || !csv.trim()}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 hover:bg-primary-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Validate &amp; preview
@@ -361,7 +361,7 @@ export default function ContentImportPage() {
           <button
             onClick={doImport}
             disabled={busy || !csv.trim() || !courseId}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 hover:bg-primary-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             Import
@@ -376,7 +376,7 @@ export default function ContentImportPage() {
 
       {/* Question validation results */}
       {validated && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="card rounded-xl p-4">
           <p className="font-semibold text-slate-900">Validation results</p>
           <div className="mt-3 space-y-2">
             {validated.map(v => (
@@ -386,7 +386,7 @@ export default function ContentImportPage() {
                   <p className="font-medium text-slate-900">{v.row.title}</p>
                   {!v.ok && <p className="text-xs text-red-700">{v.error}</p>}
                   {v.ok && v.testResults && (
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       {v.testResults.filter(t => t.passed).length}/{v.testResults.length} tests passed by execution
                     </p>
                   )}
@@ -399,7 +399,7 @@ export default function ContentImportPage() {
 
       {summary && !validated && <IssueList issues={summary.issues} />}
       {summary && validated && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
+        <div className="card rounded-xl p-4 text-sm">
           <p>
             Imported <span className="font-semibold text-emerald-700">{summary.created}</span>
             {summary.failed > 0 && <> · failed <span className="font-semibold text-red-700">{summary.failed}</span></>}
@@ -408,8 +408,8 @@ export default function ContentImportPage() {
         </div>
       )}
 
-      <p className="text-xs text-slate-500">
-        Need a place to see the results? <Link to="/faculty/questions" className="text-indigo-600 underline">Faculty question bank →</Link>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Need a place to see the results? <Link to="/faculty/questions" className="text-primary-600 dark:text-primary-400 underline">Faculty question bank →</Link>
       </p>
     </div>
   );

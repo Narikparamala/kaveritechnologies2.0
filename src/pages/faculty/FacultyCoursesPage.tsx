@@ -156,7 +156,7 @@ export default function FacultyCoursesPage() {
                 <CourseThumbnail src={c.thumbnail_url} alt={c.title} />
 
                 <div className="absolute left-3 top-3">
-                  <span className={`badge border border-white/60 text-xs shadow-sm ${c.is_published ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-600'}`}>
+                  <span className={`badge border border-white/60 text-xs shadow-sm ${c.is_published ? 'bg-teal-100 text-teal-700' : 'bg-white text-slate-600'}`}>
                     {c.is_published ? 'Published' : 'Draft'}
                   </span>
                 </div>

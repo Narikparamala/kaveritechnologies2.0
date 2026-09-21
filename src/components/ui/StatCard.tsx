@@ -30,7 +30,7 @@ export function StatCard({
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
           {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{subtitle}</p>}
           {trend && (
-            <p className={cn('text-xs font-medium mt-1.5', trend.value >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+            <p className={cn('text-xs font-medium mt-1.5', trend.value >= 0 ? 'text-teal-600' : 'text-red-500')}>
               {trend.value >= 0 ? '+' : ''}{trend.value}% {trend.label}
             </p>
           )}

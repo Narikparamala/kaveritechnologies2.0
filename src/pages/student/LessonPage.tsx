@@ -209,7 +209,7 @@ export default function LessonPage() {
             <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
               +{lesson.xp_reward} XP
             </span>
-            <span className={`badge text-xs ${lesson.teaching_mode === 'live_class' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+            <span className={`badge text-xs ${lesson.teaching_mode === 'live_class' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'}`}>
               {lesson.teaching_mode === 'live_class' ? 'Live Class' : 'Recorded'}
             </span>
           </div>

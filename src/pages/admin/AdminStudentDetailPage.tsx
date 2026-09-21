@@ -161,7 +161,7 @@ export default function AdminStudentDetailPage() {
               <p className="text-xs text-slate-500">In Progress</p>
             </div>
             <div className="card p-4 text-center">
-              <CheckCircle className="text-purple-600 mx-auto mb-2" size={20} />
+              <CheckCircle className="text-teal-600 mx-auto mb-2" size={20} />
               <p className="text-xl font-bold text-slate-900 dark:text-white">{completedCourses}</p>
               <p className="text-xs text-slate-500">Completed</p>
             </div>
