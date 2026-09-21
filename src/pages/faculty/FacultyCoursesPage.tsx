@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Users, Settings, Plus, AlertCircle } from 'lucide-react';
+import { BookOpen, Users, Settings, Plus, AlertCircle, Copy } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
@@ -68,6 +68,23 @@ export default function FacultyCoursesPage() {
   }, [profile]);
 
   useEffect(() => { loadCourses(); }, [loadCourses]);
+
+  const cloneCourse = async (course: Course) => {
+    const title = window.prompt(`Clone "${course.title}" — new course title:`, `Copy of ${course.title}`);
+    if (title === null) return;
+    if (title.trim().length < 3) { toastError('Clone failed', 'Title must be at least 3 characters.'); return; }
+    setSaving(true);
+    try {
+      const { data: newId, error } = await supabase.rpc('clone_course', { p_source_course_id: course.id, p_course_title: title.trim() });
+      if (error || !newId) { toastError('Clone failed', error?.message ?? 'Unknown error'); return; }
+      const { error: contentError } = await supabase.rpc('clone_course_content', { p_source_course_id: course.id, p_new_course_id: newId });
+      if (contentError) { toastError('Clone failed', `Course shell created but content copy failed: ${contentError.message}`); return; }
+      await loadCourses();
+      success('Course cloned as a draft — review and publish when ready.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleTitleChange = (title: string) => {
     setForm(f => ({ ...f, title, slug: slugEdited ? f.slug : slugify(title) }));
@@ -180,17 +197,26 @@ export default function FacultyCoursesPage() {
                   </Link>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <Link
-                      to="/faculty/assignments"
+                    <button
+                      onClick={() => cloneCourse(c)}
+                      disabled={saving}
                       className="btn-secondary py-2 text-center text-xs"
                     >
-                      Assignments
-                    </Link>
+                      <span className="inline-flex items-center gap-1"><Copy size={12} /> Clone</span>
+                    </button>
                     <Link
                       to="/faculty/quizzes"
                       className="btn-secondary py-2 text-center text-xs"
                     >
                       Quizzes
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <Link
+                      to="/faculty/assignments"
+                      className="btn-secondary py-2 text-center text-xs"
+                    >
+                      Assignments
                     </Link>
                   </div>
                 </div>

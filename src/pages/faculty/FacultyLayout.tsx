@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2
+  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
+  { label: 'Content Import', icon: Upload, to: '/content-import' },
   { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
   { label: 'Coding Submissions', icon: Code2, to: '/coding-submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
