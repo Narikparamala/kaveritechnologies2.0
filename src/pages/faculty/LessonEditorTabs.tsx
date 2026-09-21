@@ -74,7 +74,7 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                 lesson.teaching_mode === 'live_class'
                   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                  : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                  : 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
               }`}>
                 {lesson.teaching_mode === 'live_class' ? <><Monitor size={9} /> Live Class</> : <><Film size={9} /> Recorded</>}
               </span>
@@ -148,7 +148,7 @@ function OverviewTab({ lesson }: { lesson: Lesson }) {
           <div>
             <p className="text-slate-400 text-xs mb-1">Delivery Method</p>
             <div className="flex items-center gap-1.5">
-              {lesson.teaching_mode === 'live_class' ? <Monitor size={14} className="text-blue-500" /> : <Film size={14} className="text-purple-500" />}
+              {lesson.teaching_mode === 'live_class' ? <Monitor size={14} className="text-blue-500" /> : <Film size={14} className="text-teal-500" />}
               <span className="text-slate-900 dark:text-white font-medium">{lesson.teaching_mode === 'live_class' ? 'Live Class' : 'Recorded Video'}</span>
             </div>
           </div>
@@ -1234,7 +1234,7 @@ function SettingsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Co
             </button>
             <button
               onClick={() => handleTeachingModeChange('recorded_video')}
-              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-sm font-medium ${teachingMode === 'recorded_video' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-sm font-medium ${teachingMode === 'recorded_video' ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}
             >
               <Film size={20} />
               <span>Recorded Video</span>
@@ -1247,7 +1247,7 @@ function SettingsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Co
             </p>
           )}
           {teachingMode === 'recorded_video' && (
-            <p className="text-xs text-purple-600 dark:text-purple-400 mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+            <p className="text-xs text-teal-600 dark:text-teal-400 mt-2 p-2 bg-teal-50 dark:bg-teal-900/20 rounded-lg">
               Students watch your recorded video and access slides and notes immediately. No live session required.
             </p>
           )}

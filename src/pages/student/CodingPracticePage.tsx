@@ -326,7 +326,7 @@ function QuestionBank({ onOpen }: { onOpen: (id: string) => void }) {
                   {completedTopics.size > 0 && (
                     completedTopics.has(question.topic.toLowerCase())
                       ? <Badge variant="default" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Recommended</Badge>
-                      : <Badge variant="default" className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Challenge</Badge>
+                      : <Badge variant="default" className="bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">Challenge</Badge>
                   )}
                   {difficultyBadge(question.difficulty)}
                 </div>

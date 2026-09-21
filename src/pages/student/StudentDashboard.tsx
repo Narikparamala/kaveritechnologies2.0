@@ -143,8 +143,8 @@ export default function StudentDashboard() {
           title="Completed Lessons"
           value={completedLessons}
           icon={CheckCircle}
-          iconBg="bg-emerald-50 dark:bg-emerald-900/30"
-          iconColor="text-emerald-600 dark:text-emerald-400"
+          iconBg="bg-teal-50 dark:bg-teal-900/30"
+          iconColor="text-teal-600 dark:text-teal-400"
         />
         <StatCard
           title="XP Points"

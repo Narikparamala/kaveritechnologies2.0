@@ -186,7 +186,7 @@ export default function FacultyStudentDetailPage() {
               <p className="text-xs text-slate-500">Pending Review</p>
             </div>
             <div className="card p-4 text-center">
-              <Award className="text-purple-600 mx-auto mb-2" size={20} />
+              <Award className="text-teal-600 mx-auto mb-2" size={20} />
               <p className="text-xl font-bold text-slate-900 dark:text-white">{profile.streak_days || 0}</p>
               <p className="text-xs text-slate-500">Day Streak</p>
             </div>

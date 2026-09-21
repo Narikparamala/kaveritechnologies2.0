@@ -107,8 +107,8 @@ export default function AdminCompanyOverviewPage() {
           title="Published Courses"
           value={stats.totalCourses}
           icon={BookOpen}
-          iconBg="bg-purple-50 dark:bg-purple-900/30"
-          iconColor="text-purple-600 dark:text-purple-400"
+          iconBg="bg-teal-50 dark:bg-teal-900/30"
+          iconColor="text-teal-600 dark:text-teal-400"
         />
         <StatCard
           title="Upcoming Classes"
@@ -147,7 +147,7 @@ export default function AdminCompanyOverviewPage() {
                 </div>
               </Link>
               <Link to="/admin/performance-reviews" className="flex items-center gap-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                <TrendingUp className="text-purple-600" size={20} />
+                <TrendingUp className="text-teal-600" size={20} />
                 <div>
                   <p className="font-medium text-slate-900 dark:text-white text-sm">Performance</p>
                   <p className="text-xs text-slate-500">Reviews & ratings</p>

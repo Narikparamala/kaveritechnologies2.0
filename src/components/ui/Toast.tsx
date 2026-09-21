@@ -29,14 +29,14 @@ const icons = {
 };
 
 const styles = {
-  success: 'border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200',
+  success: 'border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-200',
   error: 'border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200',
   warning: 'border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200',
   info: 'border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200',
 };
 
 const iconColors = {
-  success: 'text-emerald-500',
+  success: 'text-teal-500',
   error: 'text-red-500',
   warning: 'text-amber-500',
   info: 'text-blue-500',
