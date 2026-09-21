@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Plus, Search, Eye, EyeOff } from 'lucide-react';
+import { BookOpen, Plus, Search, Eye, EyeOff, Copy } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -39,6 +39,23 @@ export default function AdminCoursesPage() {
     if (error) { toastError('Update failed', error.message); return; }
     setCourses(cs => cs.map(c => c.id === id ? { ...c, enrollment_mode: mode as Course['enrollment_mode'] } : c));
     success('Enrolment mode updated');
+  };
+
+  const cloneCourse = async (course: Course) => {
+    const title = window.prompt(`Clone "${course.title}" — new course title:`, `Copy of ${course.title}`);
+    if (title === null) return;
+    if (title.trim().length < 3) { toastError('Clone failed', 'Title must be at least 3 characters.'); return; }
+    const { data: newId, error } = await supabase.rpc('clone_course', { p_source_course_id: course.id, p_course_title: title.trim() });
+    if (error || !newId) { toastError('Clone failed', error?.message ?? 'Unknown error'); return; }
+    const { error: contentError } = await supabase.rpc('clone_course_content', { p_source_course_id: course.id, p_new_course_id: newId });
+    if (contentError) {
+      // Leave the empty shell — staff can delete it; do not pretend it worked.
+      toastError('Clone failed', `Course shell created but content copy failed: ${contentError.message}`);
+      return;
+    }
+    const { data: created } = await supabase.from('courses').select('*').eq('id', newId).maybeSingle();
+    if (created) setCourses(cs => [created as Course, ...cs]);
+    success('Course cloned as a draft — review and publish when ready.');
   };
 
   const togglePublish = async (id: string, current: boolean) => {
@@ -94,6 +111,13 @@ export default function AdminCoursesPage() {
                   <option value="approval_required">Approval required</option>
                   <option value="closed">Closed</option>
                 </select>
+                <button
+                  onClick={() => cloneCourse(c)}
+                  title="Clone this course with all chapters, lessons and quizzes"
+                  className="btn-ghost py-1.5 px-3 text-xs flex items-center gap-1"
+                >
+                  <Copy size={12} /> Clone
+                </button>
                 <button
                   onClick={() => togglePublish(c.id, c.is_published)}
                   className="btn-ghost py-1.5 px-3 text-xs flex items-center gap-1"

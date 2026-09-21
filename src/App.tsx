@@ -78,6 +78,7 @@ const FacultyEnrollmentRequestsPage = lazy(() => import('./pages/faculty/Faculty
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
 const FacultyAssignmentsPage = lazy(() => import('./pages/faculty/FacultyAssignmentsPage'));
 const FacultyQuestionBankPage = lazy(() => import('./pages/faculty/FacultyQuestionBankPage'));
+const ContentImportPage = lazy(() => import('./pages/faculty/ContentImportPage'));
 const FacultyAssignmentBuilderPage = lazy(() => import('./pages/faculty/FacultyAssignmentBuilderPage'));
 const FacultyQuizzesPage = lazy(() => import('./pages/faculty/FacultyQuizzesPage'));
 const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPage'));
@@ -294,6 +295,7 @@ export default function App() {
                     <Route path="assignments" element={<FacultyAssignmentsPage />} />
                     <Route path="question-bank" element={<FacultyQuestionBankPage />} />
                     <Route path="question-bank/editor/:questionId" element={<FacultyQuestionBankPage />} />
+                    <Route path="content-import" element={<ContentImportPage />} />
                     <Route path="assignments/new" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="assignments/builder/:assignmentId" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="submissions" element={<SubmissionsPage />} />
@@ -339,6 +341,7 @@ export default function App() {
                     <Route path="faculty" element={<AdminFacultyPage />} />
                     <Route path="batches" element={<AdminBatchesPage />} />
                     <Route path="courses" element={<AdminCoursesPage />} />
+                    <Route path="content-import" element={<ContentImportPage />} />
                     <Route path="live-classes" element={<AdminLiveClassesPage />} />
                     <Route path="live-classes/create" element={<AdminLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/edit" element={<AdminLiveSessionFormPage />} />
