@@ -36,6 +36,8 @@ export interface Course {
   certificate_eligible: boolean;
   language: string;
   enrollment_mode: CourseEnrollmentMode;
+  /** Course-wide lesson progression default; 'per_lesson' defers to each lesson's unlock_rule. */
+  progression_mode: 'per_lesson' | 'open' | 'sequential' | 'gated';
   created_by: string | null;
   created_at: string;
   updated_at: string;
