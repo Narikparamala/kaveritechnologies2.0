@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Video, Link2, FileText,
   ClipboardList, HelpCircle, FolderKanban, Award, Megaphone, Bell,
   BarChart2, Trophy, Settings, User, Building2, DollarSign, UserCheck, Briefcase, Inbox,
-  CalendarCheck2, Users2, Code2, Upload,
+  CalendarCheck2, Users2, Code2, Upload, Terminal,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Coding Submissions', icon: Code2, to: '/coding-submissions' },
+  { label: 'Coding Practice', icon: Terminal, to: '/coding-practice' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
   { label: 'Certificates', icon: Award, to: '/certificates' },

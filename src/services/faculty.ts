@@ -231,6 +231,7 @@ export async function getFacultyQuizzes(facultyId: string): Promise<(Quiz & { co
 export async function createQuiz(input: {
   course_id: string;
   lesson_id?: string | null;
+  chapter_id?: string | null;
   title: string;
   description?: string;
   pass_percentage?: number;
@@ -241,6 +242,7 @@ export async function createQuiz(input: {
   const { data, error } = await supabase.from('quizzes').insert({
     ...input,
     lesson_id: input.lesson_id ?? null,
+    chapter_id: input.chapter_id ?? null,
     pass_percentage: input.pass_percentage ?? 70,
     time_limit_minutes: input.time_limit_minutes ?? null,
     is_published: input.is_published ?? false,
@@ -710,6 +712,27 @@ export async function getLessonQuizzes(lessonId: string): Promise<Quiz[]> {
     .from('quizzes').select('*').eq('lesson_id', lessonId).order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Quiz[];
+}
+
+// ============================================================
+// Chapter-level content (CCBP-style chapter steps)
+// ============================================================
+
+export async function getChapterQuizzes(chapterId: string): Promise<Quiz[]> {
+  const { data, error } = await supabase
+    .from('quizzes').select('*').eq('chapter_id', chapterId).order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Quiz[];
+}
+
+export async function getChapterCodingQuestions(chapterId: string): Promise<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number }[]> {
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, is_published, default_marks')
+    .eq('chapter_id', chapterId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as any;
 }
 
 export async function getLessonAssignments(lessonId: string): Promise<Assignment[]> {
