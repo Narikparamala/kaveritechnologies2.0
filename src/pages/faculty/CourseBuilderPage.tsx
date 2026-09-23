@@ -16,6 +16,7 @@ import {
   getCourseChapters, getChapterLessonsAll, createChapter, updateChapter, deleteChapter,
   createLesson, updateLesson, deleteLesson, deleteCourseWithContent,
   createQuiz, updateQuiz, deleteQuiz, getChapterQuizzes, getChapterCodingQuestions,
+  getBankQuestionsNotInChapter,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
 import type { Course, Chapter, Lesson, Quiz, TeachingMode } from '../../types/database';
@@ -58,6 +59,7 @@ export default function CourseBuilderPage() {
   const [quizModal, setQuizModal] = useState<{ chapterId: string; quiz?: Quiz } | null>(null);
   const [quizForm, setQuizForm] = useState({ title: '', description: '', pass_percentage: 70, time_limit_minutes: '', is_published: false });
   const [quizDeleteTarget, setQuizDeleteTarget] = useState<Quiz | null>(null);
+  const [practiceChapterId, setPracticeChapterId] = useState<string | null>(null);
   const [courseDeleteModal, setCourseDeleteModal] = useState(false);
   const [courseDeleteConfirm, setCourseDeleteConfirm] = useState('');
   const [deletingCourse, setDeletingCourse] = useState(false);
@@ -508,7 +510,7 @@ export default function CourseBuilderPage() {
                           <button onClick={() => openCreateChapterQuiz(ch.id)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
                             <Plus size={10} /> Quiz
                           </button>
-                          <button onClick={() => navigate(`/faculty/question-bank/editor/new?chapter=${ch.id}&course=${courseId}&returnBuilder=${courseId}`)} className="text-xs text-teal-600 hover:underline flex items-center gap-1">
+                          <button onClick={() => setPracticeChapterId(ch.id)} className="text-xs text-teal-600 hover:underline flex items-center gap-1">
                             <Plus size={10} /> Coding Practice
                           </button>
                         </div>
@@ -523,7 +525,9 @@ export default function CourseBuilderPage() {
 
         {/* Right editor panel */}
         <div className="flex-1 overflow-y-auto">
-          {selectedLesson ? (
+          {practiceChapterId ? (
+            <ChapterPracticeManager chapterId={practiceChapterId} courseId={courseId!} onClose={() => { setPracticeChapterId(null); loadData(); }} onToast={success} onError={m => toastError('Error', m)} />
+          ) : selectedLesson ? (
             <LessonEditorTabs lesson={selectedLesson} course={course} onRefresh={loadData} onEditLesson={() => openEditLesson(selectedLesson.chapter_id, selectedLesson)} onTogglePublish={() => handleTogglePublishLesson(selectedLesson)} onDeleteLesson={() => setDeleteTarget({ type: 'lesson', id: selectedLesson.id, name: selectedLesson.title })} onMoveLesson={(dir) => moveLesson(selectedLesson, dir)} />
           ) : (
             <div className="p-8">
@@ -781,5 +785,144 @@ export default function CourseBuilderPage() {
           </div>
         </div>
       </Modal></div>
+  );
+}
+
+// ============================================================
+// Chapter Practice Manager: pick bank questions into a chapter,
+// arrange them, or create new ones — without leaving the builder.
+// ============================================================
+function ChapterPracticeManager({ chapterId, courseId, onClose, onToast, onError }: {
+  chapterId: string;
+  courseId: string;
+  onClose: () => void;
+  onToast: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [items, setItems] = useState<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; chapter_order_index: number | null }[]>([]);
+  const [bank, setBank] = useState<{ id: string; title: string; difficulty: string; topic: string }[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: ch, error: chErr } = await supabase.from('chapters').select('id, title, course_id').eq('id', chapterId).single();
+      if (chErr) throw chErr;
+      setChapter(ch as Chapter);
+      setItems(await getChapterCodingQuestions(chapterId));
+      setBank(await getBankQuestionsNotInChapter(chapterId));
+    } catch (e: any) { onError(e.message); }
+    setLoading(false);
+  }, [chapterId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addToChapter = async (questionId: string) => {
+    setBusy(true);
+    try {
+      const nextOrder = items.length ? Math.max(...items.map(i => i.chapter_order_index ?? 0)) + 1 : 0;
+      const { error } = await supabase.from('coding_questions')
+        .update({ chapter_id: chapterId, chapter_order_index: nextOrder }).eq('id', questionId);
+      if (error) throw error;
+      onToast('Added to chapter');
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const move = async (item: { id: string; chapter_order_index: number | null }, dir: 'up' | 'down') => {
+    const sorted = [...items].sort((a, b) => (a.chapter_order_index ?? 0) - (b.chapter_order_index ?? 0));
+    const idx = sorted.findIndex(i => i.id === item.id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swap = sorted[swapIdx];
+    setBusy(true);
+    try {
+      await supabase.from('coding_questions').update({ chapter_order_index: item.chapter_order_index ?? idx }).eq('id', swap.id);
+      await supabase.from('coding_questions').update({ chapter_order_index: swap.chapter_order_index ?? swapIdx }).eq('id', item.id);
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const removeFromChapter = async (questionId: string) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('coding_questions')
+        .update({ chapter_id: null, chapter_order_index: null }).eq('id', questionId);
+      if (error) throw error;
+      onToast('Removed from chapter (kept in the bank)');
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const filteredBank = bank.filter(q => !search.trim() || q.title.toLowerCase().includes(search.trim().toLowerCase()) || q.topic.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <div className="p-6 lg:p-8 max-w-4xl mx-auto animate-fade-in">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={onClose} className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Back to builder"><ArrowLeft size={18} /></button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Coding Practice — {chapter?.title}</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Pick questions from the bank, arrange the order, or create new ones. Students see them in this order.</p>
+          </div>
+        </div>
+        <a href={`/faculty/question-bank/editor/new?chapter=${chapterId}&course=${courseId}&returnBuilder=${courseId}`} className="btn-primary text-sm flex items-center gap-1.5 flex-shrink-0"><Plus size={14} /> New Question</a>
+      </div>
+
+      <section className="card p-5 mb-6">
+        <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Chapter questions ({items.length})</h2>
+        {loading ? (
+          <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No questions yet. Add one from the bank below or create a new question.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <button onClick={() => move(item, 'up')} disabled={busy || idx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowUp size={12} /></button>
+                  <button onClick={() => move(item, 'down')} disabled={busy || idx === items.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={12} /></button>
+                </div>
+                <span className="text-xs text-slate-400 font-mono flex-shrink-0">{idx + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{item.difficulty} · {item.default_marks} marks {item.is_published ? '' : '· DRAFT'}</p>
+                </div>
+                <a href={`/faculty/question-bank/editor/${item.id}?returnBuilder=${courseId}`} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit question"><Edit2 size={13} /></a>
+                <button onClick={() => removeFromChapter(item.id)} disabled={busy} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove from chapter"><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card p-5">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Question bank — pick to add</h2>
+          <input className="input text-xs max-w-52" placeholder="Search questions…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {filteredBank.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No bank questions match. Create a new question with the button above.</p>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {filteredBank.map(q => (
+              <div key={q.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{q.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{q.difficulty} · {q.topic}</p>
+                </div>
+                <button onClick={() => addToChapter(q.id)} disabled={busy} className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={12} /> Add</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

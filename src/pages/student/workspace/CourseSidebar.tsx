@@ -148,21 +148,25 @@ export function CourseSidebar() {
                         <span className="text-[10px] text-amber-600 dark:text-amber-400">MCQ Practice · Pass {q.pass_percentage}%</span>
                       </div>
                     </Link>
-                  ))}
-                  {(chapterCodingSteps.get(chapter.id) ?? []).map(cq => (
-                    <Link
-                      key={cq.id}
-                      to={`/student/coding-practice/${cq.id}`}
-                      className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
-                    >
-                      <div className="flex-shrink-0">
-                        {cq.solved ? <CheckCircle size={14} className="text-emerald-500" /> : <TerminalSquare size={14} className="text-teal-500" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{cq.title}</p>
-                        <span className="text-[10px] text-teal-600 dark:text-teal-400">Coding Practice · {cq.default_marks} marks</span>
-                      </div>                      </Link>
-                  ))}
+                  ))}                  {/* CCBP-style: one "Coding Practice" step per chapter opens the question list */}
+                  {(chapterCodingSteps.get(chapter.id) ?? []).length > 0 && (() => {
+                    const steps = chapterCodingSteps.get(chapter.id) ?? [];
+                    const allSolved = steps.every(s => s.solved);
+                    return (
+                      <Link
+                        to={`/student/course/${course.id}/practice/${chapter.id}`}
+                        className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
+                      >
+                        <div className="flex-shrink-0">
+                          {allSolved ? <CheckCircle size={14} className="text-emerald-500" /> : <TerminalSquare size={14} className="text-teal-500" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">Coding Practice — {chapter.title}</p>
+                          <span className="text-[10px] text-teal-600 dark:text-teal-400">Coding Practice · {steps.filter(s => s.solved).length}/{steps.length} solved</span>
+                        </div>
+                      </Link>
+                    );
+                  })()}
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -130,15 +130,18 @@ function makeSlug(title: string) {
   return `${base}-${Date.now().toString().slice(-6)}`;
 }export default function FacultyQuestionBankPage({ basePath = '/faculty/question-bank' }: { basePath?: string }) {
   const { questionId } = useParams<{ questionId?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const chapterParam = searchParams.get('chapter');
+  const returnBuilder = searchParams.get('returnBuilder');
 
   if (questionId) {
-    return <QuestionEditor questionId={questionId} onBack={() => navigate(basePath)} basePath={basePath} />;
+    return <QuestionEditor questionId={questionId} onBack={() => navigate(basePath)} basePath={basePath} attachChapterId={chapterParam} returnBuilderCourseId={returnBuilder} />;
   }
 
   return (
     <QuestionBankList
-      onCreate={() => navigate(`${basePath}/editor/new`)}
+      onCreate={() => navigate(`${basePath}/editor/new${chapterParam ? `?chapter=${chapterParam}${returnBuilder ? `&returnBuilder=${returnBuilder}` : ''}` : ''}`)}
       onEdit={id => navigate(`${basePath}/editor/${id}`)}
     />
   );
@@ -292,7 +295,7 @@ function QuestionBankList({ onCreate, onEdit }: { onCreate: () => void; onEdit: 
   );
 }
 
-function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank' }: { questionId: string; onBack: () => void; basePath?: string }) {
+function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank', attachChapterId, returnBuilderCourseId }: { questionId: string; onBack: () => void; basePath?: string; attachChapterId?: string | null; returnBuilderCourseId?: string | null }) {
   const isNew = questionId === 'new';
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -407,15 +410,36 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
         const { error } = await supabase.from('coding_questions').update(payload).eq('id', id);
         if (error) throw error;
       } else {
+        // Arrived from the course builder's practice manager: attach the new
+        // question to that chapter (next available order slot) on creation.
+        let chapterAttach: { chapter_id: string; chapter_order_index: number } | undefined;
+        if (attachChapterId) {
+          const { data: existing } = await supabase
+            .from('coding_questions')
+            .select('chapter_order_index')
+            .eq('chapter_id', attachChapterId)
+            .order('chapter_order_index', { ascending: false })
+            .limit(1);
+          chapterAttach = {
+            chapter_id: attachChapterId,
+            chapter_order_index: ((existing?.[0]?.chapter_order_index as number | null) ?? -1) + 1,
+          };
+        }
         const { data, error } = await supabase
           .from('coding_questions')
-          .insert({ ...payload, slug: makeSlug(form.title) })
+          .insert({ ...payload, slug: makeSlug(form.title), ...(chapterAttach ?? {}) })
           .select('id')
           .single();
         if (error) throw error;
         id = data.id;
         setSavedQuestionId(id);
-        window.history.replaceState(null, '', `/faculty/question-bank/editor/${id}`);
+        // Return to the builder's practice manager instead of staying in the bank
+        if (attachChapterId && returnBuilderCourseId) {
+          success(isPublished ? 'Question published and added to chapter' : 'Saved and added to chapter');
+          navigate(`/faculty/courses/${returnBuilderCourseId}/builder?lessonId=&practiceChapter=${attachChapterId}`, { replace: true });
+          return id;
+        }
+        window.history.replaceState(null, '', `${basePath}/editor/${id}`);
       }
 
       setForm(current => ({ ...current, is_published: isPublished }));

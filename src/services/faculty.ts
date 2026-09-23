@@ -725,14 +725,30 @@ export async function getChapterQuizzes(chapterId: string): Promise<Quiz[]> {
   return (data ?? []) as Quiz[];
 }
 
-export async function getChapterCodingQuestions(chapterId: string): Promise<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number }[]> {
+export async function getChapterCodingQuestions(chapterId: string): Promise<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; chapter_order_index: number | null }[]> {
   const { data, error } = await supabase
     .from('coding_questions')
-    .select('id, title, difficulty, is_published, default_marks')
+    .select('id, title, difficulty, is_published, default_marks, chapter_order_index')
     .eq('chapter_id', chapterId)
+    .order('chapter_order_index', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as any;
+}
+
+/** Published bank questions not already in this chapter — the picker source. */
+export async function getBankQuestionsNotInChapter(chapterId: string): Promise<{ id: string; title: string; difficulty: string; topic: string }[]> {
+  const { data: inChapter, error: e1 } = await supabase
+    .from('coding_questions').select('id').eq('chapter_id', chapterId);
+  if (e1) throw e1;
+  const exclude = new Set((inChapter ?? []).map(r => r.id));
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, topic')
+    .eq('is_published', true)
+    .order('title', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).filter(q => !exclude.has(q.id));
 }
 
 export async function getLessonAssignments(lessonId: string): Promise<Assignment[]> {

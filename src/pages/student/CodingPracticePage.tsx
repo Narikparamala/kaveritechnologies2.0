@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -126,10 +126,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
 
 export default function CodingPracticePage() {
   const { questionId } = useParams<{ questionId?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const chapterId = searchParams.get('chapter');
+  const courseId = searchParams.get('course');
 
   if (questionId) {
-    return <QuestionWorkspace questionId={questionId} onBack={() => navigate('/student/coding-practice')} />;
+    // Arrived from a chapter practice list: Back returns there; otherwise the global bank.
+    const backTo = chapterId && courseId ? `/student/course/${courseId}/practice/${chapterId}` : '/student/coding-practice';
+    return <QuestionWorkspace questionId={questionId} onBack={() => navigate(backTo)} />;
   }
 
   return <QuestionBank onOpen={id => navigate(`/student/coding-practice/${id}`)} />;
