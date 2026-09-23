@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense, useEffect, useRef, useCallback } from 'react';
+import { useState, Suspense, useEffect, useRef, useCallback } from 'react';
 import {
   Terminal, Play, Square, RotateCcw, Copy, Save, Trash2, BookOpen,
   CheckCircle, Loader2, AlertCircle, Maximize2, Minimize2, Sun, Moon,
@@ -12,8 +12,9 @@ import {
   preloadPyodide, runPython, stopExecution,
   onRuntimeStatus, type RuntimeStatus
 } from '../../services/pythonExecution';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 type Language = 'python' | 'javascript' | 'html' | 'sql' | 'java' | 'c' | 'cpp';
 
@@ -460,7 +461,7 @@ export default function PlaygroundPage() {
             <button onClick={handleReset} title="Reset" className="hover:text-white p-1"><RotateCcw size={13} /></button>
           </div>
           <Suspense fallback={<div className="flex-1 bg-slate-900 flex items-center justify-center text-slate-500 text-sm">Loading editor...</div>}>
-            <MonacoEditor
+            <CodeEditor
               height="100%"
               language={cfg.monaco}
               value={code}

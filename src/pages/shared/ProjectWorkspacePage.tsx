@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Code2, Eye, FileCode2, Loader2, Save } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/ui/Toast';
 import { loadProjectWorkspace, saveWorkspaceFile } from '../../services/projectWorkspace';
 import type { Project, ProjectStarterFile, ProjectWorkspaceFile } from '../../types/database';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react'));
+
 type WorkspaceFile = ProjectStarterFile | ProjectWorkspaceFile;
 
 function editorLanguage(file: WorkspaceFile) {
@@ -81,7 +82,7 @@ export default function ProjectWorkspacePage({ mode }: { mode: 'student' | 'facu
     {!canPreview && <div className="border-b border-amber-800/50 bg-amber-950/40 px-4 py-2 text-xs text-amber-200">Files are saved here. Secure execution for {project.project_type.replaceAll('_', ' ')} projects will be added through an isolated cloud sandbox.</div>}
     <main className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_40%]">
       <aside className="border-r border-slate-800 bg-slate-900 p-2"><p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Files</p>{files.map(file => <button key={file.id} onClick={() => setActiveId(file.id)} className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${active.id === file.id ? 'bg-primary-600' : 'hover:bg-slate-800'}`}><FileCode2 size={14} /><span className="truncate">{file.file_path}</span></button>)}</aside>
-      <section className="min-h-[420px] min-w-0"><Suspense fallback={<div className="p-4">Loading editor…</div>}><MonacoEditor height="100%" theme="vs-dark" language={editorLanguage(active)} value={active.content} onChange={value => updateContent(value ?? '')} options={{ readOnly: !studentMode, minimap: { enabled: false }, automaticLayout: true, fontSize: 14, padding: { top: 14 } }} /></Suspense></section>
+      <section className="min-h-[420px] min-w-0"><Suspense fallback={<div className="p-4">Loading editor…</div>}><CodeEditor height="100%" theme="vs-dark" language={editorLanguage(active)} value={active.content} onChange={value => updateContent(value ?? '')} options={{ readOnly: !studentMode, minimap: { enabled: false }, automaticLayout: true, fontSize: 14, padding: { top: 14 } }} /></Suspense></section>
       {canPreview && <section className="hidden min-w-0 flex-col border-l border-slate-800 bg-white xl:flex"><div className="flex items-center gap-2 bg-slate-900 px-3 py-2 text-xs text-slate-300"><Eye size={14} /> Live Preview</div><iframe title="Project preview" sandbox="allow-scripts" srcDoc={srcDoc} className="h-full w-full bg-white" /></section>}
     </main>
   </div>;

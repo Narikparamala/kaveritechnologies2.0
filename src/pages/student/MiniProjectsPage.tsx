@@ -1,8 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CheckCircle2, Code2, Cpu,
-  Eye, Loader2, RefreshCw, Send, Terminal, XCircle,
+  Eye, GripHorizontal, GripVertical, Loader2, RefreshCw, Send, Terminal, XCircle,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
@@ -10,10 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { getSecureJudgeLanguages, invokeSecureGrader, type JudgeLanguage } from '../../services/secureGrading';
-
-const MonacoEditor = lazy(() =>
-  import('@monaco-editor/react').then(module => ({ default: module.default })),
-);
+import CodeEditor from '../../components/common/CodeEditor';
 
 type VsCodeAssignment = {
   id: string;
@@ -226,6 +223,36 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
   const [submitting, setSubmitting] = useState(false);
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  // Draggable workspace: brief|editor split (x) and editor|results split (y).
+  const shellRef = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<HTMLElement | null>(null);
+  const [splitPct, setSplitPct] = useState(45);
+  const [resultsPct, setResultsPct] = useState(40);
+
+  const startDrag = (e: ReactMouseEvent<HTMLDivElement>, axis: 'x' | 'y') => {
+    e.preventDefault();
+    const isX = axis === 'x';
+    document.body.style.cursor = isX ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      if (isX && shellRef.current) {
+        const rect = shellRef.current.getBoundingClientRect();
+        setSplitPct(Math.min(72, Math.max(24, ((ev.clientX - rect.left) / rect.width) * 100)));
+      } else if (!isX && paneRef.current) {
+        const rect = paneRef.current.getBoundingClientRect();
+        setResultsPct(Math.min(70, Math.max(20, ((rect.bottom - ev.clientY) / rect.height) * 100)));
+      }
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -424,7 +451,11 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(360px,auto)_minmax(560px,auto)] overflow-y-auto lg:grid-cols-[var(--split,47%)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden lg:[--split:45%]">
+      <div
+        ref={shellRef}
+        style={{ '--split': `${splitPct}%` } as CSSProperties}
+        className="grid min-h-0 flex-1 grid-rows-[minmax(360px,auto)_minmax(560px,auto)] overflow-y-auto lg:grid-cols-[var(--split)_6px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
+      >
         <section className="overflow-y-auto p-5 lg:p-7">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant="info">{assignment.marks} marks</Badge>
@@ -451,7 +482,17 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
           )}
         </section>
 
-        <section className="flex min-h-[560px] min-w-0 flex-col bg-slate-950 lg:min-h-0">
+        {/* Draggable splitter: brief | workspace (desktop). */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          onMouseDown={e => startDrag(e, 'x')}
+          className="hidden w-1.5 flex-none cursor-col-resize items-center justify-center bg-slate-200 transition-colors hover:bg-primary-500 dark:bg-slate-800 dark:hover:bg-primary-600 lg:flex"
+        >
+          <GripVertical size={12} className="text-slate-400 dark:text-slate-600" />
+        </div>
+
+        <section ref={paneRef} className="flex min-h-[560px] min-w-0 flex-col bg-slate-950 lg:min-h-0">
           <div className="flex h-11 flex-none items-center justify-between border-b border-slate-800 px-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Terminal size={14} className="text-primary-400" />
@@ -464,26 +505,22 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
             )}
           </div>
           <div className="min-h-[280px] flex-1 lg:min-h-0">
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading editor...</div>}>
-              <MonacoEditor
-                height="100%"
-                language="python"
-                theme="vs-dark"
-                value={code}
-                onChange={value => setCode(value ?? '')}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  automaticLayout: true,
-                  padding: { top: 14 },
-                  scrollBeyondLastLine: false,
-                  wordWrap: 'on',
-                }}
-              />
-            </Suspense>
+            <CodeEditor value={code} onChange={setCode} language="python" />
           </div>
 
-          <div className="flex h-[320px] min-h-[240px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[40%]">
+          {/* Draggable splitter: editor | sample results (desktop). */}
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            onMouseDown={e => startDrag(e, 'y')}
+            className="hidden h-1.5 flex-none cursor-row-resize items-center justify-center bg-slate-800 transition-colors hover:bg-primary-600 lg:flex"
+          >
+            <GripHorizontal size={12} className="text-slate-600" />
+          </div>
+          <div
+            style={{ '--rp': `${resultsPct}%` } as CSSProperties}
+            className="flex h-[320px] min-h-[240px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[var(--rp)] lg:min-h-[120px]"
+          >
             <div className="flex flex-none items-center justify-between border-b border-slate-800 px-3 py-2">
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
                 <Eye size={13} className="text-primary-400" /> Sample test results

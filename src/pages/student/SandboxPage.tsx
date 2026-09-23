@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import { useState, Suspense, useEffect, useRef } from 'react';
 import {
   Code, Play, Square, FolderOpen, Terminal, Plus, X,
   Trash2, Loader2, AlertCircle
@@ -7,8 +7,9 @@ import {
   preloadPyodide, runPython, stopExecution,
   onRuntimeStatus, type RuntimeStatus
 } from '../../services/pythonExecution';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 const SAMPLE_FILES: Record<string, string> = {
   'main.py': '# Main entry point\n\ndef greet(name: str) -> str:\n    """Return a friendly greeting."""\n    return f"Hello, {name}! Welcome to the Code Sandbox."\n\ndef add(a: int, b: int) -> int:\n    """Add two numbers."""\n    return a + b\n\nif __name__ == "__main__":\n    message = greet("Python Developer")\n    print(message)\n    \n    result = add(10, 20)\n    print(f"10 + 20 = {result}")\n',
@@ -229,7 +230,7 @@ export default function SandboxPage() {
           {/* Editor */}
           {activeTab && files[activeTab] !== undefined ? (
             <Suspense fallback={<div className="flex-1 bg-slate-950" />}>
-              <MonacoEditor
+              <CodeEditor
                 height="100%"
                 language={activeTab.endsWith('.py') ? 'python' : 'plaintext'}
                 value={files[activeTab]}

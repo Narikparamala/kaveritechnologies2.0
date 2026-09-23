@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense, useRef, useCallback } from 'react';
+import { useEffect, useState, Suspense, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, ChevronRight, CheckCircle, Bookmark, BookmarkCheck, ArrowLeft,
@@ -24,8 +24,9 @@ import type {
   Lesson, Chapter, Course, LessonProgress, LessonNote, LessonResource,
   LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession
 } from '../../types/database';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 export default function LessonPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
@@ -314,7 +315,7 @@ export default function LessonPage() {
             <span className="text-xs text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">Python</span>
           </div>
           <Suspense fallback={<div className="h-48 bg-slate-900 flex items-center justify-center text-slate-500 text-sm">Loading editor...</div>}>
-            <MonacoEditor
+            <CodeEditor
               height="220px"
               language="python"
               value={lesson.code_example}
@@ -547,7 +548,7 @@ export default function LessonPage() {
       </div>
       <div className="flex-1 min-h-0">
         <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
-          <MonacoEditor
+          <CodeEditor
             height="100%"
             language="python"
             theme="vs-dark"
@@ -644,7 +645,7 @@ export default function LessonPage() {
             <div className="h-full flex flex-col bg-slate-900">
               <div className="flex-1 min-h-0">
                 <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
-                  <MonacoEditor
+                  <CodeEditor
                     height="100%"
                     language="python"
                     theme="vs-dark"

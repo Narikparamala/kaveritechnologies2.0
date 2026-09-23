@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -38,10 +38,7 @@ import {
   type SecurePracticeResult,
   type SecureTestResult,
 } from '../../services/secureGrading';
-
-const MonacoEditor = lazy(() =>
-  import('@monaco-editor/react').then(module => ({ default: module.default })),
-);
+import CodeEditor from '../../components/common/CodeEditor';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -803,23 +800,13 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             </label>
           </div>
           <div className="min-h-[320px] flex-1 lg:min-h-0">
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading editor...</div>}>
-              <MonacoEditor
-                height="100%"
-                language={editorLanguage.monaco}
-                theme="vs-dark"
-                value={code}
-                onChange={value => setCode(value ?? '')}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  automaticLayout: true,
-                  padding: { top: 14 },
-                  scrollBeyondLastLine: false,
-                  wordWrap: 'on',
-                }}
-              />
-            </Suspense>
+            <CodeEditor
+              height="100%"
+              language={editorLanguage.monaco}
+              theme="vs-dark"
+              value={code}
+              onChange={value => setCode(value ?? '')}
+            />
           </div>
 
           <div className="flex h-[390px] min-h-[300px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%]">
