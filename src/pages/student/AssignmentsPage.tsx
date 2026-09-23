@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Calendar,
@@ -42,8 +42,9 @@ import type {
   AssignmentTestCase,
   Course,
 } from '../../types/database';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(module => ({ default: module.default })));
+
 
 type AssignmentListItem = Assignment & {
   course: Course;
@@ -496,7 +497,7 @@ function AssignmentWorkspace({
         <section className="flex w-1/2 flex-col bg-slate-950">
           <div className="min-h-0 flex-1">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400">Loading code editor...</div>}>
-              <MonacoEditor height="100%" language="python" theme="vs-dark" value={code} onChange={value => updateCode(value ?? '')} options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, readOnly }} />
+              <CodeEditor height="100%" language="python" theme="vs-dark" value={code} onChange={value => updateCode(value ?? '')} options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, padding: { top: 16 }, automaticLayout: true, readOnly }} />
             </Suspense>
           </div>
           <div className="flex h-80 flex-col border-t border-slate-800 bg-slate-900">

@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import {
   Code, FileText, BarChart3, Play, RotateCcw, Copy, Square, Terminal,
   Zap, Trophy, Flame, BookmarkCheck, Clock, Video, Target, TrendingUp,
@@ -8,8 +8,9 @@ import { useWorkspace } from './WorkspaceContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import { runPython, onRuntimeStatus, type RuntimeStatus } from '../../../services/pythonExecution';
+import CodeEditor from '../../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react'));
+
 
 type TabKey = 'code' | 'notes' | 'progress';
 
@@ -150,7 +151,7 @@ function PlaygroundTab() {
             <Loader2 className="animate-spin text-slate-500" size={20} />
           </div>
         }>
-          <MonacoEditor
+          <CodeEditor
             language="python"
             theme="vs-dark"
             value={code}
