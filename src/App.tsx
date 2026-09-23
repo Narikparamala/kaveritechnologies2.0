@@ -42,6 +42,7 @@ const RoadmapPage = lazy(() => import('./pages/student/RoadmapPage'));
 const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
 const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
+const ChapterPracticePage = lazy(() => import('./pages/student/ChapterPracticePage'));
 const MiniProjectsPage = lazy(() => import('./pages/student/MiniProjectsPage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
@@ -250,6 +251,7 @@ export default function App() {
                     <Route path="live-classes" element={<LiveClassesPage />} />
                     <Route path="live-classes/:sessionId" element={<LiveSessionDetailPage />} />
                     <Route path="roadmap" element={<RoadmapPage />} />
+                    <Route path="course/:courseId/practice/:chapterId" element={<ChapterPracticePage />} />
                     <Route path="playground" element={<PlaygroundPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
