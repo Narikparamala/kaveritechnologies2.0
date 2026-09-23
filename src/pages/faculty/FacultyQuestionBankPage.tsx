@@ -128,20 +128,18 @@ function makeSlug(title: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'coding-question';
   return `${base}-${Date.now().toString().slice(-6)}`;
-}
-
-export default function FacultyQuestionBankPage() {
+}export default function FacultyQuestionBankPage({ basePath = '/faculty/question-bank' }: { basePath?: string }) {
   const { questionId } = useParams<{ questionId?: string }>();
   const navigate = useNavigate();
 
   if (questionId) {
-    return <QuestionEditor questionId={questionId} onBack={() => navigate('/faculty/question-bank')} />;
+    return <QuestionEditor questionId={questionId} onBack={() => navigate(basePath)} basePath={basePath} />;
   }
 
   return (
     <QuestionBankList
-      onCreate={() => navigate('/faculty/question-bank/editor/new')}
-      onEdit={id => navigate(`/faculty/question-bank/editor/${id}`)}
+      onCreate={() => navigate(`${basePath}/editor/new`)}
+      onEdit={id => navigate(`${basePath}/editor/${id}`)}
     />
   );
 }
@@ -294,7 +292,7 @@ function QuestionBankList({ onCreate, onEdit }: { onCreate: () => void; onEdit: 
   );
 }
 
-function QuestionEditor({ questionId, onBack }: { questionId: string; onBack: () => void }) {
+function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank' }: { questionId: string; onBack: () => void; basePath?: string }) {
   const isNew = questionId === 'new';
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -561,7 +559,7 @@ function QuestionEditor({ questionId, onBack }: { questionId: string; onBack: ()
         </section>
 
         <div className="flex flex-col justify-end gap-3 sm:flex-row">
-          <button className="btn-secondary" onClick={() => navigate('/faculty/question-bank')}>Cancel</button>
+          <button className="btn-secondary" onClick={() => navigate(basePath)}>Cancel</button>
           <button disabled={saving} className="btn-secondary flex items-center justify-center gap-2" onClick={() => void saveQuestion(false)}><Save size={16} /> Save Draft</button>
           <button disabled={saving} className="btn-primary flex items-center justify-center gap-2" onClick={() => void saveQuestion(true)}><CheckCircle2 size={16} /> Publish Question</button>
         </div>

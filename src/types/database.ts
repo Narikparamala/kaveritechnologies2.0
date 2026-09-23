@@ -339,6 +339,7 @@ export interface Quiz {
   id: string;
   course_id: string;
   lesson_id: string | null;
+  chapter_id: string | null;
   title: string;
   description: string | null;
   pass_percentage: number;

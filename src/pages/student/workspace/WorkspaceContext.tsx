@@ -8,9 +8,31 @@ export interface ChapterWithLessons extends Chapter {
   lessons: Lesson[];
 }
 
+/** Chapter-level quiz step (CCBP-style MCQ Practice). */
+export interface ChapterQuizStep {
+  id: string;
+  title: string;
+  description: string | null;
+  pass_percentage: number;
+  xp_reward: number;
+  time_limit_minutes: number | null;
+  passed: boolean;
+}
+
+/** Chapter-level coding practice step. */
+export interface ChapterCodingStep {
+  id: string;
+  title: string;
+  difficulty: string;
+  default_marks: number;
+  solved: boolean;
+}
+
 interface WorkspaceState {
   course: Course | null;
   chapters: ChapterWithLessons[];
+  chapterQuizSteps: Map<string, ChapterQuizStep[]>;
+  chapterCodingSteps: Map<string, ChapterCodingStep[]>;
   currentLesson: Lesson | null;
   currentChapter: Chapter | null;
   accessMap: Map<string, LessonAccessInfo>;
@@ -60,6 +82,8 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
 
   const [course, setCourse] = useState<Course | null>(null);
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
+  const [chapterQuizSteps, setChapterQuizSteps] = useState<Map<string, ChapterQuizStep[]>>(new Map());
+  const [chapterCodingSteps, setChapterCodingSteps] = useState<Map<string, ChapterCodingStep[]>>(new Map());
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
   const [accessMap, setAccessMap] = useState<Map<string, LessonAccessInfo>>(new Map());
@@ -147,6 +171,57 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
         lessons: lessons.filter(l => l.chapter_id === ch.id),
       }));
       setChapters(chaptersWithLessons);
+
+      // Chapter-level practice steps (CCBP-style): published chapter quizzes
+      // and coding questions with this student's completion state.
+      const chapterIds = chaps.map(c => c.id);
+      if (chapterIds.length > 0) {
+        const [cQuizRes, cqRes, cqaRes, myQuizAttempts] = await Promise.all([
+          supabase.from('quizzes').select('id, chapter_id, title, description, pass_percentage, xp_reward, time_limit_minutes')
+            .in('chapter_id', chapterIds).eq('is_published', true).is('lesson_id', null),
+          supabase.from('coding_questions').select('id, chapter_id, title, difficulty, default_marks')
+            .in('chapter_id', chapterIds).eq('is_published', true),
+          supabase.from('coding_question_attempts').select('question_id, first_solved_at'),
+          supabase.from('quiz_attempts').select('quiz_id, passed').eq('student_id', profile.id),
+        ]);
+
+        const passedQuizIds = new Set(
+          ((myQuizAttempts.data ?? []) as Array<{ quiz_id: string; passed: boolean | null }>)
+            .filter(a => a.passed).map(a => a.quiz_id)
+        );
+        const solvedQuestionIds = new Set(
+          ((cqaRes.data ?? []) as Array<{ question_id: string; first_solved_at: string | null }>)
+            .filter(a => a.first_solved_at).map(a => a.question_id)
+        );
+
+        const qSteps = new Map<string, ChapterQuizStep[]>();
+        ((cQuizRes.data ?? []) as Array<any>).forEach(q => {
+          if (!q.chapter_id) return;
+          const list = qSteps.get(q.chapter_id) ?? [];
+          list.push({
+            id: q.id, title: q.title, description: q.description,
+            pass_percentage: q.pass_percentage, xp_reward: q.xp_reward,
+            time_limit_minutes: q.time_limit_minutes, passed: passedQuizIds.has(q.id),
+          });
+          qSteps.set(q.chapter_id, list);
+        });
+        setChapterQuizSteps(qSteps);
+
+        const cSteps = new Map<string, ChapterCodingStep[]>();
+        ((cqRes.data ?? []) as Array<any>).forEach(q => {
+          if (!q.chapter_id) return;
+          const list = cSteps.get(q.chapter_id) ?? [];
+          list.push({
+            id: q.id, title: q.title, difficulty: q.difficulty,
+            default_marks: q.default_marks, solved: solvedQuestionIds.has(q.id),
+          });
+          cSteps.set(q.chapter_id, list);
+        });
+        setChapterCodingSteps(cSteps);
+      } else {
+        setChapterQuizSteps(new Map());
+        setChapterCodingSteps(new Map());
+      }
 
       // Auto-select first available incomplete lesson (skip locked ones)
       const flat = chaptersWithLessons.flatMap(c => c.lessons);
@@ -284,7 +359,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   }, [currentLesson, profile, isBookmarked]);
 
   const value: WorkspaceContextType = {
-    course, chapters, currentLesson, currentChapter,
+    course, chapters, chapterQuizSteps, chapterCodingSteps, currentLesson, currentChapter,
     accessMap, progress, courseProgress, lessonProgress, lessonNote,
     isBookmarked, resources, topics, practiceQuestions,
     lessonQuizzes, lessonAssignments, lessonSessions,

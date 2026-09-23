@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor, Lock, HelpCircle, TerminalSquare } from 'lucide-react';
 import { useWorkspace } from './WorkspaceContext';
 
 export function CourseSidebar() {
-  const { course, chapters, currentLesson, accessMap, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
+  const { course, chapters, chapterQuizSteps, chapterCodingSteps, currentLesson, accessMap, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
     if (!currentLesson) return new Set();
     return new Set([currentLesson.chapter_id]);
@@ -131,6 +132,37 @@ export function CourseSidebar() {
                       </button>
                     );
                   })}
+
+                  {/* Chapter-level steps: quizzes (MCQ practice) then coding practice — CCBP order */}
+                  {(chapterQuizSteps.get(chapter.id) ?? []).map(q => (
+                    <Link
+                      key={q.id}
+                      to={`/student/quizzes?quizId=${q.id}&returnTo=${encodeURIComponent(`/student/course/${course.id}`)}`}
+                      className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
+                    >
+                      <div className="flex-shrink-0">
+                        {q.passed ? <CheckCircle size={14} className="text-emerald-500" /> : <HelpCircle size={14} className="text-amber-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{q.title}</p>
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400">MCQ Practice · Pass {q.pass_percentage}%</span>
+                      </div>
+                    </Link>
+                  ))}
+                  {(chapterCodingSteps.get(chapter.id) ?? []).map(cq => (
+                    <Link
+                      key={cq.id}
+                      to={`/student/coding-practice/${cq.id}`}
+                      className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
+                    >
+                      <div className="flex-shrink-0">
+                        {cq.solved ? <CheckCircle size={14} className="text-emerald-500" /> : <TerminalSquare size={14} className="text-teal-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{cq.title}</p>
+                        <span className="text-[10px] text-teal-600 dark:text-teal-400">Coding Practice · {cq.default_marks} marks</span>
+                      </div>                      </Link>
+                  ))}
                 </div>
               )}
             </div>

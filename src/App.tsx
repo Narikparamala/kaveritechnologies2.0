@@ -117,6 +117,7 @@ const AdminOfflineExamsPage = lazy(() => import('./pages/admin/AdminOfflineExams
 const AdminLessonsPage = lazy(() => import('./pages/admin/AdminLessonsPage'));
 const AdminAssignmentsPage = lazy(() => import('./pages/admin/AdminAssignmentsPage'));
 const AdminQuizzesPage = lazy(() => import('./pages/admin/AdminQuizzesPage'));
+const AdminCodingPracticePage = lazy(() => import('./pages/admin/AdminCodingPracticePage'));
 const AdminProjectsPage = lazy(() => import('./pages/admin/AdminProjectsPage'));
 const AdminBatchesPage = lazy(() => import('./pages/admin/AdminBatchesPage'));
 const AdminPlacementsPage = lazy(() => import('./pages/admin/AdminPlacementsPage'));
@@ -351,6 +352,8 @@ export default function App() {
                     <Route path="assignments" element={<AdminAssignmentsPage />} />
                     <Route path="coding-submissions" element={<CodingSubmissionsPage />} />
                     <Route path="quizzes" element={<AdminQuizzesPage />} />
+                    <Route path="coding-practice" element={<AdminCodingPracticePage />} />
+                    <Route path="coding-practice/editor/:questionId" element={<AdminCodingPracticePage />} />
                     <Route path="projects" element={<AdminProjectsPage />} />
                     <Route path="certificates" element={<AdminCertificatesPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
