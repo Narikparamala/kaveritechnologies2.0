@@ -60,7 +60,7 @@ export async function deleteChapter(chapterId: string): Promise<void> {
 
 export async function getChapterLessonsAll(chapterId: string): Promise<Lesson[]> {
   const { data, error } = await supabase
-    .from('lessons').select('*').eq('chapter_id', chapterId).order('order_index');
+    .from('lessons').select('*').eq('chapter_id', chapterId).order('order_index').order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as Lesson[];
 }
@@ -86,8 +86,13 @@ export async function createLesson(input: {
   order_index?: number;
   is_published?: boolean;
 }): Promise<Lesson> {
-  const { data: existing } = await supabase.from('lessons').select('order_index', { count: 'exact' }).eq('chapter_id', input.chapter_id);
-  const nextOrder = input.order_index ?? (existing?.length ?? 0);
+  // Next index must be max+1, NOT row count: after deletions, count() can
+  // collide with an existing index, which silently breaks up/down reordering
+  // (two rows share an index, the swap updates both, nothing moves).
+  const { data: existing } = await supabase
+    .from('lessons').select('order_index').eq('chapter_id', input.chapter_id)
+    .order('order_index', { ascending: false }).limit(1);
+  const nextOrder = input.order_index ?? ((existing?.[0]?.order_index ?? -1) + 1);
   const { data, error } = await supabase.from('lessons').insert({
     ...input,
     order_index: nextOrder,

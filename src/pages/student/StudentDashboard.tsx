@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
 import { getStudentCoursePlan } from '../../services/lessons';
+import { getTechNews, type TechNewsItem } from '../../services/platformSettings';
 import type { CourseEnrollment, Course, Announcement, Notification, LiveSession, EnrollmentRequest } from '../../types/database';
 import type { SessionWithDetails } from '../../services/liveSessions';
 
@@ -32,6 +33,7 @@ export default function StudentDashboard() {
     courseId: string; courseTitle: string; activityType: string;
     activityTitle: string; activityId: string; lessonTitle: string;
   } | null>(null);
+  const [techNews, setTechNews] = useState<TechNewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -119,6 +121,14 @@ export default function StudentDashboard() {
         setUpcomingSessions(sessions.filter(s => s.status === 'scheduled').slice(0, 3));
       } catch (e) {
         console.error('Failed to load sessions:', e);
+      }
+
+      // Optional "new technologies" feed — controlled by Admin → Platform
+      // Settings → Content Auto Update. Silently empty on failure.
+      try {
+        setTechNews(await getTechNews());
+      } catch {
+        setTechNews([]);
       }
 
       setLoading(false);
@@ -339,6 +349,26 @@ export default function StudentDashboard() {
           <p className="text-xs text-slate-400 mt-3">
             Registering for a Kaveri workshop links it here automatically.
           </p>
+        </div>
+      )}
+
+      {/* New technologies feed (Admin → Platform Settings → Content Auto Update) */}
+      {techNews.length > 0 && (
+        <div className="card p-5 mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles size={16} className="text-primary-600 dark:text-primary-400" />
+            <h2 className="section-title mb-0">New in Tech</h2>
+            <span className="text-xs text-slate-400">what the industry is talking about</span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {techNews.map(item => (
+              <div key={item.title} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                <span className="badge text-[10px] bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 mb-2 inline-block">{item.tag}</span>
+                <p className="font-semibold text-sm text-slate-900 dark:text-white">{item.title}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{item.summary}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

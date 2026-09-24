@@ -33,6 +33,7 @@ interface Props {
   onTogglePublish: () => void;
   onDeleteLesson: () => void;
   onMoveLesson: (dir: 'up' | 'down') => void;
+  initialTab?: string;
 }
 
 function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
@@ -57,8 +58,12 @@ function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
   return base;
 }
 
-export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLesson, onTogglePublish, onDeleteLesson, onMoveLesson }: Props) {
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLesson, onTogglePublish, onDeleteLesson, onMoveLesson, initialTab }: Props) {
+  const [activeTab, setActiveTab] = useState<TabKey>((initialTab as TabKey) ?? 'overview');
+  // Allow the Course Builder to deep-link a tab (＋ Quiz / ＋ Practice buttons).
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab as TabKey);
+  }, [initialTab, lesson.id]);
   const tabs = getTabs(lesson.teaching_mode);
 
   return (

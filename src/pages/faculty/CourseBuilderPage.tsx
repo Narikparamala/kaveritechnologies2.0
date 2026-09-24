@@ -19,9 +19,21 @@ import {
   getBankQuestionsNotInChapter,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
+import QuizQuestionsManager from '../../components/faculty/QuizQuestionsManager';
 import type { Course, Chapter, Lesson, Quiz, TeachingMode } from '../../types/database';
 
 type ChapterWithLessons = Chapter & { lessons: Lesson[]; quizzes: Quiz[]; codingQuestions: { id: string; title: string; difficulty: string; is_published: boolean; default_marks: number }[] };
+
+// Fetch lessons/quizzes/coding questions for every chapter in one shot.
+const withChapterContent = async (chs: Chapter[]): Promise<ChapterWithLessons[]> =>
+  Promise.all(
+    chs.map(async ch => ({
+      ...ch,
+      lessons: await getChapterLessonsAll(ch.id),
+      quizzes: await getChapterQuizzes(ch.id),
+      codingQuestions: await getChapterCodingQuestions(ch.id),
+    }))
+  );
 
 type LessonFormState = {
   title: string;
@@ -48,6 +60,7 @@ export default function CourseBuilderPage() {
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [lessonTab, setLessonTab] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -60,6 +73,7 @@ export default function CourseBuilderPage() {
   const [quizForm, setQuizForm] = useState({ title: '', description: '', pass_percentage: 70, time_limit_minutes: '', is_published: false });
   const [quizDeleteTarget, setQuizDeleteTarget] = useState<Quiz | null>(null);
   const [practiceChapterId, setPracticeChapterId] = useState<string | null>(null);
+  const [manageQuiz, setManageQuiz] = useState<Quiz | null>(null);
   const [courseDeleteModal, setCourseDeleteModal] = useState(false);
   const [courseDeleteConfirm, setCourseDeleteConfirm] = useState('');
   const [deletingCourse, setDeletingCourse] = useState(false);
@@ -93,14 +107,7 @@ export default function CourseBuilderPage() {
       setEnrollmentCount(await getCourseEnrollmentCount(courseId));
 
       const chs = await getCourseChapters(courseId);
-      const withLessons = await Promise.all(
-        chs.map(async ch => ({
-          ...ch,
-          lessons: await getChapterLessonsAll(ch.id),
-          quizzes: await getChapterQuizzes(ch.id),
-          codingQuestions: await getChapterCodingQuestions(ch.id),
-        }))
-      );
+      const withLessons = await withChapterContent(chs);
       setChapters(withLessons);
       const requestedLesson = requestedLessonId
         ? withLessons.flatMap(chapter => chapter.lessons).find(lesson => lesson.id === requestedLessonId)
@@ -132,10 +139,27 @@ export default function CourseBuilderPage() {
     const idx = sorted.findIndex(c => c.id === ch.id);
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const swapCh = sorted[swapIdx];
-    await updateChapter(ch.id, { order_index: swapCh.order_index });
-    await updateChapter(swapCh.id, { order_index: ch.order_index });
-    await loadData();
+    // Renumber all chapters 0..n-1 (swap-by-stale-index silently no-ops
+    // when duplicate order_index values exist).
+    const ids = sorted.map(c => c.id);
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    try {
+      await Promise.all(ids.map((id, i) => updateChapter(id, { order_index: i })));
+      await refreshChapters();
+    } catch (e: any) { toastError('Error', e.message); }
+  };
+
+  // Renumber the whole chapter 0..n-1 in the desired order instead of
+  // swapping stale indexes. The old swap approach silently failed whenever
+  // two lessons shared an order_index (duplicate indexes made the swap a
+  // no-op), which is exactly the "lesson won't move" bug.
+  const reorderChapterLessons = async (chapterId: string, orderedIds: string[]) => {
+    try {
+      await Promise.all(
+        orderedIds.map((id, i) => updateLesson(id, { order_index: i }))
+      );
+      await refreshChapters();
+    } catch (e: any) { toastError('Error', e.message); }
   };
 
   const moveLesson = async (lesson: Lesson, direction: 'up' | 'down') => {
@@ -145,10 +169,9 @@ export default function CourseBuilderPage() {
     const idx = sorted.findIndex(l => l.id === lesson.id);
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const swapLesson = sorted[swapIdx];
-    await updateLesson(lesson.id, { order_index: swapLesson.order_index });
-    await updateLesson(swapLesson.id, { order_index: lesson.order_index });
-    await loadData();
+    const ids = sorted.map(l => l.id);
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    await reorderChapterLessons(parentCh.id, ids);
   };
 
   const handleSaveChapter = async () => {
@@ -301,6 +324,7 @@ export default function CourseBuilderPage() {
   const handleSaveChapterQuiz = async () => {
     if (!profile || !quizModal || !courseId) return;
     setSaving(true);
+    let createdQuiz: Quiz | null = null;
     try {
       if (quizModal.quiz) {
         await updateQuiz(quizModal.quiz.id, {
@@ -310,18 +334,23 @@ export default function CourseBuilderPage() {
           is_published: quizForm.is_published,
         });
         success('Quiz updated');
+        if (manageQuiz && quizModal.quiz && manageQuiz.id === quizModal.quiz.id) {
+          setManageQuiz({ ...manageQuiz, title: quizForm.title, description: quizForm.description || null, pass_percentage: quizForm.pass_percentage, time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null, is_published: quizForm.is_published });
+        }
       } else {
-        await createQuiz({
+        createdQuiz = await createQuiz({
           course_id: courseId, chapter_id: quizModal.chapterId, lesson_id: null,
           title: quizForm.title, description: quizForm.description || undefined,
           pass_percentage: quizForm.pass_percentage,
           time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null,
           is_published: quizForm.is_published, created_by: profile.id,
         });
-        success('Quiz created');
+        success('Quiz created — add your first question');
       }
       setQuizModal(null);
       await loadData();
+      // New quiz? Drop straight into the inline question editor.
+      if (createdQuiz) setManageQuiz(createdQuiz);
     } catch (e: any) { toastError('Error', e.message); }
     setSaving(false);
   };
@@ -331,6 +360,7 @@ export default function CourseBuilderPage() {
     try {
       await deleteQuiz(quizDeleteTarget.id);
       success('Quiz deleted');
+      if (manageQuiz?.id === quizDeleteTarget.id) setManageQuiz(null);
       setQuizDeleteTarget(null);
       await loadData();
     } catch (e: any) { toastError('Error', e.message); }
@@ -344,6 +374,28 @@ export default function CourseBuilderPage() {
       await loadData();
     } catch (e: any) { toastError('Error', e.message); }
   };
+  // Light refresh for the outline — no loading flag, so inline managers never remount.
+  const refreshChapters = useCallback(async () => {
+    if (!courseId) return;
+    try {
+      setChapters(await withChapterContent(await getCourseChapters(courseId)));
+    } catch (e: any) { toastError('Error', e.message); }
+  }, [courseId]);
+
+  const openManageChapterQuiz = (quiz: Quiz) => {
+    setPracticeChapterId(null);
+    setManageQuiz(quiz);
+  };
+
+  // Open a lesson directly on its Quiz or Practice tab (per-lesson steps so
+  // quizzes/practice can sit BETWEEN lessons, not only at chapter end).
+  const openLessonTab = (lessonId: string, tab: 'quiz' | 'practice') => {
+    setPracticeChapterId(null);
+    setManageQuiz(null);
+    setLessonTab(tab);
+    setSelectedLessonId(lessonId);
+  };
+
   const openEditChapter = (ch: Chapter) => { setChapterForm({ title: ch.title, description: ch.description ?? '' }); setChapterModal({ mode: 'edit', chapter: ch }); };
   const openCreateLesson = (chapterId: string) => {
     setLessonForm({
@@ -404,7 +456,7 @@ export default function CourseBuilderPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
         <button onClick={() => navigate('/faculty/courses')} className="btn-ghost py-1.5 px-3 text-sm flex items-center gap-1.5">
           <ArrowLeft size={14} /> Courses
         </button>
@@ -415,7 +467,7 @@ export default function CourseBuilderPage() {
         <span className={`badge text-xs ${course.is_published ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'}`}>
           {course.is_published ? 'Published' : 'Draft'}
         </span>
-        <span className="text-xs text-slate-400 flex items-center gap-1"><Users size={11} /> {enrollmentCount}</span>
+        <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1"><Users size={11} /> {enrollmentCount}</span>
         <button onClick={openEditCourse} className="btn-secondary text-sm flex items-center gap-1.5">
           <Settings size={14} /> Edit Course
         </button>
@@ -428,10 +480,10 @@ export default function CourseBuilderPage() {
         </button>
       </div>
 
-      {/* Main content: left outline + right editor */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main content: left outline + right editor (stacks on phones) */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left outline panel */}
-        <div className="w-72 lg:w-80 border-r border-slate-100 dark:border-slate-800 overflow-y-auto flex-shrink-0 bg-slate-50 dark:bg-slate-900/50">
+        <div className="w-full lg:w-72 xl:w-80 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-800 overflow-y-auto flex-shrink-0 max-h-[38vh] lg:max-h-none bg-slate-50 dark:bg-slate-900/50">
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Curriculum</h2>
@@ -477,20 +529,29 @@ export default function CourseBuilderPage() {
                           <div key={lesson.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 group">
                             <FileText size={12} className="text-slate-300 flex-shrink-0" />
                             <button
-                              onClick={() => setSelectedLessonId(lesson.id)}
+                              onClick={() => { setLessonTab(undefined); setSelectedLessonId(lesson.id); }}
                               className={`text-sm truncate flex-1 text-left ${selectedLessonId === lesson.id ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-slate-600 dark:text-slate-400'}`}
                             >
                               {chIdx + 1}.{lIdx + 1} {lesson.title}
                             </button>
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${lesson.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            <button onClick={() => openLessonTab(lesson.id, 'quiz')} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Add/edit this lesson's quiz"><HelpCircle size={10} /></button>
+                            <button onClick={() => openLessonTab(lesson.id, 'practice')} className="p-0.5 text-teal-500 hover:text-teal-600 hidden group-hover:block" title="Add/edit this lesson's practice questions"><Code2 size={10} /></button>
                           </div>
                         ))}
                         {ch.quizzes.map(q => (
-                          <div key={q.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                          <div key={q.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 group">
                             <HelpCircle size={12} className="text-amber-500 flex-shrink-0" />
-                            <span className="text-sm truncate flex-1 text-slate-600 dark:text-slate-400">{q.title}</span>
+                            <button
+                              onClick={() => openManageChapterQuiz(q)}
+                              title="Manage questions inline"
+                              className={`text-sm truncate flex-1 text-left cursor-pointer ${manageQuiz?.id === q.id ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'}`}
+                            >
+                              {q.title}
+                            </button>
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${q.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                            <button onClick={() => openEditChapterQuiz(ch.id, q)} className="p-0.5 text-slate-400 hover:text-slate-600 hidden group-hover:block"><Edit2 size={10} /></button>
+                            <button onClick={() => openManageChapterQuiz(q)} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Manage questions"><HelpCircle size={10} /></button>
+                            <button onClick={() => openEditChapterQuiz(ch.id, q)} className="p-0.5 text-slate-400 hover:text-slate-600 hidden group-hover:block" title="Quiz settings"><Edit2 size={10} /></button>
                             <button onClick={() => setQuizDeleteTarget(q)} className="p-0.5 text-red-400 hover:text-red-600 hidden group-hover:block"><Trash2 size={10} /></button>
                           </div>
                         ))}
@@ -525,10 +586,28 @@ export default function CourseBuilderPage() {
 
         {/* Right editor panel */}
         <div className="flex-1 overflow-y-auto">
-          {practiceChapterId ? (
+          {manageQuiz ? (
+            <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto animate-fade-in">
+              <div className="flex items-center gap-2 sm:gap-3 mb-4">
+                <button onClick={() => { setManageQuiz(null); refreshChapters(); }} className="btn-ghost py-1.5 px-2.5 text-sm flex items-center gap-1.5 flex-shrink-0">
+                  <ArrowLeft size={14} /> <span className="hidden sm:inline">Outline</span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-bold text-slate-900 dark:text-white truncate">{manageQuiz.title}</h2>
+                  <p className="text-xs text-slate-400 flex items-center gap-1"><HelpCircle size={11} className="text-amber-500" /> Chapter Quiz — Questions</p>
+                </div>
+                {manageQuiz.chapter_id && (
+                  <button onClick={() => openEditChapterQuiz(manageQuiz.chapter_id!, manageQuiz)} className="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0">
+                    <Settings size={14} /> <span className="hidden sm:inline">Settings</span>
+                  </button>
+                )}
+              </div>
+              <QuizQuestionsManager quiz={manageQuiz} onChanged={refreshChapters} />
+            </div>
+          ) : practiceChapterId ? (
             <ChapterPracticeManager chapterId={practiceChapterId} courseId={courseId!} onClose={() => { setPracticeChapterId(null); loadData(); }} onToast={success} onError={m => toastError('Error', m)} />
           ) : selectedLesson ? (
-            <LessonEditorTabs lesson={selectedLesson} course={course} onRefresh={loadData} onEditLesson={() => openEditLesson(selectedLesson.chapter_id, selectedLesson)} onTogglePublish={() => handleTogglePublishLesson(selectedLesson)} onDeleteLesson={() => setDeleteTarget({ type: 'lesson', id: selectedLesson.id, name: selectedLesson.title })} onMoveLesson={(dir) => moveLesson(selectedLesson, dir)} />
+            <LessonEditorTabs key={`${selectedLesson.id}-${lessonTab ?? 'default'}`} lesson={selectedLesson} course={course} initialTab={lessonTab} onRefresh={loadData} onEditLesson={() => openEditLesson(selectedLesson.chapter_id, selectedLesson)} onTogglePublish={() => handleTogglePublishLesson(selectedLesson)} onDeleteLesson={() => setDeleteTarget({ type: 'lesson', id: selectedLesson.id, name: selectedLesson.title })} onMoveLesson={(dir) => moveLesson(selectedLesson, dir)} />
           ) : (
             <div className="p-8">
               <EmptyState icon={BookOpen} title="Select a lesson" description="Choose a lesson from the outline to edit its content, or create a new chapter and lesson." />
@@ -568,7 +647,11 @@ export default function CourseBuilderPage() {
             <div><label className="label">Time Limit (min)</label><input type="number" className="input" placeholder="No limit" value={quizForm.time_limit_minutes} onChange={e => setQuizForm(f => ({ ...f, time_limit_minutes: e.target.value }))} /></div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={quizForm.is_published} onChange={e => setQuizForm(f => ({ ...f, is_published: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Publish immediately</span></label>
-          <p className="text-xs text-slate-400">Add questions after creating: open the quiz from the chapter list, then use Faculty → Quizzes.</p>
+          {quizModal?.quiz ? (
+            <p className="text-xs text-slate-400">Click the quiz title in the outline to manage its questions without leaving the builder.</p>
+          ) : (
+            <p className="text-xs text-slate-400">After creating, the question editor opens right here in the builder.</p>
+          )}
           <div className="flex gap-3 justify-end">
             <button onClick={() => setQuizModal(null)} className="btn-secondary">Cancel</button>
             <button onClick={handleSaveChapterQuiz} disabled={saving || !quizForm.title} className="btn-primary flex items-center gap-2 disabled:opacity-50">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}{quizModal?.quiz ? 'Update' : 'Create'}</button>
