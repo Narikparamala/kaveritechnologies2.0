@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   HelpCircle, Trophy, Clock, CheckCircle, XCircle, ChevronRight, ChevronLeft,
-  AlertTriangle, ArrowLeft, Flag, Send, Code, Image,
+  AlertTriangle, ArrowLeft, Flag, Send, Code, Image, BookOpen, Lock, Play, LayoutGrid,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -13,18 +13,38 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Quiz, QuizQuestion, QuizOption, Course } from '../../types/database';
 
+type LessonRef = { id: string; title: string; order_index: number; chapter_id: string | null };
+type ChapterRef = { id: string; title: string; order_index: number; course_id: string };
+
 type QuizWithCourse = Quiz & { course: Course };
 type QuestionWithOptions = QuizQuestion & { options: QuizOption[] };
 
+/** Per-question grading feedback returned by submit_quiz_attempt. */
+type QuizQuestionResult = {
+  question_id: string;
+  question_type: string;
+  is_correct: boolean | null;
+  points: number;
+  earned: number;
+  selected_option_ids: string[];
+  correct_option_ids: string[] | null;
+  correct_answer_text: string | null;
+  explanation: string | null;
+};
+
 export default function QuizzesPage() {
   const { profile } = useAuth();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const practiceMode = searchParams.get('practice') === '1';
   const requestedQuizId = searchParams.get('quizId');
   const returnTo = searchParams.get('returnTo') ?? '/faculty/quizzes';
   const [quizzes, setQuizzes] = useState<QuizWithCourse[]>([]);
+  const [lessonMap, setLessonMap] = useState<Map<string, LessonRef>>(new Map());
+  const [chapterMap, setChapterMap] = useState<Map<string, ChapterRef>>(new Map());
+  const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set());
+  const [overviewQuiz, setOverviewQuiz] = useState<QuizWithCourse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeQuiz, setActiveQuiz] = useState<QuizWithCourse | null>(null);
   const [questions, setQuestions] = useState<QuestionWithOptions[]>([]);
@@ -33,6 +53,8 @@ export default function QuizzesPage() {
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [xpAwarded, setXpAwarded] = useState(0);
+  const [questionResults, setQuestionResults] = useState<QuizQuestionResult[]>([]);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [qIdx, setQIdx] = useState(0);
   const [showNav, setShowNav] = useState(false);
@@ -67,13 +89,69 @@ export default function QuizzesPage() {
         .from('quizzes').select('*, course:courses(*)')
         .in('course_id', courseIds).eq('is_published', true);
       setQuizzes((qData ?? []) as any);
+
+      // Structure context: lessons + chapters of the enrolled courses, and the
+      // student's completed lessons for the hard lesson-lock.
+      const { data: lessonsData } = await supabase
+        .from('lessons').select('id, title, order_index, chapter_id')
+        .in('course_id', courseIds);
+      setLessonMap(new Map((lessonsData ?? []).map((l: any) => [l.id, l])));
+      const chapterIds = [...new Set((lessonsData ?? []).map((l: any) => l.chapter_id).filter(Boolean))];
+      if (chapterIds.length) {
+        const { data: chaptersData } = await supabase
+          .from('chapters').select('id, title, order_index, course_id').in('id', chapterIds);
+        setChapterMap(new Map((chaptersData ?? []).map((c: any) => [c.id, c])));
+      }
+      const { data: progData } = await supabase
+        .from('lesson_progress').select('lesson_id, completed')
+        .eq('student_id', profile.id).in('course_id', courseIds).eq('completed', true);
+      setCompletedLessonIds(new Set((progData ?? []).map((r: any) => r.lesson_id)));
       setLoading(false);
     };
     load();
   }, [profile, practiceMode, requestedQuizId]);
 
+  const quizLesson = (quiz: QuizWithCourse): LessonRef | null => (quiz.lesson_id ? lessonMap.get(quiz.lesson_id) ?? null : null);
+
+  const isLocked = (quiz: QuizWithCourse): boolean => {
+    const lesson = quizLesson(quiz);
+    return !!lesson && !completedLessonIds.has(lesson.id);
+  };
+
+  const contextLabel = (quiz: QuizWithCourse): { chapter: string; lesson: string | null; sortKey: string } => {
+    const lesson = quizLesson(quiz);
+    const chapter = lesson?.chapter_id ? chapterMap.get(lesson.chapter_id) : quiz.chapter_id ? chapterMap.get(quiz.chapter_id) : null;
+    const chapterTitle = chapter?.title ?? quiz.course?.title ?? '';
+    const sortKey = [
+      quiz.course?.title ?? '',
+      chapter ? String(chapter.order_index).padStart(4, '0') : '9999',
+      lesson ? String(lesson.order_index).padStart(4, '0') : '9999',
+      quiz.title,
+    ].join('|');
+    return { chapter: chapterTitle, lesson: lesson?.title ?? null, sortKey };
+  };
+
+  const sortedQuizzes = [...quizzes].sort((a, b) => contextLabel(a).sortKey.localeCompare(contextLabel(b).sortKey));
+
+  // Sidebar tap (?quizId=…): open the overview for that quiz with full
+  // context instead of dumping the student on an unordered list.
+  useEffect(() => {
+    if (practiceMode || !requestedQuizId || loading) return;
+    const target = quizzes.find(q => q.id === requestedQuizId);
+    if (target) setOverviewQuiz(target);
+  }, [practiceMode, requestedQuizId, loading, quizzes]);
+
   const startQuiz = async (quiz: QuizWithCourse) => {
-    const { data: qData } = await supabase.from('quiz_questions').select('*, options:quiz_options(*)').eq('quiz_id', quiz.id).order('order_index');
+    // Hard lesson-lock, re-checked at start time (not just render time).
+    if (!practiceMode && isLocked(quiz)) {
+      toastError(`Complete “${quizLesson(quiz)?.title ?? 'the related lesson'}” to unlock this quiz.`);
+      return;
+    }
+    // RPC path: staff RPC includes answers (faculty practice mode); the
+    // student RPC never returns is_correct / correct_answer_text.
+    const fn = practiceMode ? 'get_quiz_questions_staff' : 'get_quiz_questions_for_student';
+    const { data: qData, error: qErr } = await supabase.rpc(fn, { p_quiz_id: quiz.id });
+    if (qErr) { toastError(qErr.message); return; }
     setQuestions((qData ?? []) as any);
     setActiveQuiz(quiz);
     setAnswers(new Map());
@@ -81,6 +159,8 @@ export default function QuizzesPage() {
     setFlagged(new Set());
     setSubmitted(false);
     setScore(0);
+    setXpAwarded(0);
+    setQuestionResults([]);
     setQIdx(0);
     setShowNav(false);
     setTimeLeft(quiz.time_limit_minutes ? quiz.time_limit_minutes * 60 : null);
@@ -146,45 +226,98 @@ export default function QuizzesPage() {
     if (!activeQuiz || !profile) return;
     if (timerRef.current) clearInterval(timerRef.current);
 
-    let totalPoints = 0;
-    let earnedPoints = 0;
-    questions.forEach(q => {
-      totalPoints += q.points;
-      if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
-        const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
-        const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
-        if (ans === correct) earnedPoints += q.points;
-      } else if (q.question_type === 'coding') {
-        // Coding questions need manual grading
-      } else {
-        const selected = answers.get(q.id) ?? [];
-        const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
-        if (selected.length === correctIds.length && selected.every(id => correctIds.includes(id))) {
-          earnedPoints += q.points;
-        }
-      }
-    });
-
-    const pct = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
-    setScore(pct);
-    setSubmitted(true);
-
     const timeTaken = activeQuiz.time_limit_minutes && timeLeft !== null
       ? activeQuiz.time_limit_minutes * 60 - timeLeft : null;
 
     if (practiceMode) {
+      // Staff practice mode: client-side grading with full answer data (no record).
+      let totalPoints = 0;
+      let earnedPoints = 0;
+      questions.forEach(q => {
+        totalPoints += q.points;
+        if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
+          const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
+          const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
+          if (ans === correct) earnedPoints += q.points;
+        } else if (q.question_type === 'coding') {
+          // Coding questions need manual grading
+        } else {
+          const selected = answers.get(q.id) ?? [];
+          const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
+          if (selected.length === correctIds.length && selected.every(id => correctIds.includes(id))) {
+            earnedPoints += q.points;
+          }
+        }
+      });
+
+      const pct = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
+      setScore(pct);
+      setSubmitted(true);
+      setXpAwarded(0);
+      // Practice mode has full answer data client-side, so build the same
+      // per-question review the graded path gets from the server.
+      const practiceResults: QuizQuestionResult[] = questions.map(q => {
+        const base = {
+          question_id: q.id,
+          question_type: q.question_type,
+          points: q.points,
+          explanation: q.explanation ?? null,
+          selected_option_ids: answers.get(q.id) ?? [],
+        };
+        if (['fill_in_blank', 'code_output'].includes(q.question_type)) {
+          const ans = (textAnswers.get(q.id) ?? '').trim().toLowerCase();
+          const correct = (q.correct_answer_text ?? '').trim().toLowerCase();
+          const ok = ans === correct && ans !== '';
+          return { ...base, is_correct: ok, earned: ok ? q.points : 0, correct_option_ids: null, correct_answer_text: q.correct_answer_text ?? null };
+        }
+        if (q.question_type === 'coding') {
+          return { ...base, is_correct: null, earned: 0, correct_option_ids: null, correct_answer_text: null };
+        }
+        const selected = answers.get(q.id) ?? [];
+        const correctIds = q.options.filter(o => o.is_correct).map(o => o.id);
+        const ok = selected.length === correctIds.length && selected.every(id => correctIds.includes(id));
+        return { ...base, is_correct: ok, earned: ok ? q.points : 0, correct_option_ids: correctIds, correct_answer_text: null };
+      });
+      setQuestionResults(practiceResults);
       success(`Practice complete: ${Math.round(pct)}%. No attempt, XP, or progress was recorded.`);
       return;
     }
 
-    await supabase.from('quiz_attempts').insert({
-      quiz_id: activeQuiz.id, student_id: profile.id, score: pct,
-      max_score: totalPoints, passed: pct >= activeQuiz.pass_percentage,
-      time_taken_seconds: timeTaken, completed_at: new Date().toISOString(),
+    // Student path: authoritative server-side grading. The browser never
+    // holds is_correct/correct_answer_text, so it cannot fabricate a score.
+    const answersPayload: Record<string, { selected?: string[]; text?: string }> = {};
+    questions.forEach(q => {
+      if (['fill_in_blank', 'code_output', 'coding'].includes(q.question_type)) {
+        answersPayload[q.id] = { text: textAnswers.get(q.id) ?? '' };
+      } else {
+        answersPayload[q.id] = { selected: answers.get(q.id) ?? [] };
+      }
     });
 
-    if (pct >= activeQuiz.pass_percentage) success(`Quiz passed! +${activeQuiz.xp_reward} XP`);
-  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success, practiceMode]);
+    const { data, error } = await supabase.rpc('submit_quiz_attempt', {
+      p_quiz_id: activeQuiz.id,
+      p_answers: answersPayload,
+      p_time_taken_seconds: timeTaken,
+    });
+    if (error) {
+      toastError(error.message);
+      return;
+    }
+    setScore(data.score);
+    setSubmitted(true);
+    const awarded = data.xp_awarded ?? 0;
+    setXpAwarded(awarded);
+    setQuestionResults((data.results ?? []) as QuizQuestionResult[]);
+    if (data.passed) {
+      if (awarded > 0) {
+        success(`Quiz passed! +${awarded} XP`);
+      } else {
+        success('Quiz passed!');
+      }
+    } else {
+      success(`Quiz submitted: ${Math.round(data.score)}%`);
+    }
+  }, [activeQuiz, profile, questions, answers, textAnswers, timeLeft, success, practiceMode, toastError]);
 
   useEffect(() => { submitQuizRef.current = submitQuiz; }, [submitQuiz]);
 
@@ -213,34 +346,49 @@ export default function QuizzesPage() {
         <EmptyState icon={HelpCircle} title="No quizzes available" description={practiceMode ? 'This quiz is unavailable or not published.' : 'Enroll in courses to access quizzes.'} />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {quizzes.map(quiz => (
-            <div key={quiz.id} className="card-hover p-5">
+          {sortedQuizzes.map(quiz => {
+            const ctx = contextLabel(quiz);
+            const locked = isLocked(quiz);
+            return (
+            <div key={quiz.id} className={`card-hover p-5 ${locked ? 'opacity-75' : ''}`}>
               <div className="flex items-start justify-between gap-2 mb-3">
                 <h3 className="font-bold text-slate-900 dark:text-white">{quiz.title}</h3>
-                <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{practiceMode ? 'Practice' : `+${quiz.xp_reward} XP`}</span>
+                {locked
+                  ? <span className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1 flex-shrink-0"><Lock size={10} /> Locked</span>
+                  : <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium flex-shrink-0">{practiceMode ? 'Practice' : `+${quiz.xp_reward} XP`}</span>}
               </div>
-              <p className="text-xs text-primary-600 dark:text-primary-400 mb-2">{quiz.course?.title}</p>
+              <p className="text-xs text-primary-600 dark:text-primary-400 mb-1">{quiz.course?.title}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                <BookOpen size={11} className="flex-shrink-0" />
+                {ctx.lesson ? <span className="truncate">Lesson: {ctx.lesson}</span> : <span className="italic">General practice</span>}
+              </p>
               {quiz.description && <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{quiz.description}</p>}
               <div className="flex gap-3 text-xs text-slate-400 mb-4">
                 {quiz.time_limit_minutes && <span className="flex items-center gap-1"><Clock size={11} /> {quiz.time_limit_minutes}m</span>}
                 <span>Pass: {quiz.pass_percentage}%</span>
               </div>
-              <button onClick={() => startQuiz(quiz)} className="btn-primary w-full text-sm py-2">{practiceMode ? 'Practice Quiz' : 'Start Quiz'}</button>
+              <button
+                onClick={() => setOverviewQuiz(quiz)}
+                className={`w-full text-sm py-2 rounded-lg font-medium transition-colors ${locked ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700' : 'btn-primary'}`}
+              >
+                {locked ? 'View details' : practiceMode ? 'Practice Quiz' : 'Start Quiz'}
+              </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Quiz Taking Modal */}
       <Modal open={!!activeQuiz} onClose={() => { if (submitted) setActiveQuiz(null); }} title="" size="xl" className="!max-w-5xl">
         {activeQuiz && !submitted && questions.length > 0 && currentQ ? (
-          <div className="flex flex-col" style={{ minHeight: '70vh', maxHeight: '80vh' }}>
+          <div className="flex min-h-[60vh] flex-col lg:min-h-[70vh] lg:max-h-[80vh]">
             {/* Header bar */}
-            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <h2 className="font-bold text-slate-900 dark:text-white text-lg truncate">{activeQuiz.title}</h2>
               </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {timeLeft !== null && (
                   <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${timeLeft <= 60 ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 animate-pulse' : timeLeft <= 300 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                     <Clock size={14} />
@@ -393,7 +541,7 @@ export default function QuizzesPage() {
             </div>
 
             {/* Bottom navigation */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 mt-auto">
+            <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 mt-auto">
               <button
                 disabled={qIdx === 0}
                 onClick={() => setQIdx(i => i - 1)}
@@ -440,14 +588,124 @@ export default function QuizzesPage() {
               <ProgressBar value={score} color={score >= (activeQuiz.pass_percentage ?? 70) ? 'green' : 'amber'} />
             </div>
             {score >= (activeQuiz.pass_percentage ?? 70) && (
-              <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{activeQuiz.xp_reward} XP earned!</p>
+              xpAwarded > 0 ? (
+                <p className="text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-4">+{xpAwarded} XP earned!</p>
+              ) : (
+                <p className="text-slate-400 text-sm font-medium mb-4">No additional XP — you already passed this quiz.</p>
+              )
             )}
+
+            {/* Per-question review: what you answered, what was right, why */}
+            {questionResults.length > 0 && (
+              <div className="text-left max-w-2xl mx-auto mt-2 mb-6 space-y-3">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Answer review</p>
+                {questionResults.map((r, i) => {
+                  const q = questions.find(qq => qq.id === r.question_id);
+                  const correct = r.is_correct === true;
+                  const pending = r.is_correct === null;
+                  return (
+                    <div key={r.question_id} className={`rounded-xl border p-4 ${pending ? 'border-slate-200 dark:border-slate-700' : correct ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20' : 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20'}`}>
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 flex-shrink-0 ${pending ? 'text-slate-400' : correct ? 'text-emerald-500' : 'text-red-500'}`}>
+                          {pending ? <Clock size={17} /> : correct ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">Q{i + 1}. {q?.question_text ?? ''}</p>
+                          {pending && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Coding question — will be graded manually by faculty.</p>
+                          )}
+                          {!correct && !pending && r.question_type !== 'fill_in_blank' && r.question_type !== 'code_output' && r.correct_option_ids && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5">
+                              Correct answer:{' '}
+                              <span className="font-medium">
+                                {(q?.options ?? []).filter(o => r.correct_option_ids!.includes(o.id)).map(o => o.option_text).join('; ') || '—'}
+                              </span>
+                            </p>
+                          )}
+                          {!correct && !pending && (r.question_type === 'fill_in_blank' || r.question_type === 'code_output') && r.correct_answer_text && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5">
+                              Correct answer: <span className="font-medium font-mono">{r.correct_answer_text}</span>
+                            </p>
+                          )}
+                          {r.explanation && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                              <span className="font-medium text-slate-600 dark:text-slate-300">Why:</span> {r.explanation}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="flex gap-3 justify-center">
               <button onClick={() => { startQuiz(activeQuiz); }} className="btn-secondary">Retry Quiz</button>
               <button onClick={() => setActiveQuiz(null)} className="btn-primary">Done</button>
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      {/* Quiz overview: context before starting (sidebar taps land here) */}
+      <Modal
+        open={!!overviewQuiz}
+        onClose={() => setOverviewQuiz(null)}
+        title={overviewQuiz?.title ?? ''}
+        size="md"
+      >
+        {overviewQuiz && (() => {
+          const ctx = contextLabel(overviewQuiz);
+          const locked = !practiceMode && isLocked(overviewQuiz);
+          const chapter = ctx.chapter && ctx.chapter !== overviewQuiz.course?.title ? ctx.chapter : null;
+          return (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+                <p className="text-xs text-primary-600 dark:text-primary-400 font-medium">{overviewQuiz.course?.title}</p>
+                {chapter && <p className="text-xs text-slate-500 dark:text-slate-400">{chapter}</p>}
+                <p className="text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <BookOpen size={15} className="text-slate-400 flex-shrink-0" />
+                  {ctx.lesson ? <span>Lesson: <strong>{ctx.lesson}</strong></span> : <span className="italic text-slate-500">General practice — not tied to one lesson</span>}
+                </p>
+              </div>
+
+              {overviewQuiz.description && (
+                <p className="text-sm text-slate-600 dark:text-slate-300">{overviewQuiz.description}</p>
+              )}
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full font-medium">+{overviewQuiz.xp_reward} XP</span>
+                {overviewQuiz.time_limit_minutes && <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full font-medium flex items-center gap-1"><Clock size={11} /> {overviewQuiz.time_limit_minutes} min</span>}
+                <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full font-medium">Pass: {overviewQuiz.pass_percentage}%</span>
+              </div>
+
+              {locked ? (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-4">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                    <Lock size={15} /> This quiz is locked
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                    Complete the lesson <strong>{ctx.lesson}</strong> first — then this quiz unlocks automatically.
+                  </p>
+                  <button
+                    onClick={() => navigate(`/student/course/${overviewQuiz.course_id}`)}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 dark:text-amber-200 underline"
+                  >
+                    <BookOpen size={12} /> Go to the lesson
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { const q = overviewQuiz; setOverviewQuiz(null); startQuiz(q); }}
+                  className="btn-primary w-full flex items-center justify-center gap-2 py-3"
+                >
+                  <Play size={16} /> {practiceMode ? 'Start practice' : 'Start Quiz'}
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

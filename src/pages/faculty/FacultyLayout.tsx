@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle
+  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -14,9 +14,13 @@ const NAV_ITEMS = [
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
-  { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
+  { label: 'Content Import', icon: Upload, to: '/content-import' },
+  { label: 'Assignment Submissions', icon: FileText, to: '/submissions' },
+  { label: 'Coding Submissions', icon: Code2, to: '/coding-submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
+  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
+  { label: 'Enrollment Requests', icon: UserPlus, to: '/enrollment-requests' },
   { label: 'My Batches & Work', icon: Users, to: '/batches' },
   { label: 'My Students', icon: Users, to: '/students' },
   { label: 'Support Records', icon: AlertTriangle, to: '/support-records' },
@@ -30,7 +34,7 @@ const NAV_ITEMS = [
 
 export default function FacultyLayout() {
   return (
-    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/faculty" />}>
+    <DashboardLayout sidebar={<Sidebar navItems={NAV_ITEMS} basePath="/faculty" showPortalSwitch />}>
       <Outlet />
     </DashboardLayout>
   );

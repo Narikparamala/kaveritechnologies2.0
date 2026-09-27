@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Plus,
   RefreshCw,
+  Terminal,
   Users,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
@@ -18,6 +19,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
 import { formatRelativeTime, getStatusColor } from '../../lib/utils';
 import type { AssignmentSubmission, Course } from '../../types/database';
 
@@ -192,6 +194,15 @@ export default function FacultyDashboard() {
             <Link to="/faculty/submissions" className="btn-secondary flex items-center justify-center gap-2 px-4 py-2 text-sm">
               <CheckCircle2 size={16} /> Grade Work
             </Link>
+            <a
+              href={CODING_DASHBOARD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary flex items-center justify-center gap-2 px-4 py-2 text-sm"
+              title="Kaveri Coding Workspace — batches, VS Code assignments and teacher review"
+            >
+              <Terminal size={16} /> Coding Workspace
+            </a>
           </div>
         </div>
       </div>

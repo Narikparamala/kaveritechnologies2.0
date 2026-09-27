@@ -229,7 +229,6 @@ export default function FacultyProfilePage() {
         .from('profiles')
         .update({
           avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
         .select('id')
@@ -266,7 +265,6 @@ export default function FacultyProfilePage() {
         .from('profiles')
         .update({
           avatar_url: null,
-          updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
         .select('id')
@@ -321,7 +319,6 @@ export default function FacultyProfilePage() {
           full_name: fullName,
           phone: form.phone.trim() || null,
           bio: form.bio.trim() || null,
-          updated_at: new Date().toISOString(),
         })
         .eq('id', profile.id)
         .select('id')
@@ -549,7 +546,7 @@ export default function FacultyProfilePage() {
                   className="input"
                   value={form.phone}
                   onChange={event => setForm(current => ({ ...current, phone: event.target.value }))}
-                  placeholder="+91 98765 43210"
+                  placeholder="Your phone number"
                   maxLength={30}
                 />
               ) : (

@@ -86,6 +86,9 @@ function WorkspaceShell() {
         </div>
 
         <div className="flex-1 min-w-0">
+          {course.thumbnail_url && (
+            <img src={course.thumbnail_url} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
+          )}
           <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{course.title}</h1>
         </div>
 

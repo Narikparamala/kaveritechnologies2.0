@@ -1,0 +1,39 @@
+🎓 KAVERI CODING — INSTALL GUIDE (2 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Install VS Code
+→ https://code.visualstudio.com/download
+
+Step 2: Download the Extension
+→ https://github.com/Narikparamala/kaveri-coding-workspace/releases/download/v0.10.0/kaveri-coding-0.10.0.vsix
+
+Step 3: Install in VS Code
+→ Open VS Code
+→ Press Ctrl+Shift+P
+→ Type: Extensions: Install from VSIX
+→ Select the downloaded .vsix file
+
+Step 4: Sign In
+→ Click the 🎓 icon in the left sidebar
+→ Click "Sign In with Google"
+→ Use your Kaveri Academy Google account
+
+Step 5: Join Your Batch
+→ Click "Join Batch" in the sidebar
+→ Enter your batch code (ask your teacher)
+
+Step 6: Start Coding!
+→ Click any assignment in "My Assignments"
+→ Write your code in main.py
+→ Click "Run Tests" to check
+→ Click "Submit Answer" when ready
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❓ Problems?
+→ Make sure Python 3 is installed
+→ Make sure you're signed in
+→ Ask your teacher for batch code
+→ Email: support@kaveritech.co.in
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

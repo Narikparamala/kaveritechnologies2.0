@@ -1,13 +1,14 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle, Bookmark, ArrowLeft, Lock } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ProgressBar } from '../../../components/ui/ProgressBar';
 import { useDemo } from '../../../contexts/DemoContext';
 import { DEMO_LESSONS, DEMO_CHAPTERS } from '../../../data/demoData';
+import CodeEditor from '../../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 export default function DemoLessonPage() {
   const { lessonSlug } = useParams<{ lessonSlug: string }>();
@@ -81,7 +82,7 @@ export default function DemoLessonPage() {
               <span className="text-xs text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">Python</span>
             </div>
             <Suspense fallback={<div className="h-48 bg-slate-900 flex items-center justify-center text-slate-500 text-sm">Loading editor...</div>}>
-              <MonacoEditor
+              <CodeEditor
                 height="220px"
                 language="python"
                 value={lesson.code_example}

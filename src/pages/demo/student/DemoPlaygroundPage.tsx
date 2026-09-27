@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import { useState, Suspense, useEffect, useRef } from 'react';
 import { Terminal, Play, Square, RotateCcw, Copy, Save, Loader2, CheckCircle, AlertCircle, Trash2 } from 'lucide-react';
 import { useDemo } from '../../../contexts/DemoContext';
 import { useToast } from '../../../components/ui/Toast';
@@ -6,8 +6,9 @@ import {
   preloadPyodide, runPython, stopExecution,
   onRuntimeStatus, type RuntimeStatus
 } from '../../../services/pythonExecution';
+import CodeEditor from '../../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 const STARTER = `# Welcome to the Python Playground Demo!\n# Write and run real Python code — powered by Pyodide.\n# Sign in to save your snippets.\n\nstudent_name = "Kiran Kumar"\nxp_points = 1250\nstreak_days = 6\n\nprint(f"Welcome, {student_name}!")\nprint(f"Your XP: {xp_points}")\nprint(f"Current Streak: {streak_days} days")\n\n# Try changing this code!\nnumbers = [1, 2, 3, 4, 5]\nfor num in numbers:\n    print(f"Number: {num}, Square: {num**2}")\n`;
 
@@ -105,7 +106,7 @@ export default function DemoPlaygroundPage() {
             <button onClick={handleReset} className="hover:text-white p-1"><RotateCcw size={13} /></button>
           </div>
           <Suspense fallback={<div className="flex-1 bg-slate-900" />}>
-            <MonacoEditor
+            <CodeEditor
               height="100%"
               language="python"
               value={code}

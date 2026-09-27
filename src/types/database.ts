@@ -13,9 +13,17 @@ export interface Profile {
   streak_days: number;
   last_active_date: string | null;
   is_active: boolean;
+  /** Public-profile fields (see migration 20260926140000). */
+  linkedin_url: string | null;
+  github_url: string | null;
+  resume_url: string | null;
+  profile_public: boolean;
+  profile_slug: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type CourseEnrollmentMode = 'open' | 'approval_required' | 'closed';
 
 export interface Course {
   id: string;
@@ -33,6 +41,9 @@ export interface Course {
   price: number;
   certificate_eligible: boolean;
   language: string;
+  enrollment_mode: CourseEnrollmentMode;
+  /** Course-wide lesson progression default; 'per_lesson' defers to each lesson's unlock_rule. */
+  progression_mode: 'per_lesson' | 'open' | 'sequential' | 'gated';
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -52,13 +63,30 @@ export interface CourseEnrollment {
   enrolled_at: string;
   completed_at: string | null;
   progress_percentage: number;
-  enrollment_source: 'purchase' | 'admin_grant' | 'free_enrollment' | 'manual';
+  enrollment_source: 'purchase' | 'admin_grant' | 'free_enrollment' | 'manual' | 'approved_request';
   access_status: 'active' | 'revoked' | 'pending';
   granted_by: string | null;
   granted_at: string | null;
   revoked_by: string | null;
   revoked_at: string | null;
   notes: string | null;
+}
+
+export type EnrollmentRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface EnrollmentRequest {
+  id: string;
+  student_id: string;
+  course_id: string;
+  status: EnrollmentRequestStatus;
+  message: string | null;
+  requested_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+  course?: Pick<Course, 'id' | 'title' | 'slug'> | null;
 }
 
 export interface Chapter {
@@ -93,9 +121,55 @@ export interface Lesson {
   is_published: boolean;
   is_free_preview: boolean;
   requires_previous_lesson_completion: boolean;
+  unlock_rule: 'open' | 'sequential' | 'gated';
+  requires_activity_type: 'assignment' | 'quiz' | 'coding' | null;
+  requires_activity_id: string | null;
   xp_reward: number;
   created_at: string;
   updated_at: string;
+}
+
+export type LessonAccessState = 'available' | 'completed' | 'locked';
+
+export interface LessonAccessInfo {
+  access: LessonAccessState;
+  reason: string;
+  isReleased: boolean;
+}
+
+export interface LessonActivity {
+  kind: string;
+  title: string;
+  state: string;
+  count?: number;
+  session_id?: string;
+  quiz_id?: string;
+  assignment_id?: string;
+  recording?: string;
+  date?: string;
+}
+
+export interface LessonPlanItem {
+  lesson_id: string;
+  chapter_id: string;
+  course_id: string;
+  title: string;
+  slug: string;
+  teaching_mode: TeachingMode;
+  enable_coding_playground: boolean;
+  duration_minutes: number;
+  xp_reward: number;
+  order_index: number;
+  is_free_preview: boolean;
+  chapter_title: string;
+  chapter_order_index: number;
+  access: LessonAccessState;
+  reason: string;
+  is_released: boolean;
+  requires_activity_type: 'assignment' | 'quiz' | 'coding' | null;
+  requires_activity_id: string | null;
+  requires_activity_title: string | null;
+  activities: LessonActivity[];
 }
 
 export type LessonResourceType = 'slides' | 'notes' | 'code_example' | 'practice_sheet' | 'external_resource' | 'recorded_video';
@@ -271,6 +345,7 @@ export interface Quiz {
   id: string;
   course_id: string;
   lesson_id: string | null;
+  chapter_id: string | null;
   title: string;
   description: string | null;
   pass_percentage: number;
@@ -477,7 +552,7 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support';
+  type: 'info' | 'success' | 'warning' | 'error' | 'assignment' | 'announcement' | 'grade' | 'submission' | 'quiz' | 'project' | 'live_class' | 'student' | 'support' | 'enrollment' | 'workshop' | 'exam' | 'ecosystem' | 'system';
   is_read: boolean;
   read_at: string | null;
   reference_id: string | null;
@@ -538,7 +613,7 @@ export interface PlatformSetting {
 // Live Session types
 export type SessionStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
 export type AttendanceStatus = 'registered' | 'attended' | 'absent' | 'excused';
-export type SessionResourceType = 'slides' | 'notes' | 'practice_questions' | 'code_example' | 'quiz' | 'assignment' | 'downloadable';
+export type SessionResourceType = 'slides' | 'notes' | 'practice_questions' | 'code_example' | 'quiz' | 'assignment' | 'downloadable' | 'recording';
 
 export interface LiveSession {
   id: string;

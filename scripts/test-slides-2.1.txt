@@ -1,0 +1,70 @@
+Practice time
+Reverse the digits
+Write a program to reverse the digits of a given two-digit number.
+The input will be a single line containing a integer.
+The output should be a single line containing the reverse of the given
+two-digit number.
+For example, if the given two-digit number is 21, the reverse of 21 is 12.
+
+======================================================================
+SLIDE 35
+======================================================================
+
+Write a program to print first and last digit of the
+number.The input is a four-digit number Print the first digit
+in the first line and the last digit in the second line.
+Sample Input 1
+1456
+Sample Output 1
+1
+6
+Practice time
+
+======================================================================
+SLIDE 36
+======================================================================
+
+Stars
+Write a program that reads a word and prints the word in
+"*** word ***" format.
+The input will be a single line containing a string.The
+output should be a single line containing a string in the
+format shown in the Example
+For example, if the given word is Magician, the output
+should be "*** Magician * * *".
+Practice time
+
+======================================================================
+SLIDE 37
+======================================================================
+
+Practice time
+Read a word from the user.
+Print the first letter of the word.
+Replace all remaining letters with
+stars (*).
+Example: Input → Queue, Output →
+Q****
+
+======================================================================
+SLIDE 38
+======================================================================
+
+Read a word from the user.
+Find the length of the word.
+Subtract 1 from the length.
+Print the result.
+Example: Input → Ice, Output → 2.
+Practice time
+
+======================================================================
+SLIDE 39
+======================================================================
+
+Find the Last Digit
+Take an integer from the user and print only its last digit.
+Input:
+5837
+Output:
+7
+Practice time

@@ -60,7 +60,7 @@ export async function deleteChapter(chapterId: string): Promise<void> {
 
 export async function getChapterLessonsAll(chapterId: string): Promise<Lesson[]> {
   const { data, error } = await supabase
-    .from('lessons').select('*').eq('chapter_id', chapterId).order('order_index');
+    .from('lessons').select('*').eq('chapter_id', chapterId).order('order_index').order('created_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as Lesson[];
 }
@@ -86,8 +86,13 @@ export async function createLesson(input: {
   order_index?: number;
   is_published?: boolean;
 }): Promise<Lesson> {
-  const { data: existing } = await supabase.from('lessons').select('order_index', { count: 'exact' }).eq('chapter_id', input.chapter_id);
-  const nextOrder = input.order_index ?? (existing?.length ?? 0);
+  // Next index must be max+1, NOT row count: after deletions, count() can
+  // collide with an existing index, which silently breaks up/down reordering
+  // (two rows share an index, the swap updates both, nothing moves).
+  const { data: existing } = await supabase
+    .from('lessons').select('order_index').eq('chapter_id', input.chapter_id)
+    .order('order_index', { ascending: false }).limit(1);
+  const nextOrder = input.order_index ?? ((existing?.[0]?.order_index ?? -1) + 1);
   const { data, error } = await supabase.from('lessons').insert({
     ...input,
     order_index: nextOrder,
@@ -106,6 +111,16 @@ export async function createLesson(input: {
 
 export async function updateLesson(lessonId: string, updates: Partial<Lesson>): Promise<void> {
   const { error } = await supabase.from('lessons').update(updates).eq('id', lessonId);
+  if (error) throw error;
+}
+
+export async function releaseLessonForStudent(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('release_lesson_for_student', { p_student_id: studentId, p_lesson_id: lessonId });
+  if (error) throw error;
+}
+
+export async function revokeLessonRelease(studentId: string, lessonId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_lesson_release', { p_student_id: studentId, p_lesson_id: lessonId });
   if (error) throw error;
 }
 
@@ -221,6 +236,7 @@ export async function getFacultyQuizzes(facultyId: string): Promise<(Quiz & { co
 export async function createQuiz(input: {
   course_id: string;
   lesson_id?: string | null;
+  chapter_id?: string | null;
   title: string;
   description?: string;
   pass_percentage?: number;
@@ -231,6 +247,7 @@ export async function createQuiz(input: {
   const { data, error } = await supabase.from('quizzes').insert({
     ...input,
     lesson_id: input.lesson_id ?? null,
+    chapter_id: input.chapter_id ?? null,
     pass_percentage: input.pass_percentage ?? 70,
     time_limit_minutes: input.time_limit_minutes ?? null,
     is_published: input.is_published ?? false,
@@ -252,8 +269,9 @@ export async function deleteQuiz(quizId: string): Promise<void> {
 }
 
 export async function getQuizQuestions(quizId: string): Promise<(QuizQuestion & { options: QuizOption[] })[]> {
-  const { data, error } = await supabase
-    .from('quiz_questions').select('*, options:quiz_options(*)').eq('quiz_id', quizId).order('order_index');
+  // Staff-only RPC: returns questions + options including answer data,
+  // authorized server-side to admin / faculty of the quiz's course.
+  const { data, error } = await supabase.rpc('get_quiz_questions_staff', { p_quiz_id: quizId });
   if (error) throw error;
   return (data ?? []) as any;
 }
@@ -275,7 +293,7 @@ export async function createQuestion(input: {
     explanation: input.explanation ?? null,
     order_index: nextOrder,
     points: input.points ?? 1,
-  }).select().single();
+  }).select('id').single();
   if (error) throw error;
   return data as QuizQuestion;
 }
@@ -303,7 +321,7 @@ export async function createOption(input: {
     option_text: input.option_text,
     is_correct: input.is_correct,
     order_index: nextOrder,
-  }).select().single();
+  }).select('id').single();
   if (error) throw error;
   return data as QuizOption;
 }
@@ -701,6 +719,73 @@ export async function getLessonQuizzes(lessonId: string): Promise<Quiz[]> {
   return (data ?? []) as Quiz[];
 }
 
+// ============================================================
+// Chapter-level content (CCBP-style chapter steps)
+// ============================================================
+
+export async function getChapterQuizzes(chapterId: string): Promise<Quiz[]> {
+  const { data, error } = await supabase
+    .from('quizzes').select('*').eq('chapter_id', chapterId).order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Quiz[];
+}
+
+export async function getChapterCodingQuestions(chapterId: string): Promise<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; chapter_order_index: number | null }[]> {
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, is_published, default_marks, chapter_order_index')
+    .eq('chapter_id', chapterId)
+    .order('chapter_order_index', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as any;
+}
+
+/** Published bank questions not already in this chapter — the picker source. */
+export async function getBankQuestionsNotInChapter(chapterId: string): Promise<{ id: string; title: string; difficulty: string; topic: string }[]> {
+  const { data: inChapter, error: e1 } = await supabase
+    .from('coding_questions').select('id').eq('chapter_id', chapterId);
+  if (e1) throw e1;
+  const exclude = new Set((inChapter ?? []).map(r => r.id));
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, topic')
+    .eq('is_published', true)
+    .order('title', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).filter(q => !exclude.has(q.id));
+}
+
+// ============================================================
+// Lesson-scoped coding questions (per-lesson practice steps)
+// ============================================================
+
+export async function getLessonCodingQuestions(lessonId: string): Promise<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; topic: string; lesson_order_index: number | null }[]> {
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, is_published, default_marks, topic, lesson_order_index')
+    .eq('lesson_id', lessonId)
+    .order('lesson_order_index', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as any;
+}
+
+/** Published bank questions not already in this lesson — the picker source. */
+export async function getBankQuestionsNotInLesson(lessonId: string): Promise<{ id: string; title: string; difficulty: string; topic: string }[]> {
+  const { data: inLesson, error: e1 } = await supabase
+    .from('coding_questions').select('id').eq('lesson_id', lessonId);
+  if (e1) throw e1;
+  const exclude = new Set((inLesson ?? []).map(r => r.id));
+  const { data, error } = await supabase
+    .from('coding_questions')
+    .select('id, title, difficulty, topic')
+    .eq('is_published', true)
+    .order('title', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).filter(q => !exclude.has(q.id));
+}
+
 export async function getLessonAssignments(lessonId: string): Promise<Assignment[]> {
   const { data, error } = await supabase
     .from('assignments').select('*').eq('lesson_id', lessonId).order('created_at', { ascending: false });
@@ -868,11 +953,11 @@ export async function grantEnrollment(input: {
     throw new Error('Student already has active enrollment in this course');
   }
   if (existing) {
-    const { error } = await supabase.from('course_enrollments').update({
-      access_status: 'active', enrollment_source: 'admin_grant',
-      granted_by: input.granted_by, granted_at: new Date().toISOString(),
-      revoked_by: null, revoked_at: null, notes: input.notes ?? null,
-    }).eq('id', (existing as any).id);
+    const { error } = await supabase.rpc('admin_set_enrollment_access', {
+      p_enrollment_id: (existing as { id: string }).id,
+      p_access_status: 'active',
+      p_notes: input.notes ?? null,
+    });
     if (error) throw error;
   } else {
     const { error } = await supabase.from('course_enrollments').insert({
@@ -889,9 +974,11 @@ export async function grantEnrollment(input: {
 }
 
 export async function revokeEnrollment(input: { enrollment_id: string; revoked_by: string }): Promise<void> {
-  const { error } = await supabase.from('course_enrollments').update({
-    access_status: 'revoked', revoked_by: input.revoked_by, revoked_at: new Date().toISOString(),
-  }).eq('id', input.enrollment_id);
+  const { error } = await supabase.rpc('admin_set_enrollment_access', {
+    p_enrollment_id: input.enrollment_id,
+    p_access_status: 'revoked',
+    p_notes: null,
+  });
   if (error) throw error;
   await logActivity(input.revoked_by, 'revoke_enrollment', 'course_enrollments', input.enrollment_id);
 }

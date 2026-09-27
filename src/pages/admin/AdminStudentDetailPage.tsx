@@ -7,6 +7,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { supabase } from '../../lib/supabase';
+import { StudentBatchesCard } from '../../components/common/StudentBatchesCard';
 import { getStudentWithDetails, createSupportRecord, updateSupportRecord, getStudentSupportRecords } from '../../services/companyManagement';
 import type { Profile, CourseEnrollment, Course, LessonProgress, StudentSupportRecord, Certificate, AssignmentSubmission } from '../../types/database';
 
@@ -161,7 +162,7 @@ export default function AdminStudentDetailPage() {
               <p className="text-xs text-slate-500">In Progress</p>
             </div>
             <div className="card p-4 text-center">
-              <CheckCircle className="text-purple-600 mx-auto mb-2" size={20} />
+              <CheckCircle className="text-teal-600 mx-auto mb-2" size={20} />
               <p className="text-xl font-bold text-slate-900 dark:text-white">{completedCourses}</p>
               <p className="text-xs text-slate-500">Completed</p>
             </div>
@@ -171,6 +172,9 @@ export default function AdminStudentDetailPage() {
               <p className="text-xs text-slate-500">Certificates</p>
             </div>
           </div>
+
+          {/* Batches & all course memberships */}
+          <StudentBatchesCard studentId={studentId!} />
 
           {/* Enrolled Courses */}
           <div className="card p-6">
@@ -206,7 +210,7 @@ export default function AdminStudentDetailPage() {
                 {submissions.slice(0, 5).map(s => (
                   <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
                     <div>
-                      <p className="text-sm text-slate-900 dark:text-white">{s.submission_text?.slice(0, 50) || 'No description'}</p>
+                      <p className="text-sm text-slate-900 dark:text-white">Assignment submission #{s.submission_number}</p>
                       <p className="text-xs text-slate-500">{new Date(s.submitted_at).toLocaleDateString()}</p>
                     </div>
                     <Badge className={s.status === 'graded' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>

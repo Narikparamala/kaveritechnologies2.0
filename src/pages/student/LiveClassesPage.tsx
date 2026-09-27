@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Video, Calendar, Clock, Users, ExternalLink, CheckCircle, XCircle,
-  AlertCircle, ChevronRight, Loader2, Play
+  AlertCircle, ChevronRight, Loader2, Play, Hourglass
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -85,17 +85,20 @@ function SessionCard({ session, onJoin }: { session: SessionWithDetails; onJoin:
             </div>
           )}
 
-          {/* Materials unlock status for completed sessions */}
+          {/* Recording state for completed sessions */}
           {session.status === 'completed' && (
             <div className="mt-2 flex items-center gap-3 text-xs">
-              <span className={`flex items-center gap-1 ${session.slides_unlocked ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
-                {session.slides_unlocked ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                Slides {session.slides_unlocked ? 'Available' : 'Locked'}
-              </span>
-              <span className={`flex items-center gap-1 ${session.materials_unlocked ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
-                {session.materials_unlocked ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                Materials {session.materials_unlocked ? 'Available' : 'Locked'}
-              </span>
+              {session.recording ? (
+                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle size={12} />
+                  Recording available
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-slate-400">
+                  <Hourglass size={12} />
+                  Recording coming soon
+                </span>
+              )}
             </div>
           )}
 
@@ -115,12 +118,12 @@ function SessionCard({ session, onJoin }: { session: SessionWithDetails; onJoin:
               <Video size={14} />
               {isLive ? 'Join Now' : 'Join Class'}
             </button>
-          ) : session.status === 'completed' && session.materials_unlocked ? (
+          ) : session.status === 'completed' ? (
             <Link
               to={`/student/live-classes/${session.id}`}
               className="btn-secondary text-xs flex items-center gap-1.5"
             >
-              View Materials
+              {session.recording ? 'Watch Recording' : 'View Session'}
               <ChevronRight size={14} />
             </Link>
           ) : session.status === 'scheduled' ? (
@@ -195,8 +198,8 @@ export default function LiveClassesPage() {
               Live interactive sessions
             </p>
             <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-              All classes are conducted live via Google Meet. No recordings are available.
-              Session materials unlock after class completion.
+              Classes run live via Google Meet. After each class the faculty can publish the
+              recording and unlock materials — you'll find them on the session page.
             </p>
           </div>
         </div>

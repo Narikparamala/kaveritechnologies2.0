@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle, Users } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { AddToBatchModal } from '../../components/common/AddToBatchModal';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
-import type { Profile, CourseEnrollment, Course, LessonProgress } from '../../types/database';
+import type { Profile, CourseEnrollment, Course, LessonProgress, Batch } from '../../types/database';
 
 type StudentWithProgress = Profile & {
   enrollments?: (CourseEnrollment & { course: Course })[];
@@ -16,11 +18,15 @@ type StudentWithProgress = Profile & {
 
 export default function FacultyStudentsPage() {
   const { profile: faculty } = useAuth();
+  const { success, error: toastError } = useToast();
   const [students, setStudents] = useState<StudentWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [batchModalStudent, setBatchModalStudent] = useState<StudentWithProgress | null>(null);
+  const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!faculty) return;
@@ -36,9 +42,17 @@ export default function FacultyStudentsPage() {
         .select('course_id, course:courses(*)')
         .eq('faculty_id', faculty!.id);
 
-      const courses = (courseFaculty ?? []).map(cf => cf.course as Course);
+      const courses = (courseFaculty ?? [])
+        .map(cf => cf.course as unknown as Course | null)
+        .filter((course): course is Course => Boolean(course));
       setAssignedCourses(courses);
       const courseIds = courses.map(c => c.id);
+
+      // Batches of my courses (RLS scopes to course_faculty/batch_faculty).
+      if (courseIds.length > 0) {
+        const { data: myBatches } = await supabase.from('batches').select('*').in('course_id', courseIds).order('name');
+        setBatches((myBatches ?? []) as Batch[]);
+      }
 
       if (courseIds.length === 0) {
         setStudents([]);
@@ -47,10 +61,14 @@ export default function FacultyStudentsPage() {
       }
 
       // Get students enrolled in these courses
-      const { data: enrollments } = await supabase
+      // NOTE: course_enrollments has three FKs to profiles (student_id,
+      // granted_by, revoked_by) — the column hint is required or PostgREST
+      // fails with "more than one relationship found for profiles".
+      const { data: enrollments, error: enrollmentsError } = await supabase
         .from('course_enrollments')
-        .select('*, course:courses(*), student:profiles(*)')
+        .select('*, course:courses(*), student:profiles!course_enrollments_student_id_fkey(*)')
         .in('course_id', courseIds);
+      if (enrollmentsError) throw enrollmentsError;
 
       // Group by student
       const studentMap = new Map<string, StudentWithProgress>();
@@ -88,6 +106,7 @@ export default function FacultyStudentsPage() {
       setStudents(Array.from(studentMap.values()));
     } catch (err) {
       if (import.meta.env.DEV) console.error('Failed to load students:', err);
+      toastError('Could not load students', err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -117,7 +136,7 @@ export default function FacultyStudentsPage() {
           <p className="text-xs text-slate-500">Total Students</p>
         </div>
         <div className="card p-4">
-          <BookOpen className="text-purple-500 mb-2" size={20} />
+          <BookOpen className="text-teal-500 mb-2" size={20} />
           <p className="text-2xl font-bold text-slate-900 dark:text-white">{assignedCourses.length}</p>
           <p className="text-xs text-slate-500">Assigned Courses</p>
         </div>
@@ -219,7 +238,20 @@ export default function FacultyStudentsPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setBatchModalStudent(student);
+                      const { data } = await supabase
+                        .from('batch_students')
+                        .select('batch_id')
+                        .eq('student_id', student.id);
+                      setJoinedBatchIds((data ?? []).map(r => r.batch_id));
+                    }}
+                    className="btn-ghost text-xs flex items-center gap-1"
+                  >
+                    <Users size={12} /> Add to Batch
+                  </button>
                   <Link
                     to={`/faculty/students/${student.id}`}
                     className="btn-primary text-xs"
@@ -232,6 +264,18 @@ export default function FacultyStudentsPage() {
           ))}
         </div>
       )}
+
+      <AddToBatchModal
+        open={!!batchModalStudent}
+        onClose={() => setBatchModalStudent(null)}
+        student={batchModalStudent}
+        batches={batches}
+        joinedBatchIds={joinedBatchIds}
+        onAdded={(batchId, batchName) => {
+          setJoinedBatchIds(ids => [...ids, batchId]);
+          success(`Added to ${batchName}`);
+        }}
+      />
     </div>
   );
 }

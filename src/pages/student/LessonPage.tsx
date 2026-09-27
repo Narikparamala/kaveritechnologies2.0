@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense, useRef, useCallback } from 'react';
+import { useEffect, useState, Suspense, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, ChevronRight, CheckCircle, Bookmark, BookmarkCheck, ArrowLeft,
@@ -12,26 +12,30 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
+import { detectEmbed, isCanvaUrl } from '../../lib/mediaEmbeds';
+import { SecureResourceCard } from './workspace/SecureResourceCard';
 import {
   getLessonById, getLessonProgress, markLessonComplete,
-  getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources
+  getLessonNotes, saveNote, getBookmark, toggleBookmark, getLessonResources,
+  getStudentLessonAccess,
 } from '../../services/lessons';
-import { updateCourseProgress } from '../../services/courses';
 import { runPython, onRuntimeStatus, type RuntimeStatus } from '../../services/pythonExecution';
 import type {
   Lesson, Chapter, Course, LessonProgress, LessonNote, LessonResource,
   LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession
 } from '../../types/database';
+import CodeEditor from '../../components/common/CodeEditor';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+
 
 export default function LessonPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [lockedReason, setLockedReason] = useState<string | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [allLessons, setAllLessons] = useState<Lesson[]>([]);
@@ -74,7 +78,14 @@ export default function LessonPage() {
     const load = async () => {
       setLoading(true);
       const l = await getLessonById(lessonId);
-      if (!l) { setLoading(false); return; }
+      if (!l) {
+        // Lesson row is hidden by RLS when locked — surface the reason instead of "not found"
+        const access = await getStudentLessonAccess(lessonId);
+        setLockedReason(access?.access === 'locked' ? (access.reason || 'This lesson is locked.') : null);
+        setLoading(false);
+        return;
+      }
+      setLockedReason(null);
       setLesson(l);
       if (l.code_example) setPlaygroundCode(l.code_example);
 
@@ -116,18 +127,13 @@ export default function LessonPage() {
     if (!lesson || !profile || progress?.completed) return;
     setMarkingComplete(true);
     try {
-      const prog = await markLessonComplete(lesson.id, lesson.course_id, profile.id);
-      setProgress(prog);
-      await updateCourseProgress(lesson.course_id, profile.id);
-      await supabase.from('profiles').update({ xp_points: (profile.xp_points ?? 0) + lesson.xp_reward }).eq('id', profile.id);
-      await supabase.from('xp_transactions').insert({
-        student_id: profile.id,
-        amount: lesson.xp_reward,
-        reason: `Completed lesson: ${lesson.title}`,
-        reference_id: lesson.id,
-        reference_type: 'lesson',
-      });
-      success('Lesson complete!', `+${lesson.xp_reward} XP earned`);
+      const result = await markLessonComplete(lesson.id);
+      setProgress(result.progress);
+      await refreshProfile();
+      success(
+        'Lesson complete!',
+        result.xpAwarded > 0 ? `+${result.xpAwarded} XP earned` : 'Progress saved',
+      );
     } catch {
       toastError('Error', 'Could not mark lesson complete. Please try again.');
     }
@@ -169,8 +175,18 @@ export default function LessonPage() {
 
   if (!lesson) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-slate-500 dark:text-slate-400 mb-4">Lesson not found or you don't have access.</p>
+      <div className="p-8 text-center max-w-lg mx-auto">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-5">
+          <Lock size={28} className="text-amber-600 dark:text-amber-400" />
+        </div>
+        {lockedReason ? (
+          <>
+            <p className="font-semibold text-slate-900 dark:text-white mb-2">This lesson is locked</p>
+            <p className="text-slate-500 dark:text-slate-400 mb-4">{lockedReason}</p>
+          </>
+        ) : (
+          <p className="text-slate-500 dark:text-slate-400 mb-4">Lesson not found or you don't have access.</p>
+        )}
         <Link to="/student/courses" className="btn-primary">Back to My Courses</Link>
       </div>
     );
@@ -194,7 +210,7 @@ export default function LessonPage() {
             <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
               +{lesson.xp_reward} XP
             </span>
-            <span className={`badge text-xs ${lesson.teaching_mode === 'live_class' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+            <span className={`badge text-xs ${lesson.teaching_mode === 'live_class' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'}`}>
               {lesson.teaching_mode === 'live_class' ? 'Live Class' : 'Recorded'}
             </span>
           </div>
@@ -244,20 +260,7 @@ export default function LessonPage() {
           </h2>
           <div className="space-y-2">
             {resources.filter(r => r.resource_type === 'slides').map(r => (
-              <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                <FileText size={16} className="text-primary-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                  {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
-                </div>
-                {r.is_locked ? (
-                  <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><Lock size={11} /> Locked</span>
-                ) : r.external_url ? (
-                  <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><ExternalLink size={11} /> Open</a>
-                ) : r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
-                ) : null}
-              </div>
+              <SlidesResourceCard key={r.id} resource={r} />
             ))}
           </div>
         </div>
@@ -283,20 +286,22 @@ export default function LessonPage() {
           </h2>
           <div className="space-y-2">
             {resources.filter(r => r.resource_type === 'notes').map(r => (
-              <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                <FileText size={14} className="text-primary-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                  {r.content_text && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-wrap line-clamp-3">{r.content_text}</p>}
-                </div>
-                {r.is_locked ? (
-                  <span className="flex items-center gap-1 text-xs text-amber-600"><Lock size={11} /> Locked</span>
-                ) : r.external_url ? (
-                  <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><ExternalLink size={11} /> Open</a>
-                ) : r.file_url ? (
-                  <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
-                ) : null}
-              </div>
+              r.external_url && detectEmbed(r.external_url)
+                ? <SecureResourceCard key={r.id} resource={r} />
+                : (
+                  <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <FileText size={14} className="text-primary-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
+                      {r.content_text && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-wrap line-clamp-3">{r.content_text}</p>}
+                    </div>
+                    {r.is_locked ? (
+                      <span className="flex items-center gap-1 text-xs text-amber-600"><Lock size={11} /> Locked</span>
+                    ) : r.file_url ? (
+                      <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
+                    ) : null}
+                  </div>
+                )
             ))}
           </div>
         </div>
@@ -310,7 +315,7 @@ export default function LessonPage() {
             <span className="text-xs text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">Python</span>
           </div>
           <Suspense fallback={<div className="h-48 bg-slate-900 flex items-center justify-center text-slate-500 text-sm">Loading editor...</div>}>
-            <MonacoEditor
+            <CodeEditor
               height="220px"
               language="python"
               value={lesson.code_example}
@@ -328,18 +333,22 @@ export default function LessonPage() {
             <Film size={16} className="text-primary-600" /> Video Recording
           </h2>
           {resources.filter(r => r.resource_type === 'recorded_video' && !r.is_locked).map(r => (
-            <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-              <Film size={16} className="text-primary-600" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
-                {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
-              </div>
-              {r.external_url && (
-                <a href={r.external_url} target="_blank" rel="noopener noreferrer" className="btn-primary text-xs flex items-center gap-1">
-                  <Play size={11} /> Watch
-                </a>
-              )}
-            </div>
+            r.external_url && detectEmbed(r.external_url)
+              ? <SecureResourceCard key={r.id} resource={r} />
+              : (
+                <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                  <Film size={16} className="text-primary-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">{r.title}</p>
+                    {r.description && <p className="text-xs text-slate-400">{r.description}</p>}
+                  </div>
+                  {r.file_url && (
+                    <a href={r.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
+                      <Download size={11} /> Download
+                    </a>
+                  )}
+                </div>
+              )
           ))}
         </div>
       )}
@@ -539,7 +548,7 @@ export default function LessonPage() {
       </div>
       <div className="flex-1 min-h-0">
         <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
-          <MonacoEditor
+          <CodeEditor
             height="100%"
             language="python"
             theme="vs-dark"
@@ -636,7 +645,7 @@ export default function LessonPage() {
             <div className="h-full flex flex-col bg-slate-900">
               <div className="flex-1 min-h-0">
                 <Suspense fallback={<div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading editor...</div>}>
-                  <MonacoEditor
+                  <CodeEditor
                     height="100%"
                     language="python"
                     theme="vs-dark"
@@ -679,6 +688,77 @@ export default function LessonPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">{lessonContent}</div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One slide/video deck in the lesson. Canva/Google Slides/YouTube links render
+ * inline in an iframe so students never leave the site. Students never see
+ * raw embed URLs — only a title and a view toggle.
+ */
+function SlidesResourceCard({ resource }: { resource: LessonResource }) {
+  const [showPlayer, setShowPlayer] = useState(false);
+  const embed = detectEmbed(resource.external_url);
+
+  const icon = embed?.type === 'youtube' ? <Video size={16} className="text-red-500 flex-shrink-0" /> : <FileText size={16} className="text-primary-600 flex-shrink-0" />;
+  const embedLabel = embed?.type === 'youtube' ? 'Watch video' : 'View slides';
+  const hideLabel = embed?.type === 'youtube' ? 'Hide video' : 'Hide slides';
+
+  return (
+    <div className="rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        {icon}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">{resource.title}</p>
+          {resource.description && <p className="text-xs text-slate-400">{resource.description}</p>}
+        </div>
+        {resource.is_locked ? (
+          <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><Lock size={11} /> Locked</span>
+        ) : embed ? (
+          <button
+            onClick={() => setShowPlayer(s => !s)}
+            className="btn-primary text-xs py-1.5 flex items-center gap-1"
+          >
+            {showPlayer ? <ChevronLeft size={11} /> : <Play size={11} />}
+            {showPlayer ? hideLabel : embedLabel}
+          </button>
+        ) : resource.file_url ? (
+          <a href={resource.file_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs py-1.5 flex items-center gap-1"><Download size={11} /> Download</a>
+        ) : null}
+      </div>
+      {/* Inline embedded player — Canva, Google Slides, or YouTube */}
+      {embed && showPlayer && (
+        <div className="px-3 pb-3">
+          <div className="relative w-full" style={{ paddingTop: embed.ratio ? `${(1 / embed.ratio) * 100}%` : '56.25%' }}>
+            {embed.type === 'youtube' ? (
+              <iframe
+                src={embed.embedUrl}
+                title={resource.title}
+                className="absolute inset-0 w-full h-full rounded-lg border border-slate-200 dark:border-slate-700"
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            ) : (
+              <iframe
+                src={embed.embedUrl}
+                title={resource.title}
+                className="absolute inset-0 w-full h-full rounded-lg border border-slate-200 dark:border-slate-700"
+                loading="lazy"
+                allow="fullscreen"
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            {embed.type === 'youtube'
+              ? 'Video player loaded inline. Use fullscreen for best experience.'
+              : 'Presentation mode, fullscreen and page navigation work inside the frame.'}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { User, Mail, Phone, Edit2, Save, X, Zap, Flame, Trophy } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { User, Mail, Phone, Edit2, Save, X, Zap, Flame, Trophy, Share2, Globe, CheckCircle, Camera, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../components/common/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Badge } from '../../components/ui/Badge';
@@ -12,6 +13,11 @@ export default function ProfilePage() {
   const { profile, refreshProfile } = useAuth();
   const { success, error: toastError } = useToast();
   const [editing, setEditing] = useState(false);
+  const navigate = useNavigate();
+  const [copiedShare, setCopiedShare] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [form, setForm] = useState({
     full_name: '',
     phone: '',
@@ -64,6 +70,126 @@ export default function ProfilePage() {
     setEditing(false);
   };
 
+  const publicUrl = profile.profile_slug ? `${window.location.origin}/u/${profile.profile_slug}` : null;
+
+  const handleShareProfile = async () => {
+    if (!publicUrl) return;
+    if (!profile.profile_public) {
+      toastError('Your profile is private', 'Turn on "Public profile" in Settings first — taking you there.');
+      navigate('/student/settings');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopiedShare(true);
+      success('Profile link copied!', 'Share it with recruiters — anyone with the link can view it.');
+      setTimeout(() => setCopiedShare(false), 2000);
+    } catch {
+      toastError('Copy failed', publicUrl);
+    }
+  };
+
+  const AVATAR_BUCKET = 'profile-avatars';
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toastError('Unsupported format', 'Please choose a JPG, PNG, or WebP image.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toastError('Image too large', 'Please choose an image under 5 MB.');
+      return;
+    }
+    setAvatarPreview(URL.createObjectURL(file));
+    void handleAvatarUpload(file);
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    setAvatarBusy(true);
+    const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    const fileName = `avatar-${crypto.randomUUID()}.${extension}`;
+    const objectPath = `${profile.id}/${fileName}`;
+
+    try {
+      const { data: existingFiles, error: listError } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .list(profile.id, { limit: 20 });
+      if (listError) throw listError;
+
+      const { error: uploadError } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .upload(objectPath, file, { cacheControl: '3600', contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from(AVATAR_BUCKET)
+        .getPublicUrl(objectPath);
+      const avatarUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', profile.id)
+        .select('id')
+        .maybeSingle();
+      if (profileError || !updatedProfile) {
+        await supabase.storage.from(AVATAR_BUCKET).remove([objectPath]);
+        throw profileError ?? new Error('Your profile photo could not be saved.');
+      }
+
+      const stalePaths = (existingFiles ?? [])
+        .filter(f => f.name !== fileName)
+        .map(f => `${profile.id}/${f.name}`);
+      if (stalePaths.length > 0) {
+        await supabase.storage.from(AVATAR_BUCKET).remove(stalePaths);
+      }
+
+      await refreshProfile();
+      setAvatarPreview(null);
+      success('Profile photo updated!');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to upload your profile photo.';
+      toastError('Photo upload failed', message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarBusy(true);
+    try {
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: null })
+        .eq('id', profile.id)
+        .select('id')
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (!updatedProfile) throw new Error('Your profile photo could not be removed.');
+
+      const { data: files, error: listError } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .list(profile.id, { limit: 20 });
+      if (!listError && files && files.length > 0) {
+        await supabase.storage
+          .from(AVATAR_BUCKET)
+          .remove(files.map(f => `${profile.id}/${f.name}`));
+      }
+
+      await refreshProfile();
+      setAvatarPreview(null);
+      success('Profile photo removed');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to remove your profile photo.';
+      toastError('Remove failed', message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const roleLabel: Record<string, string> = {
     student: 'Student',
     faculty: 'Faculty / Trainer',
@@ -78,11 +204,41 @@ export default function ProfilePage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 mb-8 pb-8 border-b border-slate-100 dark:border-slate-700">
           <div className="relative flex-shrink-0">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 to-teal-500 flex items-center justify-center shadow-glow-blue">
-              <span className="text-3xl font-extrabold text-white">
-                {profile.full_name?.charAt(0).toUpperCase() ?? 'U'}
-              </span>
+            <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-primary-500 to-teal-500 flex items-center justify-center ring-4 ring-white dark:ring-slate-800 shadow-lg">
+              {avatarPreview || profile.avatar_url ? (
+                <img src={(avatarPreview || profile.avatar_url) || undefined} alt={profile.full_name ?? 'Profile'} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl font-extrabold text-white">
+                  {profile.full_name?.charAt(0).toUpperCase() ?? 'U'}
+                </span>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarBusy}
+              title={profile.avatar_url ? 'Change photo' : 'Add photo'}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-md hover:bg-primary-700 disabled:opacity-60 border-2 border-white dark:border-slate-800"
+            >
+              {avatarBusy ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+            </button>
+            {profile.avatar_url && !avatarBusy && (
+              <button
+                type="button"
+                onClick={handleRemoveAvatar}
+                title="Remove photo"
+                className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center shadow hover:text-red-600 border border-slate-200 dark:border-slate-600"
+              >
+                <X size={12} />
+              </button>
+            )}
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">{profile.full_name}</h2>
@@ -91,13 +247,39 @@ export default function ProfilePage() {
               <Badge variant={profile.role === 'super_admin' ? 'error' : profile.role === 'faculty' ? 'teal' : 'info'}>
                 {roleLabel[profile.role] ?? profile.role}
               </Badge>
+              {profile.role === 'student' && publicUrl && (
+                profile.profile_public ? (
+                  <button
+                    onClick={handleShareProfile}
+                    className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+                    title={publicUrl}
+                  >
+                    <Globe size={12} /> Public profile is ON — tap Share to copy your link
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => navigate('/student/settings')}
+                    className="mt-2 flex items-center gap-1.5 text-xs text-slate-400 hover:text-primary-600 hover:underline"
+                  >
+                    <Globe size={12} /> Profile is private — make it public in Settings to share with recruiters
+                  </button>
+                )
+              )}
             </div>
           </div>
           <div className="flex-shrink-0">
             {!editing ? (
-              <button onClick={() => setEditing(true)} className="btn-secondary flex items-center gap-2 text-sm">
-                <Edit2 size={14} /> Edit Profile
-              </button>
+              <div className="flex items-center gap-2">
+                {publicUrl && (
+                  <button onClick={handleShareProfile} className="btn-primary flex items-center gap-2 text-sm">
+                    {copiedShare ? <CheckCircle size={14} /> : <Share2 size={14} />}
+                    {copiedShare ? 'Copied!' : 'Share Profile'}
+                  </button>
+                )}
+                <button onClick={() => setEditing(true)} className="btn-secondary flex items-center gap-2 text-sm">
+                  <Edit2 size={14} /> Edit Profile
+                </button>
+              </div>
             ) : (
               <div className="flex gap-2">
                 <button onClick={handleCancel} className="btn-ghost flex items-center gap-1 text-sm">
@@ -184,7 +366,7 @@ export default function ProfilePage() {
                 className="input"
                 value={form.phone}
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                placeholder="+91 98765 43210"
+                placeholder="Your phone number"
               />
             ) : (
               <p className="text-slate-800 dark:text-slate-200 font-medium px-1 py-2">{profile.phone || '—'}</p>

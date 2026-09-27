@@ -1,9 +1,42 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor } from 'lucide-react';
+import { Fragment, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor, Lock, HelpCircle, TerminalSquare } from 'lucide-react';
 import { useWorkspace } from './WorkspaceContext';
 
+/**
+ * Chapter completion counts lessons AND every attached step (lesson quizzes,
+ * lesson coding practice, chapter quizzes, chapter coding practice). Adding a
+ * new quiz or question therefore immediately un-completes the chapter.
+ */
+function chapterStepCounts(
+  chapter: { id: string; lessons: { id: string }[] },
+  lessonQuizSteps: Map<string, { state: string }[]>,
+  lessonCodingSteps: Map<string, { solved: boolean }[]>,
+  chapterQuizSteps: Map<string, { passed: boolean }[]>,
+  chapterCodingSteps: Map<string, { solved: boolean }[]>,
+  progress: Map<string, any>,
+): { done: number; total: number } {
+  let done = chapter.lessons.filter(l => progress.has(l.id)).length;
+  let total = chapter.lessons.length;
+  for (const lesson of chapter.lessons) {
+    const lqs = lessonQuizSteps.get(lesson.id) ?? [];
+    done += lqs.filter(q => q.state === 'completed').length;
+    total += lqs.length;
+    const lcs = lessonCodingSteps.get(lesson.id) ?? [];
+    done += lcs.filter(s => s.solved).length;
+    total += lcs.length;
+  }
+  const cqs = chapterQuizSteps.get(chapter.id) ?? [];
+  done += cqs.filter(q => q.passed).length;
+  total += cqs.length;
+  const ccs = chapterCodingSteps.get(chapter.id) ?? [];
+  done += ccs.filter(s => s.solved).length;
+  total += ccs.length;
+  return { done, total };
+}
+
 export function CourseSidebar() {
-  const { course, chapters, currentLesson, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
+  const { course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps, currentLesson, accessMap, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
     if (!currentLesson) return new Set();
     return new Set([currentLesson.chapter_id]);
@@ -20,8 +53,9 @@ export function CourseSidebar() {
     });
   };
 
-  const completedCount = chapters.reduce((s, ch) => s + ch.lessons.filter(l => progress.has(l.id)).length, 0);
-  const totalCount = chapters.reduce((s, ch) => s + ch.lessons.length, 0);
+  const chapterCounts = chapters.map(ch => chapterStepCounts(ch, lessonQuizSteps, lessonCodingSteps, chapterQuizSteps, chapterCodingSteps, progress));
+  const completedCount = chapterCounts.reduce((sum, c) => sum + c.done, 0);
+  const totalCount = chapterCounts.reduce((sum, c) => sum + c.total, 0);
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800">
@@ -33,8 +67,14 @@ export function CourseSidebar() {
             <PanelLeftClose size={16} />
           </button>
         </div>
+        {course.thumbnail_url && (
+          <img src={course.thumbnail_url} alt="" className="w-full h-24 object-cover rounded-xl mb-2" />
+        )}
+        {course.short_description && (
+          <p className="text-[11px] text-slate-400 mb-2 line-clamp-2">{course.short_description}</p>
+        )}
         <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
-          <span>{completedCount}/{totalCount} lessons</span>
+          <span>{completedCount}/{totalCount} items</span>
           <span className="text-slate-300">|</span>
           <span>{Math.round(courseProgress)}% complete</span>
         </div>
@@ -50,7 +90,7 @@ export function CourseSidebar() {
       <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
         {chapters.map(chapter => {
           const isExpanded = expandedChapters.has(chapter.id);
-          const chCompleted = chapter.lessons.filter(l => progress.has(l.id)).length;
+          const { done: chCompleted, total: chTotal } = chapterStepCounts(chapter, lessonQuizSteps, lessonCodingSteps, chapterQuizSteps, chapterCodingSteps, progress);
           const isCurrentChapter = currentLesson?.chapter_id === chapter.id;
 
           return (
@@ -62,9 +102,9 @@ export function CourseSidebar() {
                 {isExpanded ? <ChevronDown size={14} className="text-slate-400 flex-shrink-0" /> : <ChevronRight size={14} className="text-slate-400 flex-shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{chapter.title}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{chCompleted}/{chapter.lessons.length} completed</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{chCompleted}/{chTotal} items</p>
                 </div>
-                {chCompleted === chapter.lessons.length && chapter.lessons.length > 0 && (
+                {chTotal > 0 && chCompleted === chTotal && (
                   <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
                 )}
               </button>
@@ -74,20 +114,25 @@ export function CourseSidebar() {
                   {chapter.lessons.map(lesson => {
                     const isActive = currentLesson?.id === lesson.id;
                     const isCompleted = progress.has(lesson.id);
+                    const access = accessMap.get(lesson.id);
+                    const isLocked = access?.access === 'locked';
 
                     return (
+                      <Fragment key={lesson.id}>
                       <button
-                        key={lesson.id}
                         onClick={() => selectLesson(lesson.id)}
+                        title={isLocked ? (access?.reason || 'Locked') : undefined}
                         className={`w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 transition-all group ${
                           isActive
                             ? 'bg-primary-50 dark:bg-primary-900/20 border-l-2 border-primary-500'
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent'
-                        }`}
+                        } ${isLocked ? 'opacity-75' : ''}`}
                       >
                         <div className="flex-shrink-0">
                           {isCompleted ? (
                             <CheckCircle size={14} className="text-emerald-500" />
+                          ) : isLocked ? (
+                            <Lock size={13} className="text-amber-500" />
                           ) : isActive ? (
                             <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-500 bg-primary-500/20" />
                           ) : (
@@ -99,16 +144,17 @@ export function CourseSidebar() {
                             <p className={`text-xs leading-relaxed truncate ${
                               isActive ? 'font-semibold text-primary-700 dark:text-primary-400' :
                               isCompleted ? 'text-slate-500 dark:text-slate-400' :
+                              isLocked ? 'text-slate-400 dark:text-slate-500' :
                               'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
                             }`}>{lesson.title}</p>
                             {lesson.teaching_mode === 'live_class' && (
-                              <Monitor size={10} className="text-blue-500 flex-shrink-0" title="Live Class" />
+                              <Monitor size={10} className="text-blue-500 flex-shrink-0" aria-label="Live Class" />
                             )}
                             {lesson.teaching_mode === 'recorded_video' && (
-                              <Video size={10} className="text-sky-500 flex-shrink-0" title="Video" />
+                              <Video size={10} className="text-sky-500 flex-shrink-0" aria-label="Video" />
                             )}
                             {lesson.enable_coding_playground && (
-                              <Code size={10} className="text-teal-500 flex-shrink-0" title="Coding" />
+                              <Code size={10} className="text-teal-500 flex-shrink-0" aria-label="Coding" />
                             )}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
@@ -123,8 +169,90 @@ export function CourseSidebar() {
                           </div>
                         </div>
                       </button>
+
+                      {/* Per-lesson steps: quiz, then coding practice — they sit
+                          BETWEEN lessons in the flow (lesson -> quiz -> practice
+                          -> next lesson), CCBP-style. */}
+                      {(lessonQuizSteps.get(lesson.id) ?? []).map(q => (
+                        <Link
+                          key={`lq-${q.id}`}
+                          to={`/student/quizzes?quizId=${q.id}&returnTo=${encodeURIComponent(`/student/course/${course.id}`)}`}
+                          className={`w-full text-left pl-14 pr-3 py-1.5 flex items-center gap-2.5 border-l-2 border-transparent transition-all group ${
+                            isActive ? 'bg-primary-50/60 dark:bg-primary-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <div className="flex-shrink-0">
+                            {q.state === 'completed' ? <CheckCircle size={12} className="text-emerald-500" /> : progress.get(lesson.id) ? <HelpCircle size={12} className="text-amber-500" /> : <Lock size={12} className="text-slate-400" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{q.title}</p>
+                            <span className="text-[9px] uppercase tracking-wide text-amber-600 dark:text-amber-400">{progress.get(lesson.id) || q.state === 'completed' ? 'Quiz' : 'Quiz · locked'}</span>
+                          </div>
+                        </Link>
+                      ))}
+                      {(lessonCodingSteps.get(lesson.id) ?? []).length > 0 && (() => {
+                        // One "Coding Practice" step per lesson opens the question
+                        // list (this lesson + previous lessons); each question
+                        // there opens the Monaco editor to solve/submit.
+                        const steps = lessonCodingSteps.get(lesson.id) ?? [];
+                        const solvedCount = steps.filter(s => s.solved).length;
+                        return (
+                          <Link
+                            to={`/student/course/${course.id}/lesson-practice/${lesson.id}`}
+                            className={`w-full text-left pl-14 pr-3 py-1.5 flex items-center gap-2.5 border-l-2 border-transparent transition-all group ${
+                              isActive ? 'bg-primary-50/60 dark:bg-primary-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <div className="flex-shrink-0">
+                              {solvedCount === steps.length ? <CheckCircle size={12} className="text-emerald-500" /> : <TerminalSquare size={12} className="text-teal-500" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">Coding Practice</p>
+                              <span className="text-[9px] uppercase tracking-wide text-teal-600 dark:text-teal-400">
+                                {solvedCount}/{steps.length} solved
+                              </span>
+                            </div>
+                          </Link>
+                        );
+                      })()}
+                      </Fragment>
                     );
                   })}
+
+                  {/* Chapter-level steps: quizzes (MCQ practice) then coding practice — CCBP order */}
+                  {(chapterQuizSteps.get(chapter.id) ?? []).map(q => (
+                    <Link
+                      key={q.id}
+                      to={`/student/quizzes?quizId=${q.id}&returnTo=${encodeURIComponent(`/student/course/${course.id}`)}`}
+                      className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
+                    >
+                      <div className="flex-shrink-0">
+                        {q.passed ? <CheckCircle size={14} className="text-emerald-500" /> : <HelpCircle size={14} className="text-amber-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{q.title}</p>
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400">MCQ Practice · Pass {q.pass_percentage}%</span>
+                      </div>
+                    </Link>
+                  ))}                  {/* CCBP-style: one "Coding Practice" step per chapter opens the question list */}
+                  {(chapterCodingSteps.get(chapter.id) ?? []).length > 0 && (() => {
+                    const steps = chapterCodingSteps.get(chapter.id) ?? [];
+                    const allSolved = steps.every(s => s.solved);
+                    return (
+                      <Link
+                        to={`/student/course/${course.id}/practice/${chapter.id}`}
+                        className="w-full text-left pl-9 pr-3 py-2 flex items-center gap-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-2 border-transparent transition-all group"
+                      >
+                        <div className="flex-shrink-0">
+                          {allSolved ? <CheckCircle size={14} className="text-emerald-500" /> : <TerminalSquare size={14} className="text-teal-500" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">Coding Practice — {chapter.title}</p>
+                          <span className="text-[10px] text-teal-600 dark:text-teal-400">Coding Practice · {steps.filter(s => s.solved).length}/{steps.length} solved</span>
+                        </div>
+                      </Link>
+                    );
+                  })()}
                 </div>
               )}
             </div>

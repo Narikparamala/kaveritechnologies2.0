@@ -1,28 +1,81 @@
-import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole } from '../types/database';
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PREVIEW MODE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// Set to 'student' | 'faculty' | 'super_admin' to bypass login in preview.
-// Set to null to restore normal authentication.
-const configuredPreviewRole = import.meta.env.DEV ? import.meta.env.VITE_PREVIEW_ROLE : undefined;
-export const PREVIEW_ROLE: UserRole | null = configuredPreviewRole === 'student' || configuredPreviewRole === 'faculty' || configuredPreviewRole === 'super_admin' ? configuredPreviewRole : null;
+const configuredPreviewRole = import.meta.env.DEV
+  ? import.meta.env.VITE_PREVIEW_ROLE
+  : undefined;
+
+export const PREVIEW_ROLE: UserRole | null =
+  configuredPreviewRole === 'student' ||
+  configuredPreviewRole === 'faculty' ||
+  configuredPreviewRole === 'super_admin'
+    ? configuredPreviewRole
+    : null;
+
 export const DEVELOPER_EMAIL = 'narikparamala@gmail.com';
 export const DEVELOPER_ROLE_KEY = 'kaveri-developer-role';
 
-function selectedDeveloperRole(profile: Profile | null): UserRole | null {
-  if (!import.meta.env.DEV || profile?.email?.toLowerCase() !== DEVELOPER_EMAIL) return null;
+export const ROLE_DASHBOARDS: Record<UserRole, string> = {
+  student: '/student/dashboard',
+  faculty: '/faculty/dashboard',
+  super_admin: '/admin/dashboard',
+};
 
-  const requestedRole = new URLSearchParams(window.location.search).get('developerRole');
-  if (requestedRole === 'student' || requestedRole === 'faculty' || requestedRole === 'super_admin') {
-    return requestedRole;
+// Which portals a user may view. A portal switch is a UI-only preview: the
+// real database role (realRole) never changes, so server-side RLS still
+// authorises every request with the user's actual account permissions.
+export function portalRolesFor(realRole: UserRole | null): {
+  primary: UserRole;
+  previews: UserRole[];
+} {
+  if (realRole === 'super_admin') {
+    return { primary: 'super_admin', previews: ['faculty', 'student'] };
   }
-
-  const selected = sessionStorage.getItem(DEVELOPER_ROLE_KEY);
-  return selected === 'student' || selected === 'faculty' || selected === 'super_admin' ? selected : null;
+  if (realRole === 'faculty') {
+    return { primary: 'faculty', previews: ['student'] };
+  }
+  return { primary: 'student', previews: [] };
 }
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+
+export function canSwitchPortal(realRole: UserRole | null): boolean {
+  return portalRolesFor(realRole).previews.length > 0;
+}
+
+interface AuthContextType {
+  user: User | null;
+  session: Session | null;
+  profile: Profile | null;
+  role: UserRole | null;
+  /** The user's actual role from the database — never changed by previews. */
+  realRole: UserRole | null;
+  /** True when the UI is showing a different portal than the real role. */
+  isPortalPreview: boolean;
+  loading: boolean;
+  isAuthenticated: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+  ) => Promise<{ error: string | null }>;
+  signOut: () => Promise<void>;
+  refreshProfile: () => Promise<Profile | null>;
+  /** Switch the UI portal (super_admin/faculty only). UI-only, never the DB role. */
+  switchPortal: (role: UserRole) => void;
+  /** Return to the user's real portal. */
+  resetPortal: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const PREVIEW_PROFILE: Profile = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -37,34 +90,36 @@ const PREVIEW_PROFILE: Profile = {
   streak_days: 7,
   last_active_date: new Date().toISOString(),
   is_active: true,
+  linkedin_url: null,
+  github_url: null,
+  resume_url: null,
+  profile_public: false,
+  profile_slug: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
 
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  profile: Profile | null;
-  role: UserRole | null;
-  loading: boolean;
-  isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
-  signOut: () => Promise<void>;
-  refreshProfile: () => Promise<Profile | null>;
+function selectedPortalRole(profile: Profile | null): UserRole | null {
+  if (!profile) return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const requestedRole = params.get('portal') ?? params.get('developerRole');
+  if (requestedRole === 'student' || requestedRole === 'faculty' || requestedRole === 'super_admin') {
+    return portalRolesFor(profile.role).primary === requestedRole ||
+      portalRolesFor(profile.role).previews.includes(requestedRole)
+      ? requestedRole
+      : null;
+  }
+
+  const selected = sessionStorage.getItem(DEVELOPER_ROLE_KEY);
+  const allowed = portalRolesFor(profile.role);
+  return selected === allowed.primary || allowed.previews.includes(selected as UserRole)
+    ? (selected as UserRole)
+    : null;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const ROLE_DASHBOARDS: Record<UserRole, string> = {
-  student: '/student/dashboard',
-  faculty: '/faculty/dashboard',
-  super_admin: '/admin/dashboard',
-};
-
 async function fetchProfileById(userId: string): Promise<Profile | null> {
-  // Retry up to 5 times with delay Ã¢â‚¬â€ trigger may not have fired yet
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -72,206 +127,247 @@ async function fetchProfileById(userId: string): Promise<Profile | null> {
       .maybeSingle();
 
     if (data) return data as Profile;
-    if (error) console.error('Profile fetch error:', error);
-    // Wait before retrying (trigger may be delayed)
-    if (attempt < 4) await new Promise(r => setTimeout(r, 800));
+    if (error && import.meta.env.DEV) {
+      console.error('Profile fetch error:', error);
+    }
+    if (attempt < 4) {
+      await new Promise(resolve => window.setTimeout(resolve, 800));
+    }
   }
+
   return null;
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  // Preview mode: skip Supabase auth entirely
-  if (PREVIEW_ROLE !== null) {
-    const noopAsync = async () => ({ error: null });
-    const noopVoid = async () => {};
-    return (
-      <AuthContext.Provider value={{
-        user: { id: PREVIEW_PROFILE.id, email: PREVIEW_PROFILE.email } as any,
-        session: {} as any,
-        profile: { ...PREVIEW_PROFILE, role: PREVIEW_ROLE },
-        role: PREVIEW_ROLE,
-        loading: false,
-        isAuthenticated: true,
-        signIn: noopAsync,
-        signUp: noopAsync,
-        signOut: noopVoid,
-        refreshProfile: async () => ({ ...PREVIEW_PROFILE, role: PREVIEW_ROLE }),
-      }}>
-        {children}
-      </AuthContext.Provider>
-    );
-  }
+function PreviewAuthProvider({ children }: { children: ReactNode }) {
+  const previewRole = PREVIEW_ROLE ?? 'student';
+  const previewProfile = { ...PREVIEW_PROFILE, role: previewRole };
+  const previewUser = {
+    id: previewProfile.id,
+    email: previewProfile.email,
+  } as User;
+  const previewSession = { user: previewUser } as Session;
 
+  const value: AuthContextType = {
+    user: previewUser,
+    session: previewSession,
+    profile: previewProfile,
+    role: previewRole,
+    realRole: previewRole,
+    isPortalPreview: false,
+    loading: false,
+    isAuthenticated: true,
+    signIn: async () => ({ error: null }),
+    signUp: async () => ({ error: null }),
+    signOut: async () => undefined,
+    refreshProfile: async () => previewProfile,
+    switchPortal: () => undefined,
+    resetPortal: () => undefined,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const initializedRef = useRef(false);
 
-  const refreshProfile = async (userId?: string): Promise<Profile | null> => {
-    const id = userId ?? user?.id;
-    if (!id) return null;
-    const p = await fetchProfileById(id);
-    setProfile(p);
-    return p;
-  };
+  const refreshProfileForUser = useCallback(
+    async (userId: string): Promise<Profile | null> => {
+      const nextProfile = await fetchProfileById(userId);
+      setProfile(nextProfile);
+      return nextProfile;
+    },
+    [],
+  );
+
+  const refreshProfile = useCallback(async (): Promise<Profile | null> => {
+    if (!user?.id) return null;
+    return refreshProfileForUser(user.id);
+  }, [refreshProfileForUser, user?.id]);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        fetchProfileById(s.user.id).then(p => {
-          setProfile(p);
-          setLoading(false);
-          initializedRef.current = true;
-        });
-      } else {
-        setLoading(false);
-        initializedRef.current = true;
-      }
-    });
+    let active = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
+    const applySession = async (nextSession: Session | null) => {
+      if (!active) return;
 
-      if (!s?.user) {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (!nextSession?.user) {
         setProfile(null);
         setLoading(false);
         return;
       }
 
-      // Handle all meaningful auth events
-      if (
-        event === 'INITIAL_SESSION' ||
-        event === 'SIGNED_IN' ||
-        event === 'TOKEN_REFRESHED' ||
-        event === 'USER_UPDATED'
-      ) {
-        (async () => {
-          const p = await fetchProfileById(s.user.id);
-          setProfile(p);
-          setLoading(false);
-        })();
-      } else if (event === 'SIGNED_OUT') {
-        setProfile(null);
-        setLoading(false);
-      } else if (event === 'PASSWORD_RECOVERY') {
-        // Password recovery - user has valid session but may need to reset password
-        (async () => {
-          const p = await fetchProfileById(s.user.id);
-          setProfile(p);
-          setLoading(false);
-        })();
+      const nextProfile = await fetchProfileById(nextSession.user.id);
+      if (!active) return;
+      setProfile(nextProfile);
+      setLoading(false);
+    };
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error && import.meta.env.DEV) {
+        console.error('Initial session error:', error);
       }
+      void applySession(data.session);
     });
 
-    return () => subscription.unsubscribe();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      // Defer database work until the auth client has released its internal
+      // state-change lock.
+      window.setTimeout(() => void applySession(nextSession), 0);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
+  const signIn = async (
+    email: string,
+    password: string,
+  ): Promise<{ error: string | null }> => {
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     if (error) {
       setLoading(false);
-      if (error.message.toLowerCase().includes('invalid login credentials') ||
-          error.message.toLowerCase().includes('invalid credentials')) {
-        return { error: 'Invalid email or password. Please check your credentials and try again.' };
+      const message = error.message.toLowerCase();
+      if (
+        message.includes('invalid login credentials') ||
+        message.includes('invalid credentials')
+      ) {
+        return {
+          error: 'Invalid email or password. Please check your credentials and try again.',
+        };
       }
-      if (error.message.toLowerCase().includes('email not confirmed')) {
-        return { error: 'Please verify your email address before signing in. Check your inbox.' };
+      if (message.includes('email not confirmed')) {
+        return {
+          error: 'Please verify your email address before signing in. Check your inbox.',
+        };
       }
       return { error: error.message };
     }
 
-    // Fetch profile immediately after sign in
     if (data.user) {
-      const p = await fetchProfileById(data.user.id);
-      setProfile(p);
-      setLoading(false);
-      return { error: null };
+      setUser(data.user);
+      setSession(data.session);
+      await refreshProfileForUser(data.user.id);
     }
-
     setLoading(false);
     return { error: null };
   };
 
-  const signUp = async (email: string, password: string, fullName: string): Promise<{ error: string | null }> => {
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+  ): Promise<{ error: string | null }> => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: fullName },
-        // Do not pass role Ã¢â‚¬â€ trigger always assigns 'student'
-      },
+      options: { data: { full_name: fullName } },
     });
 
     if (error) {
-      if (error.message.toLowerCase().includes('already registered') ||
-          error.message.toLowerCase().includes('user already registered')) {
-        return { error: 'An account with this email already exists. Please sign in instead.' };
+      const message = error.message.toLowerCase();
+      if (
+        message.includes('already registered') ||
+        message.includes('user already registered')
+      ) {
+        return {
+          error: 'An account with this email already exists. Please sign in instead.',
+        };
       }
-      if (error.message.toLowerCase().includes('password')) {
+      if (message.includes('password')) {
         return { error: 'Password must be at least 6 characters long.' };
       }
       return { error: error.message };
     }
 
-    // If email confirmation is disabled (our case), user is immediately active
     if (data.user && data.session) {
       setUser(data.user);
       setSession(data.session);
-      // Wait for trigger to create profile
-      const p = await fetchProfileById(data.user.id);
-      setProfile(p);
-      return { error: null };
+      await refreshProfileForUser(data.user.id);
     }
 
-    // Email confirmation required
-    if (data.user && !data.session) {
-      return { error: null }; // Success Ã¢â‚¬â€ user needs to confirm email
-    }
-
-    return { error: 'Something went wrong. Please try again.' };
+    return data.user
+      ? { error: null }
+      : { error: 'Something went wrong. Please try again.' };
   };
 
   const signOut = async () => {
     sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setUser(null);
     setSession(null);
     setProfile(null);
   };
 
-  const developerRole = selectedDeveloperRole(profile);
-  const effectiveProfile = profile && developerRole ? { ...profile, role: developerRole } : profile;
+  const portalRole = selectedPortalRole(profile);
+  const effectiveProfile =
+    profile && portalRole ? { ...profile, role: portalRole } : profile;
   const role = effectiveProfile?.role ?? null;
-  const isAuthenticated = !!user && !!session;
+  const realRole = profile?.role ?? null;
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      session,
-      profile: effectiveProfile,
-      role,
-      loading,
-      isAuthenticated,
-      signIn,
-      signUp,
-      signOut,
-      refreshProfile,
-    }}>
-      {children}
-    </AuthContext.Provider>
+  const switchPortal = (nextRole: UserRole) => {
+    const allowed = portalRolesFor(realRole);
+    if (allowed.primary !== nextRole && !allowed.previews.includes(nextRole)) {
+      return; // never let a preview escape the user's real-role set
+    }
+    sessionStorage.setItem(DEVELOPER_ROLE_KEY, nextRole);
+    window.location.assign(ROLE_DASHBOARDS[nextRole]);
+  };
+
+  const resetPortal = () => {
+    sessionStorage.removeItem(DEVELOPER_ROLE_KEY);
+    if (realRole) window.location.assign(ROLE_DASHBOARDS[realRole]);
+  };
+
+  const value: AuthContextType = {
+    user,
+    session,
+    profile: effectiveProfile,
+    role,
+    realRole,
+    isPortalPreview: Boolean(
+      realRole && role && role !== realRole && canSwitchPortal(realRole),
+    ),
+    loading,
+    isAuthenticated: Boolean(user && session),
+    signIn,
+    signUp,
+    signOut,
+    refreshProfile,
+    switchPortal,
+    resetPortal,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return PREVIEW_ROLE ? (
+    <PreviewAuthProvider>{children}</PreviewAuthProvider>
+  ) : (
+    <SupabaseAuthProvider>{children}</SupabaseAuthProvider>
   );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
 }
-
-export { ROLE_DASHBOARDS };

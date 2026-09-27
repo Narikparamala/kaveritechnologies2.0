@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -128,20 +128,22 @@ function makeSlug(title: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'coding-question';
   return `${base}-${Date.now().toString().slice(-6)}`;
-}
-
-export default function FacultyQuestionBankPage() {
+}export default function FacultyQuestionBankPage({ basePath = '/faculty/question-bank' }: { basePath?: string }) {
   const { questionId } = useParams<{ questionId?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const chapterParam = searchParams.get('chapter');
+  const lessonParam = searchParams.get('lesson');
+  const returnBuilder = searchParams.get('returnBuilder');
 
   if (questionId) {
-    return <QuestionEditor questionId={questionId} onBack={() => navigate('/faculty/question-bank')} />;
+    return <QuestionEditor questionId={questionId} onBack={() => navigate(basePath)} basePath={basePath} attachChapterId={chapterParam} attachLessonId={lessonParam} returnBuilderCourseId={returnBuilder} />;
   }
 
   return (
     <QuestionBankList
-      onCreate={() => navigate('/faculty/question-bank/editor/new')}
-      onEdit={id => navigate(`/faculty/question-bank/editor/${id}`)}
+      onCreate={() => navigate(`${basePath}/editor/new${chapterParam || lessonParam ? `?${[chapterParam ? `chapter=${chapterParam}` : '', lessonParam ? `lesson=${lessonParam}` : '', returnBuilder ? `returnBuilder=${returnBuilder}` : ''].filter(Boolean).join('&')}` : ''}`)}
+      onEdit={id => navigate(`${basePath}/editor/${id}`)}
     />
   );
 }
@@ -294,7 +296,7 @@ function QuestionBankList({ onCreate, onEdit }: { onCreate: () => void; onEdit: 
   );
 }
 
-function QuestionEditor({ questionId, onBack }: { questionId: string; onBack: () => void }) {
+function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank', attachChapterId, attachLessonId, returnBuilderCourseId }: { questionId: string; onBack: () => void; basePath?: string; attachChapterId?: string | null; attachLessonId?: string | null; returnBuilderCourseId?: string | null }) {
   const isNew = questionId === 'new';
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -409,15 +411,55 @@ function QuestionEditor({ questionId, onBack }: { questionId: string; onBack: ()
         const { error } = await supabase.from('coding_questions').update(payload).eq('id', id);
         if (error) throw error;
       } else {
+        // Arrived from the course builder's practice manager: attach the new
+        // question to that chapter (next available order slot) on creation.
+        let chapterAttach: { chapter_id: string; chapter_order_index: number } | undefined;
+        if (attachChapterId) {
+          const { data: existing } = await supabase
+            .from('coding_questions')
+            .select('chapter_order_index')
+            .eq('chapter_id', attachChapterId)
+            .order('chapter_order_index', { ascending: false })
+            .limit(1);
+          chapterAttach = {
+            chapter_id: attachChapterId,
+            chapter_order_index: ((existing?.[0]?.chapter_order_index as number | null) ?? -1) + 1,
+          };
+        }
+        // Per-lesson practice manager: same idea, lesson slot.
+        let lessonAttach: { lesson_id: string; lesson_order_index: number } | undefined;
+        if (attachLessonId) {
+          const { data: existing } = await supabase
+            .from('coding_questions')
+            .select('lesson_order_index')
+            .eq('lesson_id', attachLessonId)
+            .order('lesson_order_index', { ascending: false })
+            .limit(1);
+          lessonAttach = {
+            lesson_id: attachLessonId,
+            lesson_order_index: ((existing?.[0]?.lesson_order_index as number | null) ?? -1) + 1,
+          };
+        }
         const { data, error } = await supabase
           .from('coding_questions')
-          .insert({ ...payload, slug: makeSlug(form.title) })
+          .insert({ ...payload, slug: makeSlug(form.title), ...(chapterAttach ?? {}), ...(lessonAttach ?? {}) })
           .select('id')
           .single();
         if (error) throw error;
         id = data.id;
         setSavedQuestionId(id);
-        window.history.replaceState(null, '', `/faculty/question-bank/editor/${id}`);
+        // Return to the builder's practice manager instead of staying in the bank
+        if (attachChapterId && returnBuilderCourseId) {
+          success(isPublished ? 'Question published and added to chapter' : 'Saved and added to chapter');
+          navigate(`/faculty/courses/${returnBuilderCourseId}/builder?lessonId=&practiceChapter=${attachChapterId}`, { replace: true });
+          return id;
+        }
+        if (attachLessonId && returnBuilderCourseId) {
+          success(isPublished ? 'Question published and added to lesson' : 'Saved and added to lesson');
+          navigate(`/faculty/courses/${returnBuilderCourseId}/builder?lessonId=${attachLessonId}&practiceLesson=${attachLessonId}`, { replace: true });
+          return id;
+        }
+        window.history.replaceState(null, '', `${basePath}/editor/${id}`);
       }
 
       setForm(current => ({ ...current, is_published: isPublished }));
@@ -561,7 +603,7 @@ function QuestionEditor({ questionId, onBack }: { questionId: string; onBack: ()
         </section>
 
         <div className="flex flex-col justify-end gap-3 sm:flex-row">
-          <button className="btn-secondary" onClick={() => navigate('/faculty/question-bank')}>Cancel</button>
+          <button className="btn-secondary" onClick={() => navigate(basePath)}>Cancel</button>
           <button disabled={saving} className="btn-secondary flex items-center justify-center gap-2" onClick={() => void saveQuestion(false)}><Save size={16} /> Save Draft</button>
           <button disabled={saving} className="btn-primary flex items-center justify-center gap-2" onClick={() => void saveQuestion(true)}><CheckCircle2 size={16} /> Publish Question</button>
         </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type LucideIcon } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Archive,
@@ -19,6 +19,7 @@ import {
   Trash2,
   AlertTriangle,
   XCircle,
+  type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -93,7 +94,8 @@ export default function FacultyNotificationsPage() {
 
   const load = useCallback(async (initial = false) => {
     if (!profile?.id) return;
-    initial ? setLoading(true) : setRefreshing(true);
+    if (initial) setLoading(true);
+    else setRefreshing(true);
     try {
       const [items, counts] = await Promise.all([
         getUserNotifications(profile.id, view),

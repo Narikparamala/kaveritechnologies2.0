@@ -1,104 +1,313 @@
-import { useEffect, useState } from 'react';
-import { Users, Search, MoreVertical, Shield, GraduationCap, BookOpen } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  BookOpen,
+  GraduationCap,
+  Loader2,
+  RefreshCw,
+  Search,
+  Shield,
+  UserCheck,
+  UserX,
+  Users,
+} from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
-import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/utils';
+import {
+  listPlatformUsers,
+  setPlatformUserActive,
+  setPlatformUserRole,
+} from '../../services/userAdministration';
 import type { Profile, UserRole } from '../../types/database';
 
+const ROLE_OPTIONS: UserRole[] = ['student', 'faculty', 'super_admin'];
+
+const ROLE_BADGES: Record<
+  UserRole,
+  'default' | 'teal' | 'error'
+> = {
+  student: 'default',
+  faculty: 'teal',
+  super_admin: 'error',
+};
+
+const ROLE_ICONS = {
+  student: GraduationCap,
+  faculty: BookOpen,
+  super_admin: Shield,
+} satisfies Record<UserRole, typeof Shield>;
+
 export default function UsersPage() {
-  const { success } = useToast();
+  const { profile: currentAdmin } = useAuth();
+  const { success, error: toastError } = useToast();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
 
-  useEffect(() => {
-    supabase.from('profiles').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { setUsers((data ?? []) as Profile[]); setLoading(false); });
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setUsers(await listPlatformUsers());
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : 'Could not load platform users.';
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const changeRole = async (userId: string, role: UserRole) => {
-    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
-    if (!error) {
-      setUsers(us => us.map(u => u.id === userId ? { ...u, role } : u));
-      success('Role updated!');
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
+
+  const replaceUser = (updated: Profile) => {
+    setUsers(current =>
+      current.map(user => (user.id === updated.id ? updated : user)),
+    );
+  };
+
+  const changeRole = async (user: Profile, role: UserRole) => {
+    if (role === user.role) return;
+    if (user.id === currentAdmin?.id) {
+      toastError(
+        'Action blocked',
+        'For safety, a Super Admin cannot change their own role.',
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Change ${user.full_name ?? user.email} from ${user.role.replace('_', ' ')} to ${role.replace('_', ' ')}?`,
+    );
+    if (!confirmed) return;
+
+    setBusyUserId(user.id);
+    try {
+      replaceUser(await setPlatformUserRole(user.id, role));
+      success('Role updated', 'The new permission level is now active.');
+    } catch (caught) {
+      toastError(
+        'Role update failed',
+        caught instanceof Error ? caught.message : 'Please try again.',
+      );
+    } finally {
+      setBusyUserId(null);
     }
   };
 
-  const filtered = users.filter(u => {
-    const matchSearch = (u.full_name ?? '').toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === 'all' || u.role === roleFilter;
-    return matchSearch && matchRole;
+  const changeAccountStatus = async (user: Profile) => {
+    if (user.id === currentAdmin?.id) {
+      toastError(
+        'Action blocked',
+        'For safety, a Super Admin cannot deactivate their own account.',
+      );
+      return;
+    }
+
+    const nextActive = !user.is_active;
+    const confirmed = window.confirm(
+      `${nextActive ? 'Reactivate' : 'Deactivate'} ${user.full_name ?? user.email}?`,
+    );
+    if (!confirmed) return;
+
+    setBusyUserId(user.id);
+    try {
+      replaceUser(await setPlatformUserActive(user.id, nextActive));
+      success(
+        nextActive ? 'Account reactivated' : 'Account deactivated',
+        nextActive
+          ? 'The user can access the LMS again.'
+          : 'The user is now blocked from protected LMS pages.',
+      );
+    } catch (caught) {
+      toastError(
+        'Account update failed',
+        caught instanceof Error ? caught.message : 'Please try again.',
+      );
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = users.filter(user => {
+    const matchesSearch =
+      !normalizedSearch ||
+      (user.full_name ?? '').toLowerCase().includes(normalizedSearch) ||
+      user.email.toLowerCase().includes(normalizedSearch);
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    return matchesSearch && matchesRole;
   });
-
-  const ROLE_BADGES: Record<string, any> = {
-    student: 'default',
-    faculty: 'teal',
-    super_admin: 'error',
-  };
-
-  const ROLE_ICONS: Record<string, any> = {
-    student: GraduationCap,
-    faculty: BookOpen,
-    super_admin: Shield,
-  };
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="All Users" subtitle={`${users.length} total users`} icon={Users} />
+      <PageHeader
+        title="Users & Permissions"
+        subtitle={`${users.length} platform account${users.length === 1 ? '' : 's'}`}
+        icon={Users}
+        action={
+          <button
+            type="button"
+            onClick={() => void loadUsers()}
+            disabled={loading}
+            className="btn-secondary text-sm flex items-center gap-2"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        }
+      />
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className="flex flex-col lg:flex-row gap-3 mb-6">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-11" placeholder="Search by name or email..." value={search} onChange={e => setSearch(e.target.value)} />
+          <Search
+            size={16}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            className="input pl-11"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+          />
         </div>
-        <div className="flex gap-2">
-          {['all', 'student', 'faculty', 'super_admin'].map(r => (
-            <button key={r} onClick={() => setRoleFilter(r)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium capitalize transition-colors ${roleFilter === r ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-              {r.replace('_', ' ')}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {(['all', ...ROLE_OPTIONS] as const).map(role => (
+            <button
+              type="button"
+              key={role}
+              onClick={() => setRoleFilter(role)}
+              className={`px-3 py-2 rounded-xl text-xs font-medium capitalize whitespace-nowrap transition-colors ${
+                roleFilter === role
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              {role.replace('_', ' ')}
             </button>
           ))}
         </div>
       </div>
 
       {loading ? (
-        <div className="space-y-2">{[1, 2, 3, 4, 5].map(i => <div key={i} className="h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map(item => (
+            <div
+              key={item}
+              className="h-20 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse"
+            />
+          ))}
+        </div>
+      ) : loadError ? (
+        <EmptyState
+          icon={UserX}
+          title="Could not load users"
+          description={loadError}
+          action={
+            <button onClick={() => void loadUsers()} className="btn-primary">
+              Try again
+            </button>
+          }
+        />
       ) : filtered.length === 0 ? (
         <EmptyState icon={Users} title="No users found" />
       ) : (
         <div className="card divide-y divide-slate-100 dark:divide-slate-700">
-          {filtered.map(u => {
-            const RoleIcon = ROLE_ICONS[u.role] ?? GraduationCap;
+          {filtered.map(user => {
+            const RoleIcon = ROLE_ICONS[user.role];
+            const busy = busyUserId === user.id;
+            const isCurrentAdmin = user.id === currentAdmin?.id;
+
             return (
-              <div key={u.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
-                  <span className="font-bold text-primary-700 dark:text-primary-400">{u.full_name?.charAt(0) ?? 'U'}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900 dark:text-white text-sm truncate">{u.full_name}</p>
-                  <p className="text-xs text-slate-400 truncate">{u.email}</p>
-                </div>
-                <div className="hidden sm:flex items-center gap-4 text-xs text-slate-400">
-                  <span>{formatDate(u.created_at)}</span>
-                  <span>{u.xp_points.toLocaleString()} XP</span>
-                </div>
-                <Badge variant={ROLE_BADGES[u.role] ?? 'default'} className="capitalize text-xs hidden sm:inline-flex">
-                  <RoleIcon size={10} className="mr-1" /> {u.role.replace('_', ' ')}
-                </Badge>
-                <div className="relative group">
-                  <button className="btn-ghost py-1.5 px-2"><MoreVertical size={14} /></button>
-                  <div className="absolute right-0 top-8 z-10 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg py-1 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
-                    {(['student', 'faculty', 'super_admin'] as UserRole[]).filter(r => r !== u.role).map(r => (
-                      <button key={r} onClick={() => changeRole(u.id, r)} className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 capitalize">
-                        Set as {r.replace('_', ' ')}
-                      </button>
-                    ))}
+              <div
+                key={user.id}
+                className="flex flex-col xl:flex-row xl:items-center gap-4 px-5 py-4"
+              >
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="font-bold text-primary-700 dark:text-primary-400">
+                        {user.full_name?.charAt(0).toUpperCase() ?? 'U'}
+                      </span>
+                    )}
                   </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900 dark:text-white text-sm truncate">
+                      {user.full_name || 'Unnamed user'}
+                      {isCurrentAdmin && (
+                        <span className="ml-2 text-xs text-primary-600">You</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Joined {formatDate(user.created_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+                  <Badge
+                    variant={ROLE_BADGES[user.role]}
+                    className="capitalize text-xs"
+                  >
+                    <RoleIcon size={10} className="mr-1" />
+                    {user.role.replace('_', ' ')}
+                  </Badge>
+                  <Badge
+                    variant={user.is_active ? 'success' : 'default'}
+                    className="text-xs"
+                  >
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+
+                  <select
+                    aria-label={`Role for ${user.full_name ?? user.email}`}
+                    value={user.role}
+                    disabled={busy || isCurrentAdmin}
+                    onChange={event =>
+                      void changeRole(user, event.target.value as UserRole)
+                    }
+                    className="input !py-2 !w-auto text-xs capitalize"
+                  >
+                    {ROLE_OPTIONS.map(role => (
+                      <option key={role} value={role}>
+                        {role.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={busy || isCurrentAdmin}
+                    onClick={() => void changeAccountStatus(user)}
+                    className={user.is_active ? 'btn-secondary text-xs' : 'btn-primary text-xs'}
+                  >
+                    {busy ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : user.is_active ? (
+                      <span className="flex items-center gap-1.5">
+                        <UserX size={14} /> Deactivate
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <UserCheck size={14} /> Reactivate
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
             );

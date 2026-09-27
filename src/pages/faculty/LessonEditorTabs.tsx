@@ -8,15 +8,17 @@ import {
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../components/ui/Modal';
+import { isCanvaUrl } from '../../lib/canva';
 import {
   updateLesson,
   getLessonTopics, createTopic, updateTopic, deleteTopic,
   createSubtopic, updateSubtopic, deleteSubtopic,
   getLessonMaterials, createMaterial, updateMaterial, deleteMaterial,
-  getPracticeQuestions, createPracticeQuestion, updatePracticeQuestion, deletePracticeQuestion,
-  getLessonQuizzes, getLessonAssignments, getLessonLiveSessions, createQuiz, updateQuiz, deleteQuiz, createAssignment, updateAssignment, deleteAssignment,
+  getLessonQuizzes, getLessonCodingQuestions, getBankQuestionsNotInLesson, getLessonAssignments, getLessonLiveSessions, createQuiz, updateQuiz, deleteQuiz, createAssignment, updateAssignment, deleteAssignment,
+  getCourseAssignments, getCourseQuizzes,
 } from '../../services/faculty';
-import type { Course, Lesson, LessonTopic, LessonSubtopic, LessonResource, LessonResourceType, LessonPracticeQuestion, Quiz, Assignment, LiveSession } from '../../types/database';
+import { supabase } from '../../lib/supabase';
+import type { Course, Lesson, LessonTopic, LessonSubtopic, LessonResource, LessonResourceType, Quiz, Assignment, LiveSession } from '../../types/database';
 import { FileUpload } from '../../components/ui/FileUpload';
 import { uploadLessonFile, ACCEPTED_FILE_TYPES } from '../../services/fileUpload';
 
@@ -30,6 +32,7 @@ interface Props {
   onTogglePublish: () => void;
   onDeleteLesson: () => void;
   onMoveLesson: (dir: 'up' | 'down') => void;
+  initialTab?: string;
 }
 
 function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
@@ -46,7 +49,7 @@ function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
   }
   base.push(
     { key: 'code', label: 'Code', icon: Code2 },
-    { key: 'practice', label: 'Practice', icon: HelpCircle },
+    { key: 'practice', label: 'Coding Practice', icon: Code2 },
     { key: 'quiz', label: 'Quiz', icon: HelpCircle },
     { key: 'assignment', label: 'Assignment', icon: ClipboardList },
     { key: 'settings', label: 'Settings', icon: Settings },
@@ -54,8 +57,12 @@ function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
   return base;
 }
 
-export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLesson, onTogglePublish, onDeleteLesson, onMoveLesson }: Props) {
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLesson, onTogglePublish, onDeleteLesson, onMoveLesson, initialTab }: Props) {
+  const [activeTab, setActiveTab] = useState<TabKey>((initialTab as TabKey) ?? 'overview');
+  // Allow the Course Builder to deep-link a tab (＋ Quiz / ＋ Practice buttons).
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab as TabKey);
+  }, [initialTab, lesson.id]);
   const tabs = getTabs(lesson.teaching_mode);
 
   return (
@@ -71,7 +78,7 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                 lesson.teaching_mode === 'live_class'
                   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                  : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                  : 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
               }`}>
                 {lesson.teaching_mode === 'live_class' ? <><Monitor size={9} /> Live Class</> : <><Film size={9} /> Recorded</>}
               </span>
@@ -123,10 +130,10 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
         {activeTab === 'delivery' && lesson.teaching_mode === 'live_class' && <LiveClassTab lesson={lesson} course={course} />}
         {activeTab === 'delivery' && lesson.teaching_mode === 'recorded_video' && <RecordingTab lesson={lesson} course={course} />}
         {activeTab === 'code' && <CodeTab lesson={lesson} onRefresh={onRefresh} />}
-        {activeTab === 'practice' && <PracticeTab lesson={lesson} />}
+        {activeTab === 'practice' && <LessonPracticeTab lesson={lesson} course={course} onRefresh={onRefresh} />}
         {activeTab === 'quiz' && <QuizTab lesson={lesson} course={course} />}
         {activeTab === 'assignment' && <AssignmentTab lesson={lesson} course={course} />}
-        {activeTab === 'settings' && <SettingsTab lesson={lesson} onRefresh={onRefresh} />}
+        {activeTab === 'settings' && <SettingsTab lesson={lesson} course={course} onRefresh={onRefresh} />}
       </div>
     </div>
   );
@@ -145,7 +152,7 @@ function OverviewTab({ lesson }: { lesson: Lesson }) {
           <div>
             <p className="text-slate-400 text-xs mb-1">Delivery Method</p>
             <div className="flex items-center gap-1.5">
-              {lesson.teaching_mode === 'live_class' ? <Monitor size={14} className="text-blue-500" /> : <Film size={14} className="text-purple-500" />}
+              {lesson.teaching_mode === 'live_class' ? <Monitor size={14} className="text-blue-500" /> : <Film size={14} className="text-teal-500" />}
               <span className="text-slate-900 dark:text-white font-medium">{lesson.teaching_mode === 'live_class' ? 'Live Class' : 'Recorded Video'}</span>
             </div>
           </div>
@@ -441,11 +448,32 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
     if (!editModal) return;
     setSaving(true);
     try {
+      const trimmedUrl = form.external_url.trim();
+      let externalUrl: string | undefined = trimmedUrl || undefined;
+      if (trimmedUrl && isCanvaUrl(trimmedUrl)) {
+        // Short links (canva.link/CODE) are opaque — resolve the real design
+        // server-side. Fabricating from the code stores a nonexistent design.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('Session expired — please sign in again.');
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resolve-canva-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ url: trimmedUrl }),
+        });
+        const resolved = await res.json();
+        if (!res.ok) throw new Error(resolved?.error || 'Could not verify the Canva link.');
+        if (!resolved.embedUrl) {
+          throw new Error('This Canva short link could not be resolved. Open it in your browser, copy the full www.canva.com/design/... link it forwards to, and paste that instead.');
+        }
+        externalUrl = resolved.embedUrl;
+      }
+      const payload = { ...form, external_url: externalUrl };
       if (editModal.mode === 'create') {
-        await createMaterial({ lesson_id: lesson.id, ...form, description: form.description || undefined, content_text: form.content_text || undefined, external_url: form.external_url || undefined, file_url: form.file_url || undefined, file_type: form.file_type || undefined });
+        await createMaterial({ lesson_id: lesson.id, ...payload, description: form.description || undefined, content_text: form.content_text || undefined, external_url: externalUrl, file_url: form.file_url || undefined, file_type: form.file_type || undefined });
         success('Material added');
       } else if (editModal.material) {
-        await updateMaterial(editModal.material.id, { ...form } as any);
+        await updateMaterial(editModal.material.id, payload as any);
         success('Material updated');
       }
       setEditModal(null); await load();
@@ -498,7 +526,6 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
                     {m.file_url && <a href={m.file_url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline flex items-center gap-0.5"><FileText size={9} /> File</a>}
                     {m.external_url && <a href={m.external_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-0.5"><ExternalLink size={9} /> Link</a>}
                     {m.is_locked && <span className="flex items-center gap-0.5 text-amber-500"><Lock size={9} /> Locked</span>}
-                    {m.unlock_after_session && <span className="text-blue-500">Unlocks after live class</span>}
                   </div>
                 </div>
                 <button onClick={() => handleToggleLock(m)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
@@ -547,14 +574,34 @@ function MaterialsTab({ lesson, course }: { lesson: Lesson; course: Course }) {
             />
             <div>
               <label className="label">Or External URL (Google Drive, Canva, etc.)</label>
-              <input className="input" placeholder="https://..." value={form.external_url} onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))} />
+              <input
+                className="input"
+                placeholder="https://..."
+                value={form.external_url}
+                onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))}
+              />
+              {isCanvaUrl(form.external_url) && (
+                <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <Check size={11} /> Canva link detected — students will view the slides right inside the lesson.
+                </p>
+              )}
+              {isCanvaUrl(form.external_url) && (
+                <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  In Canva the deck must be shared: <strong>Share → Anyone with the link → Viewer</strong>. If it stays private, students see “This design is private” instead of the slides.
+                </p>
+              )}
+              {form.external_url.trim() !== '' && !isCanvaUrl(form.external_url) && form.resource_type === 'slides' && form.external_url.includes('canva.com') && (
+                <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  Paste the design link from Canva → Share → “Anyone with the link → Viewer”, e.g. https://www.canva.com/design/CAF…/view
+                </p>
+            )}
             </div>
           </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Published</span></label>
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.is_locked} onChange={e => setForm(f => ({ ...f, is_locked: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Locked</span></label>
-            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.unlock_after_session} onChange={e => setForm(f => ({ ...f, unlock_after_session: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Unlock after live class</span></label>
           </div>
+          <p className="text-[11px] text-slate-400">Use <strong>Live Class → Materials &amp; Recording</strong> to control when materials release around a live session.</p>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setEditModal(null)} className="btn-secondary">Cancel</button>
             <button onClick={handleSave} disabled={saving || !form.title} className="btn-primary flex items-center gap-2 disabled:opacity-50">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}{editModal?.mode === 'edit' ? 'Update' : 'Add'}</button>
@@ -616,108 +663,144 @@ function CodeTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => void 
 }
 
 // ============================================================
-// Practice Questions Tab
+// Coding Practice Tab — lesson-scoped coding_questions.
+// These render as flow steps BETWEEN lessons on the student side
+// (lesson → coding practice / quiz → next lesson), not inline.
 // ============================================================
-function PracticeTab({ lesson }: { lesson: Lesson }) {
+function LessonPracticeTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Course; onRefresh: () => void }) {
   const { success, error: toastError } = useToast();
-  const [questions, setQuestions] = useState<LessonPracticeQuestion[]>([]);
+  const [items, setItems] = useState<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; topic: string; lesson_order_index: number | null }[]>([]);
+  const [bank, setBank] = useState<{ id: string; title: string; difficulty: string; topic: string }[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [editModal, setEditModal] = useState<{ mode: 'create' | 'edit'; q?: LessonPracticeQuestion } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<LessonPracticeQuestion | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ question_text: '', hint: '', expected_output: '', sample_solution: '', show_solution: false, is_published: false });
+  const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => { setQuestions(await getPracticeQuestions(lesson.id)); setLoading(false); }, [lesson.id]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setItems(await getLessonCodingQuestions(lesson.id));
+      setBank(await getBankQuestionsNotInLesson(lesson.id));
+    } catch (e: any) { toastError('Error', e.message); }
+    setLoading(false);
+  }, [lesson.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
 
-  const handleSave = async () => {
-    if (!editModal) return;
-    setSaving(true);
+  const addToLesson = async (questionId: string) => {
+    setBusy(true);
     try {
-      if (editModal.mode === 'create') {
-        await createPracticeQuestion({ lesson_id: lesson.id, question_text: form.question_text, hint: form.hint || undefined, expected_output: form.expected_output || undefined, sample_solution: form.sample_solution || undefined, show_solution: form.show_solution, is_published: form.is_published });
-        success('Question added');
-      } else if (editModal.q) {
-        await updatePracticeQuestion(editModal.q.id, { question_text: form.question_text, hint: form.hint || null, expected_output: form.expected_output || null, sample_solution: form.sample_solution || null, show_solution: form.show_solution, is_published: form.is_published });
-        success('Question updated');
-      }
-      setEditModal(null); await load();
+      const nextOrder = items.length ? Math.max(...items.map(i => i.lesson_order_index ?? 0)) + 1 : 0;
+      const { error } = await supabase.from('coding_questions')
+        .update({ lesson_id: lesson.id, lesson_order_index: nextOrder }).eq('id', questionId);
+      if (error) throw error;
+      success('Added to lesson');
+      await load(); onRefresh();
     } catch (e: any) { toastError('Error', e.message); }
-    setSaving(false);
+    setBusy(false);
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setSaving(true);
-    try { await deletePracticeQuestion(deleteTarget.id); success('Deleted'); setDeleteTarget(null); await load(); } catch (e: any) { toastError('Error', e.message); }
-    setSaving(false);
+  const move = async (item: { id: string; lesson_order_index: number | null }, dir: 'up' | 'down') => {
+    const sorted = [...items].sort((a, b) => (a.lesson_order_index ?? 0) - (b.lesson_order_index ?? 0));
+    const idx = sorted.findIndex(i => i.id === item.id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swap = sorted[swapIdx];
+    setBusy(true);
+    try {
+      await supabase.from('coding_questions').update({ lesson_order_index: item.lesson_order_index ?? idx }).eq('id', swap.id);
+      await supabase.from('coding_questions').update({ lesson_order_index: swap.lesson_order_index ?? swapIdx }).eq('id', item.id);
+      await load();
+    } catch (e: any) { toastError('Error', e.message); }
+    setBusy(false);
   };
 
-  const handleTogglePublish = async (q: LessonPracticeQuestion) => {
-    try { await updatePracticeQuestion(q.id, { is_published: !q.is_published }); await load(); } catch (e: any) { toastError('Error', e.message); }
+  const togglePublish = async (q: { id: string; is_published: boolean }) => {
+    try {
+      const { error } = await supabase.from('coding_questions').update({ is_published: !q.is_published }).eq('id', q.id);
+      if (error) throw error;
+      await load(); onRefresh();
+    } catch (e: any) { toastError('Error', e.message); }
   };
 
-  if (loading) return <div className="text-sm text-slate-400">Loading...</div>;
+  const removeFromLesson = async (questionId: string) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('coding_questions')
+        .update({ lesson_id: null, lesson_order_index: null }).eq('id', questionId);
+      if (error) throw error;
+      success('Removed from lesson (kept in the bank)');
+      await load(); onRefresh();
+    } catch (e: any) { toastError('Error', e.message); }
+    setBusy(false);
+  };
+
+  const filteredBank = bank.filter(q => !search.trim() || q.title.toLowerCase().includes(search.trim().toLowerCase()) || q.topic.toLowerCase().includes(search.trim().toLowerCase()));
+  const editorBase = '/faculty/question-bank/editor';
+  const returnParams = `lesson=${lesson.id}&course=${course.id}&returnBuilder=${course.id}`;
 
   return (
-    <div className="max-w-2xl space-y-3">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-bold text-slate-900 dark:text-white">Practice Questions</h3>
-        <button onClick={() => { setForm({ question_text: '', hint: '', expected_output: '', sample_solution: '', show_solution: false, is_published: false }); setEditModal({ mode: 'create' }); }} className="btn-primary text-xs flex items-center gap-1"><Plus size={12} /> Add Question</button>
+    <div className="p-6 max-w-3xl space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-slate-900 dark:text-white">Coding practice for this lesson</h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-md">Students see these as steps <b>after</b> this lesson and before the next one, alongside the lesson quiz. Ordered list = student order.</p>
+        </div>
+        <a href={`${editorBase}/new?${returnParams}`} className="btn-primary text-xs flex items-center gap-1 flex-shrink-0"><Plus size={12} /> New Question</a>
       </div>
 
-      {questions.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-8">No practice questions yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {questions.map((q, idx) => (
-            <div key={q.id} className="card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Q{idx + 1}. {q.question_text}</p>
-                  {q.hint && <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Hint: {q.hint}</p>}
-                  {q.expected_output && <p className="text-xs text-slate-400 mt-1">Expected: {q.expected_output}</p>}
+      <section className="card p-4">
+        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">This lesson's questions ({items.length})</h4>
+        {loading ? (
+          <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No coding questions yet. Add one from the bank below or create a new question.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <button onClick={() => move(item, 'up')} disabled={busy || idx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowUp size={12} /></button>
+                  <button onClick={() => move(item, 'down')} disabled={busy || idx === items.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={12} /></button>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className={`badge text-xs ${q.is_published ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'}`}>{q.is_published ? 'Published' : 'Draft'}</span>
-                  <button onClick={() => handleTogglePublish(q)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded">{q.is_published ? <EyeOff size={12} /> : <Eye size={12} />}</button>
-                  <button onClick={() => { setForm({ question_text: q.question_text, hint: q.hint ?? '', expected_output: q.expected_output ?? '', sample_solution: q.sample_solution ?? '', show_solution: q.show_solution, is_published: q.is_published }); setEditModal({ mode: 'edit', q }); }} className="p-1.5 text-slate-400 hover:text-slate-600 rounded"><Edit2 size={12} /></button>
-                  <button onClick={() => setDeleteTarget(q)} className="p-1.5 text-red-400 hover:text-red-600 rounded"><Trash2 size={12} /></button>
+                <span className="text-xs text-slate-400 font-mono flex-shrink-0">{idx + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{item.difficulty} · {item.default_marks} marks · {item.topic} {item.is_published ? '' : '· DRAFT (hidden from students)'}</p>
                 </div>
+                <button onClick={() => togglePublish(item)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title={item.is_published ? 'Unpublish' : 'Publish'}>
+                  {item.is_published ? <Eye size={13} /> : <EyeOff size={13} />}
+                </button>
+                <a href={`${editorBase}/${item.id}?${returnParams}`} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit question"><Edit2 size={13} /></a>
+                <button onClick={() => removeFromLesson(item.id)} disabled={busy} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove from lesson"><Trash2 size={13} /></button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Modal open={!!editModal} onClose={() => setEditModal(null)} title={editModal?.mode === 'edit' ? 'Edit Question' : 'New Practice Question'} size="lg">
-        <div className="space-y-4">
-          <div><label className="label">Question</label><textarea className="input min-h-[80px] resize-none" value={form.question_text} onChange={e => setForm(f => ({ ...f, question_text: e.target.value }))} /></div>
-          <div><label className="label">Hint (optional)</label><input className="input" value={form.hint} onChange={e => setForm(f => ({ ...f, hint: e.target.value }))} /></div>
-          <div><label className="label">Expected Output (optional)</label><input className="input" value={form.expected_output} onChange={e => setForm(f => ({ ...f, expected_output: e.target.value }))} /></div>
-          <div><label className="label">Sample Solution (optional)</label><textarea className="input min-h-[80px] resize-none font-mono text-sm bg-slate-900 text-slate-100" value={form.sample_solution} onChange={e => setForm(f => ({ ...f, sample_solution: e.target.value }))} /></div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.show_solution} onChange={e => setForm(f => ({ ...f, show_solution: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Show solution to students</span></label>
-            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Published</span></label>
+            ))}
           </div>
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => setEditModal(null)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSave} disabled={saving || !form.question_text} className="btn-primary flex items-center gap-2 disabled:opacity-50">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}{editModal?.mode === 'edit' ? 'Update' : 'Add'}</button>
-          </div>
-        </div>
-      </Modal>
+        )}
+      </section>
 
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Confirm Delete" size="sm">
-        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">Delete this question?</p>
-        <div className="flex gap-3 justify-end">
-          <button onClick={() => setDeleteTarget(null)} className="btn-secondary">Cancel</button>
-          <button onClick={handleDelete} disabled={saving} className="btn-primary bg-red-600 hover:bg-red-700 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
+      <section className="card p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Question bank — pick to add</h4>
+          <input className="input text-xs max-w-52" placeholder="Search questions…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-      </Modal>
+        {filteredBank.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No bank questions match. Create a new question with the button above.</p>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {filteredBank.map(q => (
+              <div key={q.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{q.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{q.difficulty} · {q.topic}</p>
+                </div>
+                <button onClick={() => addToLesson(q.id)} disabled={busy} className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={12} /> Add</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
-
 // ============================================================
 // Quiz Tab
 // ============================================================
@@ -1097,10 +1180,65 @@ function RecordingTab({ lesson, course }: { lesson: Lesson; course: Course }) {
 // ============================================================
 // Settings Tab
 // ============================================================
-function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => void }) {
+function SettingsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Course; onRefresh: () => void }) {
   const { success, error: toastError } = useToast();
   const [saving, setSaving] = useState(false);
   const [teachingMode, setTeachingMode] = useState(lesson.teaching_mode ?? 'live_class');
+  const [unlockRule, setUnlockRule] = useState<'open' | 'sequential' | 'gated'>(lesson.unlock_rule ?? 'open');
+  const [actType, setActType] = useState<'assignment' | 'quiz' | 'coding' | ''>(lesson.requires_activity_type ?? '');
+  const [actId, setActId] = useState<string>(lesson.requires_activity_id ?? '');
+  const [activities, setActivities] = useState<{ id: string; title: string }[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  const loadActivities = async (type: 'assignment' | 'quiz' | 'coding') => {
+    setActivitiesLoading(true);
+    try {
+      if (type === 'assignment') {
+        const list = await getCourseAssignments(course.id);
+        setActivities(list.filter(a => a.is_published).map(a => ({ id: a.id, title: a.title })));
+      } else if (type === 'quiz') {
+        const list = await getCourseQuizzes(course.id);
+        setActivities(list.filter(q => q.is_published).map(q => ({ id: q.id, title: q.title })));
+      } else {
+        const { data } = await supabase.from('coding_questions').select('id, title').eq('is_published', true).order('title');
+        setActivities((data ?? []).map((q: any) => ({ id: q.id, title: q.title })));
+      }
+    } catch { setActivities([]); } finally { setActivitiesLoading(false); }
+  };
+
+  // When the lesson already has a gated activity type configured, load its options
+  useEffect(() => {
+    if (unlockRule === 'gated' && actType) loadActivities(actType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson.id]);
+
+  const handleUnlockRule = async (rule: 'open' | 'sequential' | 'gated') => {
+    setUnlockRule(rule);
+    if (rule !== 'gated') {
+      setActType(''); setActId('');
+      await handleUpdate({ unlock_rule: rule, requires_activity_type: null, requires_activity_id: null });
+    } else {
+      await handleUpdate({ unlock_rule: rule });
+    }
+  };
+
+  const handleActivityType = async (type: 'assignment' | 'quiz' | 'coding' | '') => {
+    setActType(type);
+    setActId('');
+    if (type) {
+      await loadActivities(type);
+      await handleUpdate({ requires_activity_type: type, requires_activity_id: null });
+    } else {
+      setActivities([]);
+      await handleUpdate({ requires_activity_type: null, requires_activity_id: null });
+    }
+  };
+
+  const handleActivity = async (id: string) => {
+    setActId(id);
+    if (id) await handleUpdate({ requires_activity_id: id });
+    else await handleUpdate({ requires_activity_id: null });
+  };
 
   const handleUpdate = async (updates: Partial<Lesson>) => {
     setSaving(true);
@@ -1136,7 +1274,7 @@ function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => v
             </button>
             <button
               onClick={() => handleTeachingModeChange('recorded_video')}
-              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-sm font-medium ${teachingMode === 'recorded_video' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-sm font-medium ${teachingMode === 'recorded_video' ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}
             >
               <Film size={20} />
               <span>Recorded Video</span>
@@ -1149,7 +1287,7 @@ function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => v
             </p>
           )}
           {teachingMode === 'recorded_video' && (
-            <p className="text-xs text-purple-600 dark:text-purple-400 mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+            <p className="text-xs text-teal-600 dark:text-teal-400 mt-2 p-2 bg-teal-50 dark:bg-teal-900/20 rounded-lg">
               Students watch your recorded video and access slides and notes immediately. No live session required.
             </p>
           )}
@@ -1171,6 +1309,61 @@ function SettingsTab({ lesson, onRefresh }: { lesson: Lesson; onRefresh: () => v
               <p className="text-xs text-slate-400 mt-0.5">Students get an embedded Python editor to practice alongside the lesson.</p>
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
+          <label className="label">Lesson Progression</label>
+          <p className="text-xs text-slate-400 mb-3">Controls when enrolled students can access this lesson. Existing lessons default to Open.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {([
+              { key: 'open', title: 'Open', desc: 'Available to all enrolled students', icon: <Unlock size={16} /> },
+              { key: 'sequential', title: 'Sequential', desc: 'Unlocks after the previous lesson is completed', icon: <ListTree size={16} /> },
+              { key: 'gated', title: 'Gated', desc: 'Requires an assignment, quiz, or coding activity', icon: <Lock size={16} /> },
+            ] as const).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => handleUnlockRule(opt.key)}
+                className={`flex flex-col items-start gap-1.5 p-3 rounded-xl border-2 transition-all text-left ${unlockRule === opt.key ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
+              >
+                <span className={`flex items-center gap-1.5 text-sm font-medium ${unlockRule === opt.key ? 'text-primary-700 dark:text-primary-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {opt.icon} {opt.title}
+                </span>
+                <span className="text-[11px] text-slate-400 leading-snug">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+          {unlockRule === 'gated' && (
+            <div className="mt-3 space-y-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
+              <div>
+                <label className="label">Required activity type</label>
+                <select
+                  className="input text-sm w-full"
+                  value={actType}
+                  onChange={e => handleActivityType(e.target.value as any)}
+                >
+                  <option value="">Select activity type</option>
+                  <option value="assignment">Assignment</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="coding">Coding practice</option>
+                </select>
+              </div>
+              {actType && (
+                <div>
+                  <label className="label">Required activity</label>
+                  <select
+                    className="input text-sm w-full"
+                    value={actId}
+                    onChange={e => handleActivity(e.target.value)}
+                    disabled={activitiesLoading}
+                  >
+                    <option value="">{activitiesLoading ? 'Loading...' : `Select ${actType}`}</option>
+                    {activities.map(a => <option key={a.id} value={a.id}>{a.title}</option>)}
+                  </select>
+                </div>
+              )}
+              <p className="text-xs text-slate-400">Students must also complete the previous lesson in course order. Faculty can still release this lesson to individual students.</p>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-slate-100 dark:border-slate-700 pt-4">

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './components/ui/Toast';
+import { SecureGradeRetryToasts } from './components/common/SecureGradeRetryToasts';
 import { RoleGuard } from './components/common/RoleGuard';
 import { LoadingSpinner } from './components/ui/LoadingSpinner';
 
@@ -16,6 +17,7 @@ import AboutPage from './pages/public/AboutPage';
 import ContactPage from './pages/public/ContactPage';
 import PricingPage from './pages/public/PricingPage';
 import FAQPage from './pages/public/FAQPage';
+import HelpPage from './pages/public/HelpPage';
 import PrivacyPage from './pages/public/PrivacyPage';
 import TermsPage from './pages/public/TermsPage';
 
@@ -25,7 +27,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import AuthRedirectPage from './pages/auth/AuthRedirectPage';
-import DeveloperRolePage from './pages/auth/DeveloperRolePage';
+import PortalChooserPage from './pages/auth/PortalChooserPage';
 
 // Layouts (keep eager so shell renders immediately)
 import StudentLayout from './pages/student/StudentLayout';
@@ -40,6 +42,9 @@ const RoadmapPage = lazy(() => import('./pages/student/RoadmapPage'));
 const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
 const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
+const ChapterPracticePage = lazy(() => import('./pages/student/ChapterPracticePage'));
+const LessonPracticePage = lazy(() => import('./pages/student/LessonPracticePage'));
+const MiniProjectsPage = lazy(() => import('./pages/student/MiniProjectsPage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
 const ProjectWorkspacePage = lazy(() => import('./pages/shared/ProjectWorkspacePage'));
@@ -55,11 +60,13 @@ const LiveClassesPage = lazy(() => import('./pages/student/LiveClassesPage'));
 const LiveSessionDetailPage = lazy(() => import('./pages/student/LiveSessionDetailPage'));
 const CourseWorkspace = lazy(() => import('./pages/student/workspace/CourseWorkspace'));
 const JobsPage = lazy(() => import('./pages/student/JobsPage'));
+const StudentOfflineExamsPage = lazy(() => import('./pages/student/StudentOfflineExamsPage'));
 
 // Lazy-loaded faculty pages
 const FacultyDashboard = lazy(() => import('./pages/faculty/FacultyDashboard'));
 const FacultyCoursesPage = lazy(() => import('./pages/faculty/FacultyCoursesPage'));
 const SubmissionsPage = lazy(() => import('./pages/faculty/SubmissionsPage'));
+const CodingSubmissionsPage = lazy(() => import('./pages/faculty/CodingSubmissionsPage'));
 const AnnouncementsPage = lazy(() => import('./pages/faculty/AnnouncementsPage'));
 const StudentProgressPage = lazy(() => import('./pages/faculty/StudentProgressPage'));
 const FacultyLiveClassesPage = lazy(() => import('./pages/faculty/FacultyLiveClassesPage'));
@@ -67,10 +74,14 @@ const FacultyLiveSessionFormPage = lazy(() => import('./pages/faculty/FacultyLiv
 const FacultySessionAttendancePage = lazy(() => import('./pages/faculty/FacultySessionAttendancePage'));
 const FacultyStudentsPage = lazy(() => import('./pages/faculty/FacultyStudentsPage'));
 const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStudentDetailPage'));
+const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
+const FacultyOfflineExamsPage = lazy(() => import('./pages/faculty/FacultyOfflineExamsPage'));
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
+const FacultyEnrollmentRequestsPage = lazy(() => import('./pages/faculty/FacultyEnrollmentRequestsPage'));
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
 const FacultyAssignmentsPage = lazy(() => import('./pages/faculty/FacultyAssignmentsPage'));
 const FacultyQuestionBankPage = lazy(() => import('./pages/faculty/FacultyQuestionBankPage'));
+const ContentImportPage = lazy(() => import('./pages/faculty/ContentImportPage'));
 const FacultyAssignmentBuilderPage = lazy(() => import('./pages/faculty/FacultyAssignmentBuilderPage'));
 const FacultyQuizzesPage = lazy(() => import('./pages/faculty/FacultyQuizzesPage'));
 const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPage'));
@@ -102,13 +113,19 @@ const AdminPayrollPage = lazy(() => import('./pages/admin/AdminPayrollPage'));
 const AdminPerformanceReviewsPage = lazy(() => import('./pages/admin/AdminPerformanceReviewsPage'));
 const AdminStudentManagementPage = lazy(() => import('./pages/admin/AdminStudentManagementPage'));
 const AdminEnrollmentPage = lazy(() => import('./pages/admin/AdminEnrollmentPage'));
+const AdminEnrollmentRequestsPage = lazy(() => import('./pages/admin/AdminEnrollmentRequestsPage'));
+const AdminWorkshopsPage = lazy(() => import('./pages/admin/AdminWorkshopsPage'));
 const AdminStudentDetailPage = lazy(() => import('./pages/admin/AdminStudentDetailPage'));
+const AdminOfflineExamsPage = lazy(() => import('./pages/admin/AdminOfflineExamsPage'));
 const AdminLessonsPage = lazy(() => import('./pages/admin/AdminLessonsPage'));
 const AdminAssignmentsPage = lazy(() => import('./pages/admin/AdminAssignmentsPage'));
 const AdminQuizzesPage = lazy(() => import('./pages/admin/AdminQuizzesPage'));
+const AdminCodingPracticePage = lazy(() => import('./pages/admin/AdminCodingPracticePage'));
 const AdminProjectsPage = lazy(() => import('./pages/admin/AdminProjectsPage'));
 const AdminBatchesPage = lazy(() => import('./pages/admin/AdminBatchesPage'));
 const AdminPlacementsPage = lazy(() => import('./pages/admin/AdminPlacementsPage'));
+const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
+const AdminLeadDetailPage = lazy(() => import('./pages/admin/AdminLeadDetailPage'));
 
 // Demo pages (lazy - only loaded when visiting demo routes)
 const DemoStudentLayout = lazy(() => import('./pages/demo/student/DemoStudentLayout'));
@@ -154,6 +171,7 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <ToastProvider>
+            <SecureGradeRetryToasts />
             <BrowserRouter>
               <Suspense fallback={<LazyFallback />}>
                 <Routes>
@@ -169,10 +187,12 @@ export default function App() {
                   {!PREVIEW_ROLE && <Route path="/" element={<LandingPage />} />}
                   <Route path="/courses" element={<CoursesPage />} />
                   <Route path="/courses/:slug" element={<CourseDetailPage />} />
+                  <Route path="/u/:slug" element={<PublicProfilePage />} />
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="/contact" element={<ContactPage />} />
                   <Route path="/pricing" element={<PricingPage />} />
                   <Route path="/faq" element={<FAQPage />} />
+                  <Route path="/help" element={<HelpPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/terms" element={<TermsPage />} />
 
@@ -182,7 +202,9 @@ export default function App() {
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                   <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route path="/auth/redirect" element={<AuthRedirectPage />} />
-                  <Route path="/developer-role" element={<DeveloperRolePage />} />
+                  <Route path="/portal" element={<PortalChooserPage />} />
+                  {/* Legacy alias used by local development tooling */}
+                  <Route path="/developer-role" element={<PortalChooserPage />} />
 
                   {/* Demo routes - lazy loaded */}
                   <Route path="/demo/student" element={<DemoStudentLayout />}>
@@ -211,6 +233,11 @@ export default function App() {
                       <CourseWorkspace />
                     </RoleGuard>
                   } />
+                  <Route path="/student/coding-practice/:questionId" element={
+                    <RoleGuard allowedRoles={['student']}>
+                      <CodingPracticePage />
+                    </RoleGuard>
+                  } />
                   <Route path="/student/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['student']}><ProjectWorkspacePage mode="student" /></RoleGuard>} />
                   <Route path="/faculty/projects/:projectId/workspace" element={<RoleGuard allowedRoles={['faculty', 'super_admin']}><ProjectWorkspacePage mode="faculty" /></RoleGuard>} />
 
@@ -227,10 +254,14 @@ export default function App() {
                     <Route path="live-classes" element={<LiveClassesPage />} />
                     <Route path="live-classes/:sessionId" element={<LiveSessionDetailPage />} />
                     <Route path="roadmap" element={<RoadmapPage />} />
+                    <Route path="course/:courseId/practice/:chapterId" element={<ChapterPracticePage />} />
+                    <Route path="course/:courseId/lesson-practice/:lessonId" element={<LessonPracticePage />} />
                     <Route path="playground" element={<PlaygroundPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />
                     <Route path="coding-practice" element={<CodingPracticePage />} />
+                    <Route path="mini-projects" element={<MiniProjectsPage />} />
+                    <Route path="mini-projects/:assignmentId" element={<MiniProjectsPage />} />
                     <Route path="coding-practice/:questionId" element={<CodingPracticePage />} />
                     <Route path="quizzes" element={<QuizzesPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
@@ -238,6 +269,7 @@ export default function App() {
                     <Route path="leaderboard" element={<LeaderboardPage />} />
                     <Route path="certificates" element={<CertificatesPage />} />
                     <Route path="downloads" element={<DownloadsPage />} />
+                    <Route path="offline-exams" element={<StudentOfflineExamsPage />} />
                     <Route path="calendar" element={<CalendarPage />} />
                     <Route path="notes" element={<NotesPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
@@ -263,20 +295,24 @@ export default function App() {
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />
+                    <Route path="enrollment-requests" element={<FacultyEnrollmentRequestsPage />} />
                     <Route path="course-builder" element={<Navigate to="/faculty/courses" replace />} />
                     <Route path="courses/:courseId/builder" element={<CourseBuilderPage />} />
                     <Route path="lessons" element={<FacultyLessonsPage />} />
                     <Route path="assignments" element={<FacultyAssignmentsPage />} />
                     <Route path="question-bank" element={<FacultyQuestionBankPage />} />
                     <Route path="question-bank/editor/:questionId" element={<FacultyQuestionBankPage />} />
+                    <Route path="content-import" element={<ContentImportPage />} />
                     <Route path="assignments/new" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="assignments/builder/:assignmentId" element={<FacultyAssignmentBuilderPage />} />
                     <Route path="submissions" element={<SubmissionsPage />} />
+                    <Route path="coding-submissions" element={<CodingSubmissionsPage />} />
                     <Route path="quizzes" element={<FacultyQuizzesPage />} />
                     <Route path="projects" element={<FacultyProjectsPage />} />
                     <Route path="projects/new" element={<FacultyProjectBuilderPage />} />
                     <Route path="projects/:projectId/builder" element={<FacultyProjectBuilderPage />} />
                     <Route path="practice/assignments/:assignmentId" element={<AssignmentsPage />} />
+                    <Route path="offline-exams" element={<FacultyOfflineExamsPage />} />
                     <Route path="practice/quizzes" element={<QuizzesPage />} />
                     <Route path="practice/projects" element={<ProjectsPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
@@ -302,6 +338,9 @@ export default function App() {
                     <Route path="student-management" element={<AdminStudentManagementPage />} />
                     <Route path="student-management/:studentId" element={<AdminStudentDetailPage />} />
                     <Route path="enrollments" element={<AdminEnrollmentPage />} />
+                    <Route path="enrollments/requests" element={<AdminEnrollmentRequestsPage />} />
+                    <Route path="workshops" element={<AdminWorkshopsPage />} />
+                    <Route path="offline-exams" element={<AdminOfflineExamsPage />} />
                     <Route path="payroll" element={<AdminPayrollPage />} />
                     <Route path="performance-reviews" element={<AdminPerformanceReviewsPage />} />
                     <Route path="users" element={<UsersPage />} />
@@ -309,6 +348,7 @@ export default function App() {
                     <Route path="faculty" element={<AdminFacultyPage />} />
                     <Route path="batches" element={<AdminBatchesPage />} />
                     <Route path="courses" element={<AdminCoursesPage />} />
+                    <Route path="content-import" element={<ContentImportPage />} />
                     <Route path="live-classes" element={<AdminLiveClassesPage />} />
                     <Route path="live-classes/create" element={<AdminLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/edit" element={<AdminLiveSessionFormPage />} />
@@ -316,17 +356,22 @@ export default function App() {
                     <Route path="course-assignments" element={<CourseAssignmentsPage />} />
                     <Route path="lessons" element={<AdminLessonsPage />} />
                     <Route path="assignments" element={<AdminAssignmentsPage />} />
+                    <Route path="coding-submissions" element={<CodingSubmissionsPage />} />
                     <Route path="quizzes" element={<AdminQuizzesPage />} />
+                    <Route path="coding-practice" element={<AdminCodingPracticePage />} />
+                    <Route path="coding-practice/editor/:questionId" element={<AdminCodingPracticePage />} />
                     <Route path="projects" element={<AdminProjectsPage />} />
                     <Route path="certificates" element={<AdminCertificatesPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
                     <Route path="placements" element={<AdminPlacementsPage />} />
+                    <Route path="marketing-leads" element={<AdminLeadsPage />} />
+                    <Route path="marketing-leads/:leadId" element={<AdminLeadDetailPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="leaderboard" element={<LeaderboardPage />} />
-                    <Route path="storage" element={<ComingSoon title="Storage Manager" />} />
+                    <Route path="storage" element={<Navigate to="/admin/settings" replace />} />
                     <Route path="settings" element={<PlatformSettingsPage />} />
-                    <Route path="roles" element={<ComingSoon title="Roles & Permissions" />} />
+                    <Route path="roles" element={<Navigate to="/admin/users" replace />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>
 

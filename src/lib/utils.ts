@@ -47,8 +47,8 @@ export function slugify(text: string): string {
 
 export function getDifficultyColor(difficulty: string): string {
   switch (difficulty) {
-    case 'beginner': return 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/30';
-    case 'intermediate': return 'text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/30';
+    case 'beginner': return 'text-teal-600 bg-teal-50 dark:text-teal-400 dark:bg-teal-900/30';
+    case 'intermediate': return 'text-primary-600 bg-primary-50 dark:text-primary-400 dark:bg-primary-900/30';
     case 'advanced': return 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-900/30';
     default: return 'text-slate-600 bg-slate-100 dark:text-slate-400 dark:bg-slate-800';
   }

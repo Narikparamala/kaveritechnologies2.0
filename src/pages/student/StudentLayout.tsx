@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, Map, FileText, HelpCircle,
-  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal
+  FolderKanban, Trophy, Award, Download, Calendar, BookMarked, Bell, User, Settings, Briefcase, Terminal, LifeBuoy, FolderGit2,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -10,21 +10,24 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
-  { label: 'Learning Roadmap', icon: Map, to: '/roadmap' },
+  { label: 'My Journey', icon: Map, to: '/roadmap' },
   { label: 'Code Playground', icon: Terminal, to: '/playground' },
   { label: 'Coding Practice', icon: Terminal, to: '/coding-practice' },
+  { label: 'Mini Projects', icon: FolderGit2, to: '/mini-projects' },
   { label: 'Assignments', icon: FileText, to: '/assignments' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
   { label: 'Jobs & Placements', icon: Briefcase, to: '/jobs' },
   { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
   { label: 'Certificates', icon: Award, to: '/certificates' },
+  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
   { label: 'Downloads', icon: Download, to: '/downloads' },
   { label: 'Calendar', icon: Calendar, to: '/calendar' },
   { label: 'Notes & Bookmarks', icon: BookMarked, to: '/notes' },
   { label: 'Notifications', icon: Bell, to: '/notifications' },
   { label: 'Profile', icon: User, to: '/profile' },
   { label: 'Settings', icon: Settings, to: '/settings' },
+  { label: 'Help & Extension', icon: LifeBuoy, to: '/help', absolute: true },
 ];
 
 export default function StudentLayout() {

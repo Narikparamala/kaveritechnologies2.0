@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import {
   BookOpen, Plus, Trash2, Edit2, ChevronDown, ChevronRight, Eye, EyeOff,
   ArrowLeft, Users, Settings, ExternalLink, GripVertical, FileText, Clock,
-  ArrowUp, ArrowDown, AlertCircle, Video, PlayCircle, Code2,
+  ArrowUp, ArrowDown, AlertCircle, Video, PlayCircle, Code2, HelpCircle,
 } from 'lucide-react';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,11 +15,26 @@ import {
   getCourseById, getCourseEnrollmentCount, updateCourse,
   getCourseChapters, getChapterLessonsAll, createChapter, updateChapter, deleteChapter,
   createLesson, updateLesson, deleteLesson, deleteCourseWithContent,
+  createQuiz, updateQuiz, deleteQuiz, getChapterQuizzes, getChapterCodingQuestions,
+  getBankQuestionsNotInChapter,
+  getLessonCodingQuestions, getBankQuestionsNotInLesson,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
-import type { Course, Chapter, Lesson, TeachingMode } from '../../types/database';
+import QuizQuestionsManager from '../../components/faculty/QuizQuestionsManager';
+import type { Course, Chapter, Lesson, Quiz, TeachingMode } from '../../types/database';
 
-type ChapterWithLessons = Chapter & { lessons: Lesson[] };
+type ChapterWithLessons = Chapter & { lessons: Lesson[]; quizzes: Quiz[]; codingQuestions: { id: string; title: string; difficulty: string; is_published: boolean; default_marks: number }[] };
+
+// Fetch lessons/quizzes/coding questions for every chapter in one shot.
+const withChapterContent = async (chs: Chapter[]): Promise<ChapterWithLessons[]> =>
+  Promise.all(
+    chs.map(async ch => ({
+      ...ch,
+      lessons: await getChapterLessonsAll(ch.id),
+      quizzes: await getChapterQuizzes(ch.id),
+      codingQuestions: await getChapterCodingQuestions(ch.id),
+    }))
+  );
 
 type LessonFormState = {
   title: string;
@@ -46,6 +61,7 @@ export default function CourseBuilderPage() {
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [lessonTab, setLessonTab] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -54,6 +70,11 @@ export default function CourseBuilderPage() {
   const [lessonModal, setLessonModal] = useState<{ mode: 'create' | 'edit'; chapterId: string; lesson?: Lesson } | null>(null);
   const [courseEditModal, setCourseEditModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'chapter' | 'lesson'; id: string; name: string; warning?: string } | null>(null);
+  const [quizModal, setQuizModal] = useState<{ chapterId: string; quiz?: Quiz } | null>(null);
+  const [quizForm, setQuizForm] = useState({ title: '', description: '', pass_percentage: 70, time_limit_minutes: '', is_published: false });
+  const [quizDeleteTarget, setQuizDeleteTarget] = useState<Quiz | null>(null);
+  const [practiceChapterId, setPracticeChapterId] = useState<string | null>(null);
+  const [manageQuiz, setManageQuiz] = useState<Quiz | null>(null);
   const [courseDeleteModal, setCourseDeleteModal] = useState(false);
   const [courseDeleteConfirm, setCourseDeleteConfirm] = useState('');
   const [deletingCourse, setDeletingCourse] = useState(false);
@@ -66,7 +87,7 @@ export default function CourseBuilderPage() {
     teaching_mode: 'live_class', enable_coding_playground: false,
     duration_minutes: 60, is_published: false,
   });
-  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', is_published: false, is_featured: false });
+  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', enrollment_mode: 'open', progression_mode: 'per_lesson', is_published: false, is_featured: false });
 
   const loadData = useCallback(async () => {
     if (!courseId || !profile) return;
@@ -87,9 +108,7 @@ export default function CourseBuilderPage() {
       setEnrollmentCount(await getCourseEnrollmentCount(courseId));
 
       const chs = await getCourseChapters(courseId);
-      const withLessons = await Promise.all(
-        chs.map(async ch => ({ ...ch, lessons: await getChapterLessonsAll(ch.id) }))
-      );
+      const withLessons = await withChapterContent(chs);
       setChapters(withLessons);
       const requestedLesson = requestedLessonId
         ? withLessons.flatMap(chapter => chapter.lessons).find(lesson => lesson.id === requestedLessonId)
@@ -108,6 +127,20 @@ export default function CourseBuilderPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // One-shot return params from the question editor: ?practiceChapter= opens the
+  // chapter manager pane; ?practiceLesson= opens that lesson's Practice tab.
+  useEffect(() => {
+    const practiceChapterParam = searchParams.get('practiceChapter');
+    const practiceLessonParam = searchParams.get('practiceLesson');
+    if (practiceChapterParam) {
+      setPracticeChapterId(practiceChapterParam);
+    } else if (practiceLessonParam) {
+      setSelectedLessonId(practiceLessonParam);
+      setLessonTab('practice');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleChapter = (id: string) => {
     setExpandedChapters(prev => {
       const next = new Set(prev);
@@ -121,10 +154,27 @@ export default function CourseBuilderPage() {
     const idx = sorted.findIndex(c => c.id === ch.id);
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const swapCh = sorted[swapIdx];
-    await updateChapter(ch.id, { order_index: swapCh.order_index });
-    await updateChapter(swapCh.id, { order_index: ch.order_index });
-    await loadData();
+    // Renumber all chapters 0..n-1 (swap-by-stale-index silently no-ops
+    // when duplicate order_index values exist).
+    const ids = sorted.map(c => c.id);
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    try {
+      await Promise.all(ids.map((id, i) => updateChapter(id, { order_index: i })));
+      await refreshChapters();
+    } catch (e: any) { toastError('Error', e.message); }
+  };
+
+  // Renumber the whole chapter 0..n-1 in the desired order instead of
+  // swapping stale indexes. The old swap approach silently failed whenever
+  // two lessons shared an order_index (duplicate indexes made the swap a
+  // no-op), which is exactly the "lesson won't move" bug.
+  const reorderChapterLessons = async (chapterId: string, orderedIds: string[]) => {
+    try {
+      await Promise.all(
+        orderedIds.map((id, i) => updateLesson(id, { order_index: i }))
+      );
+      await refreshChapters();
+    } catch (e: any) { toastError('Error', e.message); }
   };
 
   const moveLesson = async (lesson: Lesson, direction: 'up' | 'down') => {
@@ -134,10 +184,9 @@ export default function CourseBuilderPage() {
     const idx = sorted.findIndex(l => l.id === lesson.id);
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const swapLesson = sorted[swapIdx];
-    await updateLesson(lesson.id, { order_index: swapLesson.order_index });
-    await updateLesson(swapLesson.id, { order_index: lesson.order_index });
-    await loadData();
+    const ids = sorted.map(l => l.id);
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    await reorderChapterLessons(parentCh.id, ids);
   };
 
   const handleSaveChapter = async () => {
@@ -214,6 +263,8 @@ export default function CourseBuilderPage() {
         difficulty: courseForm.difficulty as any,
         category: courseForm.category,
         language: courseForm.language,
+        enrollment_mode: courseForm.enrollment_mode as any,
+        progression_mode: (courseForm.progression_mode || 'per_lesson') as any,
         is_published: courseForm.is_published,
         is_featured: courseForm.is_featured,
       });
@@ -275,6 +326,86 @@ export default function CourseBuilderPage() {
   };
 
   const openCreateChapter = () => { setChapterForm({ title: '', description: '' }); setChapterModal({ mode: 'create' }); };
+
+  // Chapter-level quiz CRUD (CCBP-style chapter steps)
+  const openCreateChapterQuiz = (chapterId: string) => {
+    setQuizForm({ title: '', description: '', pass_percentage: 70, time_limit_minutes: '', is_published: false });
+    setQuizModal({ chapterId });
+  };
+  const openEditChapterQuiz = (chapterId: string, quiz: Quiz) => {
+    setQuizForm({ title: quiz.title, description: quiz.description ?? '', pass_percentage: quiz.pass_percentage, time_limit_minutes: quiz.time_limit_minutes?.toString() ?? '', is_published: quiz.is_published });
+    setQuizModal({ chapterId, quiz });
+  };
+  const handleSaveChapterQuiz = async () => {
+    if (!profile || !quizModal || !courseId) return;
+    setSaving(true);
+    let createdQuiz: Quiz | null = null;
+    try {
+      if (quizModal.quiz) {
+        await updateQuiz(quizModal.quiz.id, {
+          title: quizForm.title, description: quizForm.description || null,
+          pass_percentage: quizForm.pass_percentage,
+          time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null,
+          is_published: quizForm.is_published,
+        });
+        success('Quiz updated');
+        if (manageQuiz && quizModal.quiz && manageQuiz.id === quizModal.quiz.id) {
+          setManageQuiz({ ...manageQuiz, title: quizForm.title, description: quizForm.description || null, pass_percentage: quizForm.pass_percentage, time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null, is_published: quizForm.is_published });
+        }
+      } else {
+        createdQuiz = await createQuiz({
+          course_id: courseId, chapter_id: quizModal.chapterId, lesson_id: null,
+          title: quizForm.title, description: quizForm.description || undefined,
+          pass_percentage: quizForm.pass_percentage,
+          time_limit_minutes: quizForm.time_limit_minutes ? Number(quizForm.time_limit_minutes) : null,
+          is_published: quizForm.is_published, created_by: profile.id,
+        });
+        success('Quiz created — add your first question');
+      }
+      setQuizModal(null);
+      await loadData();
+      // New quiz? Drop straight into the inline question editor.
+      if (createdQuiz) setManageQuiz(createdQuiz);
+    } catch (e: any) { toastError('Error', e.message); }
+    setSaving(false);
+  };
+  const handleDeleteChapterQuiz = async () => {
+    if (!quizDeleteTarget) return;
+    setSaving(true);
+    try {
+      await deleteQuiz(quizDeleteTarget.id);
+      success('Quiz deleted');
+      if (manageQuiz?.id === quizDeleteTarget.id) setManageQuiz(null);
+      setQuizDeleteTarget(null);
+      await loadData();
+    } catch (e: any) { toastError('Error', e.message); }
+    setSaving(false);
+  };
+  const handleUnlinkChapterQuestion = async (questionId: string) => {
+    try {
+      const { error } = await supabase.from('coding_questions').update({ chapter_id: null }).eq('id', questionId);
+      if (error) throw error;
+      success('Removed from chapter (question kept in the bank)');
+      await loadData();
+    } catch (e: any) { toastError('Error', e.message); }
+  };
+  // Light refresh for the outline — no loading flag, so inline managers never remount.
+  const refreshChapters = useCallback(async () => {
+    if (!courseId) return;
+    try {
+      setChapters(await withChapterContent(await getCourseChapters(courseId)));
+    } catch (e: any) { toastError('Error', e.message); }
+  }, [courseId]);
+
+  // Open a lesson directly on its Quiz or Practice tab (per-lesson steps so
+  // quizzes/practice can sit BETWEEN lessons, not only at chapter end).
+  const openLessonTab = (lessonId: string, tab: 'quiz' | 'practice') => {
+    setPracticeChapterId(null);
+    setManageQuiz(null);
+    setLessonTab(tab);
+    setSelectedLessonId(lessonId);
+  };
+
   const openEditChapter = (ch: Chapter) => { setChapterForm({ title: ch.title, description: ch.description ?? '' }); setChapterModal({ mode: 'edit', chapter: ch }); };
   const openCreateLesson = (chapterId: string) => {
     setLessonForm({
@@ -311,7 +442,9 @@ export default function CourseBuilderPage() {
       title: course.title, short_description: course.short_description ?? '',
       description: course.description ?? '', thumbnail_url: course.thumbnail_url ?? '',
       difficulty: course.difficulty, category: course.category ?? 'python',
-      language: course.language ?? 'English', is_published: course.is_published,
+      language: course.language ?? 'English', enrollment_mode: course.enrollment_mode ?? 'open',
+      progression_mode: (course as any).progression_mode ?? 'per_lesson',
+      is_published: course.is_published,
       is_featured: course.is_featured,
     });
     setCourseEditModal(true);
@@ -333,7 +466,7 @@ export default function CourseBuilderPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
         <button onClick={() => navigate('/faculty/courses')} className="btn-ghost py-1.5 px-3 text-sm flex items-center gap-1.5">
           <ArrowLeft size={14} /> Courses
         </button>
@@ -344,7 +477,7 @@ export default function CourseBuilderPage() {
         <span className={`badge text-xs ${course.is_published ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'}`}>
           {course.is_published ? 'Published' : 'Draft'}
         </span>
-        <span className="text-xs text-slate-400 flex items-center gap-1"><Users size={11} /> {enrollmentCount}</span>
+        <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1"><Users size={11} /> {enrollmentCount}</span>
         <button onClick={openEditCourse} className="btn-secondary text-sm flex items-center gap-1.5">
           <Settings size={14} /> Edit Course
         </button>
@@ -357,10 +490,10 @@ export default function CourseBuilderPage() {
         </button>
       </div>
 
-      {/* Main content: left outline + right editor */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main content: left outline + right editor (stacks on phones) */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left outline panel */}
-        <div className="w-72 lg:w-80 border-r border-slate-100 dark:border-slate-800 overflow-y-auto flex-shrink-0 bg-slate-50 dark:bg-slate-900/50">
+        <div className="w-full lg:w-72 xl:w-80 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-800 overflow-y-auto flex-shrink-0 max-h-[38vh] lg:max-h-none bg-slate-50 dark:bg-slate-900/50">
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Curriculum</h2>
@@ -385,11 +518,17 @@ export default function CourseBuilderPage() {
                         {ch.lessons.length}
                       </span>
                       <div className="hidden group-hover:flex items-center gap-0.5">
-                        <button onClick={() => moveChapter(ch, 'up')} disabled={chIdx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20">
+                        <button onClick={() => moveChapter(ch, 'up')} disabled={chIdx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20" title="Move up">
                           <ArrowUp size={11} />
                         </button>
-                        <button onClick={() => moveChapter(ch, 'down')} disabled={chIdx === chapters.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20">
+                        <button onClick={() => moveChapter(ch, 'down')} disabled={chIdx === chapters.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20" title="Move down">
                           <ArrowDown size={11} />
+                        </button>
+                        <button onClick={() => openEditChapter(ch)} className="p-0.5 text-slate-400 hover:text-slate-600" title="Rename chapter">
+                          <Edit2 size={11} />
+                        </button>
+                        <button onClick={() => setDeleteTarget({ type: 'chapter', id: ch.id, name: ch.title })} className="p-0.5 text-slate-400 hover:text-red-600" title="Delete chapter (and its lessons)">
+                          <Trash2 size={11} />
                         </button>
                       </div>
                     </div>
@@ -400,17 +539,52 @@ export default function CourseBuilderPage() {
                           <div key={lesson.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 group">
                             <FileText size={12} className="text-slate-300 flex-shrink-0" />
                             <button
-                              onClick={() => setSelectedLessonId(lesson.id)}
+                              onClick={() => { setLessonTab(undefined); setSelectedLessonId(lesson.id); }}
                               className={`text-sm truncate flex-1 text-left ${selectedLessonId === lesson.id ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-slate-600 dark:text-slate-400'}`}
                             >
                               {chIdx + 1}.{lIdx + 1} {lesson.title}
                             </button>
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${lesson.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            <button onClick={() => openLessonTab(lesson.id, 'quiz')} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Add/edit this lesson's quiz"><HelpCircle size={10} /></button>
+                            <button onClick={() => openLessonTab(lesson.id, 'practice')} className="p-0.5 text-teal-500 hover:text-teal-600 hidden group-hover:block" title="Add/edit this lesson's practice questions"><Code2 size={10} /></button>
                           </div>
                         ))}
-                        <button onClick={() => openCreateLesson(ch.id)} className="text-xs text-primary-600 hover:underline flex items-center gap-1 p-1.5">
-                          <Plus size={10} /> Add Lesson
-                        </button>
+                        {ch.quizzes.map(q => (
+                          <div key={q.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 group">
+                            <HelpCircle size={12} className="text-amber-500 flex-shrink-0" />
+                            <button
+                              onClick={() => setManageQuiz(q)}
+                              title="Manage questions inline"
+                              className={`text-sm truncate flex-1 text-left cursor-pointer ${manageQuiz?.id === q.id ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'}`}
+                            >
+                              {q.title}
+                            </button>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${q.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            <button onClick={() => setManageQuiz(q)} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Manage questions"><HelpCircle size={10} /></button>
+                            <button onClick={() => openEditChapterQuiz(ch.id, q)} className="p-0.5 text-slate-400 hover:text-slate-600 hidden group-hover:block" title="Quiz settings"><Edit2 size={10} /></button>
+                            <button onClick={() => setQuizDeleteTarget(q)} className="p-0.5 text-red-400 hover:text-red-600 hidden group-hover:block"><Trash2 size={10} /></button>
+                          </div>
+                        ))}
+                        {ch.codingQuestions.map(cq => (
+                          <div key={cq.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <Code2 size={12} className="text-teal-500 flex-shrink-0" />
+                            <span className="text-sm truncate flex-1 text-slate-600 dark:text-slate-400">{cq.title}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cq.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            <button onClick={() => navigate(`/faculty/question-bank/editor/${cq.id}?returnBuilder=${courseId}`)} className="p-0.5 text-slate-400 hover:text-slate-600 hidden group-hover:block" title="Edit in question bank"><ExternalLink size={10} /></button>
+                            <button onClick={() => handleUnlinkChapterQuestion(cq.id)} className="p-0.5 text-red-400 hover:text-red-600 hidden group-hover:block" title="Remove from chapter"><Trash2 size={10} /></button>
+                          </div>
+                        ))}
+                        <div className="flex flex-wrap items-center gap-2 p-1.5">
+                          <button onClick={() => openCreateLesson(ch.id)} className="text-xs text-primary-600 hover:underline flex items-center gap-1">
+                            <Plus size={10} /> Lesson
+                          </button>
+                          <button onClick={() => openCreateChapterQuiz(ch.id)} className="text-xs text-amber-600 hover:underline flex items-center gap-1">
+                            <Plus size={10} /> Quiz
+                          </button>
+                          <button onClick={() => setPracticeChapterId(ch.id)} className="text-xs text-teal-600 hover:underline flex items-center gap-1">
+                            <Plus size={10} /> Coding Practice
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -422,8 +596,28 @@ export default function CourseBuilderPage() {
 
         {/* Right editor panel */}
         <div className="flex-1 overflow-y-auto">
-          {selectedLesson ? (
-            <LessonEditorTabs lesson={selectedLesson} course={course} onRefresh={loadData} onEditLesson={() => openEditLesson(selectedLesson.chapter_id, selectedLesson)} onTogglePublish={() => handleTogglePublishLesson(selectedLesson)} onDeleteLesson={() => setDeleteTarget({ type: 'lesson', id: selectedLesson.id, name: selectedLesson.title })} onMoveLesson={(dir) => moveLesson(selectedLesson, dir)} />
+          {manageQuiz ? (
+            <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto animate-fade-in">
+              <div className="flex items-center gap-2 sm:gap-3 mb-4">
+                <button onClick={() => { setManageQuiz(null); refreshChapters(); }} className="btn-ghost py-1.5 px-2.5 text-sm flex items-center gap-1.5 flex-shrink-0">
+                  <ArrowLeft size={14} /> <span className="hidden sm:inline">Outline</span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-bold text-slate-900 dark:text-white truncate">{manageQuiz.title}</h2>
+                  <p className="text-xs text-slate-400 flex items-center gap-1"><HelpCircle size={11} className="text-amber-500" /> Chapter Quiz — Questions</p>
+                </div>
+                {manageQuiz.chapter_id && (
+                  <button onClick={() => openEditChapterQuiz(manageQuiz.chapter_id!, manageQuiz)} className="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0">
+                    <Settings size={14} /> <span className="hidden sm:inline">Settings</span>
+                  </button>
+                )}
+              </div>
+              <QuizQuestionsManager quiz={manageQuiz} onChanged={refreshChapters} />
+            </div>
+          ) : practiceChapterId ? (
+            <ChapterPracticeManager chapterId={practiceChapterId} courseId={courseId!} onClose={() => { setPracticeChapterId(null); loadData(); }} onToast={success} onError={m => toastError('Error', m)} />
+          ) : selectedLesson ? (
+            <LessonEditorTabs key={`${selectedLesson.id}-${lessonTab ?? 'default'}`} lesson={selectedLesson} course={course} initialTab={lessonTab} onRefresh={loadData} onEditLesson={() => openEditLesson(selectedLesson.chapter_id, selectedLesson)} onTogglePublish={() => handleTogglePublishLesson(selectedLesson)} onDeleteLesson={() => setDeleteTarget({ type: 'lesson', id: selectedLesson.id, name: selectedLesson.title })} onMoveLesson={(dir) => moveLesson(selectedLesson, dir)} />
           ) : (
             <div className="p-8">
               <EmptyState icon={BookOpen} title="Select a lesson" description="Choose a lesson from the outline to edit its content, or create a new chapter and lesson." />
@@ -450,6 +644,36 @@ export default function CourseBuilderPage() {
               {chapterModal?.mode === 'edit' ? 'Update' : 'Create'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Chapter Quiz Modal (CCBP-style chapter step) */}
+      <Modal open={!!quizModal} onClose={() => setQuizModal(null)} title={quizModal?.quiz ? 'Edit Chapter Quiz' : 'Create Chapter Quiz'}>
+        <div className="space-y-4">
+          <div><label className="label">Title</label><input className="input" value={quizForm.title} onChange={e => setQuizForm(f => ({ ...f, title: e.target.value }))} /></div>
+          <div><label className="label">Description</label><textarea className="input min-h-[60px] resize-none" value={quizForm.description} onChange={e => setQuizForm(f => ({ ...f, description: e.target.value }))} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="label">Pass Percentage</label><input type="number" className="input" value={quizForm.pass_percentage} onChange={e => setQuizForm(f => ({ ...f, pass_percentage: Number(e.target.value) }))} /></div>
+            <div><label className="label">Time Limit (min)</label><input type="number" className="input" placeholder="No limit" value={quizForm.time_limit_minutes} onChange={e => setQuizForm(f => ({ ...f, time_limit_minutes: e.target.value }))} /></div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-4 h-4 rounded" checked={quizForm.is_published} onChange={e => setQuizForm(f => ({ ...f, is_published: e.target.checked }))} /><span className="text-sm text-slate-700 dark:text-slate-300">Publish immediately</span></label>
+          {quizModal?.quiz ? (
+            <p className="text-xs text-slate-400">Click the quiz title in the outline to manage its questions without leaving the builder.</p>
+          ) : (
+            <p className="text-xs text-slate-400">After creating, the question editor opens right here in the builder.</p>
+          )}
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setQuizModal(null)} className="btn-secondary">Cancel</button>
+            <button onClick={handleSaveChapterQuiz} disabled={saving || !quizForm.title} className="btn-primary flex items-center gap-2 disabled:opacity-50">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}{quizModal?.quiz ? 'Update' : 'Create'}</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!quizDeleteTarget} onClose={() => setQuizDeleteTarget(null)} title="Delete Quiz" size="sm">
+        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">Delete <strong>{quizDeleteTarget?.title}</strong>? All questions and student attempts will also be deleted.</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={() => setQuizDeleteTarget(null)} className="btn-secondary">Cancel</button>
+          <button onClick={handleDeleteChapterQuiz} disabled={saving} className="btn-primary bg-red-600 hover:bg-red-700 flex items-center gap-2"><Trash2 size={14} /> Delete</button>
         </div>
       </Modal>
 
@@ -568,6 +792,25 @@ export default function CourseBuilderPage() {
               <input className="input" value={courseForm.language} onChange={e => setCourseForm(f => ({ ...f, language: e.target.value }))} />
             </div>
           </div>
+          <div>
+            <label className="label">Enrolment</label>
+            <select className="input" value={courseForm.enrollment_mode} onChange={e => setCourseForm(f => ({ ...f, enrollment_mode: e.target.value }))}>
+              <option value="open">Open enrolment — students can enrol immediately</option>
+              <option value="approval_required">Approval required — students request access, admin approves</option>
+              <option value="closed">Closed — no new students</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Paid or batch-based courses normally use "Approval required". Access is always granted server-side.</p>
+          </div>
+          <div>
+            <label className="label">Lesson Progression (whole course)</label>
+            <select className="input" value={courseForm.progression_mode} onChange={e => setCourseForm(f => ({ ...f, progression_mode: e.target.value }))}>
+              <option value="per_lesson">Per lesson — each lesson follows its own setting</option>
+              <option value="open">Open — every lesson available immediately</option>
+              <option value="sequential">Sequential — lessons unlock in order as students complete them</option>
+              <option value="gated">Gated — lessons with a required activity enforce it; others unlock in order</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-1">One setting for the entire course. Individual lessons with their own progression override it only when this is "Per lesson".</p>
+          </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="w-4 h-4 rounded" checked={courseForm.is_published} onChange={e => setCourseForm(f => ({ ...f, is_published: e.target.checked }))} />
@@ -635,5 +878,144 @@ export default function CourseBuilderPage() {
           </div>
         </div>
       </Modal></div>
+  );
+}
+
+// ============================================================
+// Chapter Practice Manager: pick bank questions into a chapter,
+// arrange them, or create new ones — without leaving the builder.
+// ============================================================
+function ChapterPracticeManager({ chapterId, courseId, onClose, onToast, onError }: {
+  chapterId: string;
+  courseId: string;
+  onClose: () => void;
+  onToast: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [items, setItems] = useState<{ id: string; title: string; difficulty: string; is_published: boolean; default_marks: number; chapter_order_index: number | null }[]>([]);
+  const [bank, setBank] = useState<{ id: string; title: string; difficulty: string; topic: string }[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: ch, error: chErr } = await supabase.from('chapters').select('id, title, course_id').eq('id', chapterId).single();
+      if (chErr) throw chErr;
+      setChapter(ch as Chapter);
+      setItems(await getChapterCodingQuestions(chapterId));
+      setBank(await getBankQuestionsNotInChapter(chapterId));
+    } catch (e: any) { onError(e.message); }
+    setLoading(false);
+  }, [chapterId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addToChapter = async (questionId: string) => {
+    setBusy(true);
+    try {
+      const nextOrder = items.length ? Math.max(...items.map(i => i.chapter_order_index ?? 0)) + 1 : 0;
+      const { error } = await supabase.from('coding_questions')
+        .update({ chapter_id: chapterId, chapter_order_index: nextOrder }).eq('id', questionId);
+      if (error) throw error;
+      onToast('Added to chapter');
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const move = async (item: { id: string; chapter_order_index: number | null }, dir: 'up' | 'down') => {
+    const sorted = [...items].sort((a, b) => (a.chapter_order_index ?? 0) - (b.chapter_order_index ?? 0));
+    const idx = sorted.findIndex(i => i.id === item.id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swap = sorted[swapIdx];
+    setBusy(true);
+    try {
+      await supabase.from('coding_questions').update({ chapter_order_index: item.chapter_order_index ?? idx }).eq('id', swap.id);
+      await supabase.from('coding_questions').update({ chapter_order_index: swap.chapter_order_index ?? swapIdx }).eq('id', item.id);
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const removeFromChapter = async (questionId: string) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('coding_questions')
+        .update({ chapter_id: null, chapter_order_index: null }).eq('id', questionId);
+      if (error) throw error;
+      onToast('Removed from chapter (kept in the bank)');
+      await load();
+    } catch (e: any) { onError(e.message); }
+    setBusy(false);
+  };
+
+  const filteredBank = bank.filter(q => !search.trim() || q.title.toLowerCase().includes(search.trim().toLowerCase()) || q.topic.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <div className="p-6 lg:p-8 max-w-4xl mx-auto animate-fade-in">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={onClose} className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Back to builder"><ArrowLeft size={18} /></button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Coding Practice — {chapter?.title}</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Pick questions from the bank, arrange the order, or create new ones. Students see them in this order.</p>
+          </div>
+        </div>
+        <a href={`/faculty/question-bank/editor/new?chapter=${chapterId}&course=${courseId}&returnBuilder=${courseId}`} className="btn-primary text-sm flex items-center gap-1.5 flex-shrink-0"><Plus size={14} /> New Question</a>
+      </div>
+
+      <section className="card p-5 mb-6">
+        <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Chapter questions ({items.length})</h2>
+        {loading ? (
+          <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No questions yet. Add one from the bank below or create a new question.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <button onClick={() => move(item, 'up')} disabled={busy || idx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowUp size={12} /></button>
+                  <button onClick={() => move(item, 'down')} disabled={busy || idx === items.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={12} /></button>
+                </div>
+                <span className="text-xs text-slate-400 font-mono flex-shrink-0">{idx + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{item.difficulty} · {item.default_marks} marks {item.is_published ? '' : '· DRAFT'}</p>
+                </div>
+                <a href={`/faculty/question-bank/editor/${item.id}?returnBuilder=${courseId}`} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit question"><Edit2 size={13} /></a>
+                <button onClick={() => removeFromChapter(item.id)} disabled={busy} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove from chapter"><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card p-5">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Question bank — pick to add</h2>
+          <input className="input text-xs max-w-52" placeholder="Search questions…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {filteredBank.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No bank questions match. Create a new question with the button above.</p>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {filteredBank.map(q => (
+              <div key={q.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{q.title}</p>
+                  <p className="text-xs text-slate-400 capitalize">{q.difficulty} · {q.topic}</p>
+                </div>
+                <button onClick={() => addToChapter(q.id)} disabled={busy} className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={12} /> Add</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

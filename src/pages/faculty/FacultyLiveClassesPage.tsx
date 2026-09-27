@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Video, Plus, Calendar, Clock, Users, MoreVertical, Edit, Play, CheckCircle,
-  XCircle, ExternalLink, Loader2, AlertCircle, HelpCircle, Trash2, Filter
+  XCircle, ExternalLink, Loader2, AlertCircle, HelpCircle, Trash2, Filter, FileText
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -84,20 +84,6 @@ function SessionCard({
             </span>
           </div>
 
-          {/* Unlock status for completed */}
-          {isCompleted && (
-            <div className="mt-2 flex items-center gap-3 text-xs">
-              <span className={`flex items-center gap-1 ${session.slides_unlocked ? 'text-emerald-600' : 'text-slate-400'}`}>
-                {session.slides_unlocked ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                Slides {session.slides_unlocked ? 'Unlocked' : 'Locked'}
-              </span>
-              <span className={`flex items-center gap-1 ${session.materials_unlocked ? 'text-emerald-600' : 'text-slate-400'}`}>
-                {session.materials_unlocked ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                Materials {session.materials_unlocked ? 'Unlocked' : 'Locked'}
-              </span>
-            </div>
-          )}
-
           {/* Primary session actions should be visible, not hidden in the menu. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {(isScheduled || isLive) && hasMeetLink && (
@@ -143,6 +129,16 @@ function SessionCard({
               <Users size={13} />
               {isCompleted ? 'View Attendance' : 'Attendance'}
             </Link>
+
+            {(isCompleted || isLive || isScheduled) && (
+              <Link
+                to={`/faculty/live-classes/${session.id}/edit`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                <FileText size={13} />
+                {isCompleted ? 'Materials & Recording' : 'Manage Materials'}
+              </Link>
+            )}
 
             {isScheduled && !hasMeetLink && (
               <>
@@ -328,8 +324,8 @@ export default function FacultyLiveClassesPage() {
 
   const handleCompleteSession = async (sessionId: string) => {
     try {
-      await completeSession(sessionId, true, true);
-      success('Session completed! Materials have been unlocked for students.');
+      await completeSession(sessionId, false, false);
+      success('Session completed! Add materials and a recording from Edit Session, then unlock them for students.');
       loadSessions();
     } catch (err) {
       showError('Failed to complete session.');

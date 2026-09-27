@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import type {
   Batch,
   BatchFaculty,
+  BatchFacultyRole,
   BatchSchedule,
   Course,
   FacultyBatchAssignment,
@@ -28,15 +29,38 @@ type TeachingWorkInput = {
   created_by: string;
 };
 
-export async function getFacultyBatchAssignments(facultyId: string): Promise<FacultyBatchAssignment[]> {
-  const { data, error } = await supabase
-    .from('batch_faculty')
-    .select('*, batch:batches(*, course:courses(*))')
-    .eq('faculty_id', facultyId)
-    .order('assigned_at', { ascending: false });
-  if (error) throw error;
+export async function getFacultyBatchAssignments(
+  facultyId: string,
+  options?: { includeAllForAdmin?: boolean },
+): Promise<FacultyBatchAssignment[]> {
+  let assignments: (BatchFaculty & { batch: Batch & { course?: Course } })[];
 
-  const assignments = (data ?? []) as (BatchFaculty & { batch: Batch & { course?: Course } })[];
+  if (options?.includeAllForAdmin) {
+    // Super admins oversee every batch (RLS allows the read); treat them as
+    // lead so the teaching-work planner has all batches available.
+    const { data, error } = await supabase
+      .from('batches')
+      .select('*, course:courses(*)')
+      .order('name');
+    if (error) throw error;
+    assignments = ((data ?? []) as (Batch & { course?: Course })[]).map(batch => ({
+      id: `admin-${batch.id}`,
+      batch_id: batch.id,
+      faculty_id: facultyId,
+      role: 'lead' as BatchFacultyRole,
+      assigned_at: batch.created_at ?? new Date().toISOString(),
+      batch,
+    }));
+  } else {
+    const { data, error } = await supabase
+      .from('batch_faculty')
+      .select('*, batch:batches(*, course:courses(*))')
+      .eq('faculty_id', facultyId)
+      .order('assigned_at', { ascending: false });
+    if (error) throw error;
+    assignments = (data ?? []) as (BatchFaculty & { batch: Batch & { course?: Course } })[];
+  }
+
   const batchIds = assignments.map(item => item.batch_id);
   if (!batchIds.length) return [];
 

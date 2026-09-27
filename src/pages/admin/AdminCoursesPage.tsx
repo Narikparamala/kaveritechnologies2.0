@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Plus, Search, Eye, EyeOff } from 'lucide-react';
+import { BookOpen, Plus, Search, Eye, EyeOff, Copy } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -14,21 +14,48 @@ export default function AdminCoursesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python' });
+  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python', enrollment_mode: 'open' });
 
   useEffect(() => {
-    supabase.from('courses').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { setCourses((data ?? []) as Course[]); setLoading(false); });
+    // creator: courses.created_by -> profiles (FK embed; staff-only SELECT via RLS)
+    supabase.from('courses').select('*, creator:created_by(full_name, email)').order('created_at', { ascending: false })
+      .then(({ data }) => { setCourses((data ?? []) as unknown as Course[]); setLoading(false); });
   }, []);
 
   const handleCreate = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase.from('courses').insert({
       ...form,
       slug: slugify(form.title),
       is_published: false,
+      created_by: user?.id,
     }).select().maybeSingle();
     if (error) { toastError('Error', error.message); return; }
     if (data) { setCourses(cs => [data as Course, ...cs]); success('Course created!'); setShowModal(false); }
+  };
+
+  const updateEnrollmentMode = async (id: string, mode: string) => {
+    const { error } = await supabase.from('courses').update({ enrollment_mode: mode }).eq('id', id);
+    if (error) { toastError('Update failed', error.message); return; }
+    setCourses(cs => cs.map(c => c.id === id ? { ...c, enrollment_mode: mode as Course['enrollment_mode'] } : c));
+    success('Enrolment mode updated');
+  };
+
+  const cloneCourse = async (course: Course) => {
+    const title = window.prompt(`Clone "${course.title}" — new course title:`, `Copy of ${course.title}`);
+    if (title === null) return;
+    if (title.trim().length < 3) { toastError('Clone failed', 'Title must be at least 3 characters.'); return; }
+    const { data: newId, error } = await supabase.rpc('clone_course', { p_source_course_id: course.id, p_course_title: title.trim() });
+    if (error || !newId) { toastError('Clone failed', error?.message ?? 'Unknown error'); return; }
+    const { error: contentError } = await supabase.rpc('clone_course_content', { p_source_course_id: course.id, p_new_course_id: newId });
+    if (contentError) {
+      // Leave the empty shell — staff can delete it; do not pretend it worked.
+      toastError('Clone failed', `Course shell created but content copy failed: ${contentError.message}`);
+      return;
+    }
+    const { data: created } = await supabase.from('courses').select('*').eq('id', newId).maybeSingle();
+    if (created) setCourses(cs => [created as Course, ...cs]);
+    success('Course cloned as a draft — review and publish when ready.');
   };
 
   const togglePublish = async (id: string, current: boolean) => {
@@ -61,16 +88,36 @@ export default function AdminCoursesPage() {
             <div key={c.id} className="flex items-center gap-4 px-5 py-4">
               <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
                 <BookOpen size={18} className="text-primary-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-900 dark:text-white truncate">{c.title}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
-                  <span className="text-xs text-slate-400">{c.enrollment_count} students · {c.duration_hours}h</span>
+              </div>                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-slate-900 dark:text-white truncate">{c.title}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
+                    <span className="text-xs text-slate-400">{c.enrollment_count} students · {c.duration_hours}h</span>
+                    <span className="text-xs text-slate-400">
+                      · Created by {(c as any).creator?.full_name || (c as any).creator?.email || 'Unknown'}
+                    </span>
+                  </div>
                 </div>
-              </div>
               <div className="flex items-center gap-2">
                 <Badge variant={c.is_published ? 'success' : 'default'}>{c.is_published ? 'Published' : 'Draft'}</Badge>
+                <select
+                  title="Enrolment mode"
+                  aria-label={`Enrolment mode for ${c.title}`}
+                  value={c.enrollment_mode ?? 'open'}
+                  onChange={e => updateEnrollmentMode(c.id, e.target.value)}
+                  className="input !py-1.5 !px-2 text-xs w-36"
+                >
+                  <option value="open">Open enrolment</option>
+                  <option value="approval_required">Approval required</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <button
+                  onClick={() => cloneCourse(c)}
+                  title="Clone this course with all chapters, lessons and quizzes"
+                  className="btn-ghost py-1.5 px-3 text-xs flex items-center gap-1"
+                >
+                  <Copy size={12} /> Clone
+                </button>
                 <button
                   onClick={() => togglePublish(c.id, c.is_published)}
                   className="btn-ghost py-1.5 px-3 text-xs flex items-center gap-1"
@@ -106,6 +153,14 @@ export default function AdminCoursesPage() {
               <label className="label">Duration (hours)</label>
               <input type="number" className="input" value={form.duration_hours} onChange={e => setForm(f => ({ ...f, duration_hours: Number(e.target.value) }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Enrolment</label>
+            <select className="input" value={form.enrollment_mode} onChange={e => setForm(f => ({ ...f, enrollment_mode: e.target.value }))}>
+              <option value="open">Open enrolment — students enrol immediately</option>
+              <option value="approval_required">Approval required — admin approves requests</option>
+              <option value="closed">Closed — no new students</option>
+            </select>
           </div>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
