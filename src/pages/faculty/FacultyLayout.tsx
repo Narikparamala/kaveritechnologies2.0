@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
   { label: 'Content Import', icon: Upload, to: '/content-import' },
-  { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
+  { label: 'Assignment Submissions', icon: FileText, to: '/submissions' },
   { label: 'Coding Submissions', icon: Code2, to: '/coding-submissions' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },

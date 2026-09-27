@@ -17,6 +17,7 @@ import {
   createLesson, updateLesson, deleteLesson, deleteCourseWithContent,
   createQuiz, updateQuiz, deleteQuiz, getChapterQuizzes, getChapterCodingQuestions,
   getBankQuestionsNotInChapter,
+  getLessonCodingQuestions, getBankQuestionsNotInLesson,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
 import QuizQuestionsManager from '../../components/faculty/QuizQuestionsManager';
@@ -125,6 +126,20 @@ export default function CourseBuilderPage() {
   }, [courseId, profile, requestedLessonId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // One-shot return params from the question editor: ?practiceChapter= opens the
+  // chapter manager pane; ?practiceLesson= opens that lesson's Practice tab.
+  useEffect(() => {
+    const practiceChapterParam = searchParams.get('practiceChapter');
+    const practiceLessonParam = searchParams.get('practiceLesson');
+    if (practiceChapterParam) {
+      setPracticeChapterId(practiceChapterParam);
+    } else if (practiceLessonParam) {
+      setSelectedLessonId(practiceLessonParam);
+      setLessonTab('practice');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleChapter = (id: string) => {
     setExpandedChapters(prev => {
@@ -382,11 +397,6 @@ export default function CourseBuilderPage() {
     } catch (e: any) { toastError('Error', e.message); }
   }, [courseId]);
 
-  const openManageChapterQuiz = (quiz: Quiz) => {
-    setPracticeChapterId(null);
-    setManageQuiz(quiz);
-  };
-
   // Open a lesson directly on its Quiz or Practice tab (per-lesson steps so
   // quizzes/practice can sit BETWEEN lessons, not only at chapter end).
   const openLessonTab = (lessonId: string, tab: 'quiz' | 'practice') => {
@@ -517,7 +527,7 @@ export default function CourseBuilderPage() {
                         <button onClick={() => openEditChapter(ch)} className="p-0.5 text-slate-400 hover:text-slate-600" title="Rename chapter">
                           <Edit2 size={11} />
                         </button>
-                        <button onClick={() => setDeleteTarget({ type: 'chapter', id: ch.id })} className="p-0.5 text-slate-400 hover:text-red-600" title="Delete chapter (and its lessons)">
+                        <button onClick={() => setDeleteTarget({ type: 'chapter', id: ch.id, name: ch.title })} className="p-0.5 text-slate-400 hover:text-red-600" title="Delete chapter (and its lessons)">
                           <Trash2 size={11} />
                         </button>
                       </div>
@@ -543,14 +553,14 @@ export default function CourseBuilderPage() {
                           <div key={q.id} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 group">
                             <HelpCircle size={12} className="text-amber-500 flex-shrink-0" />
                             <button
-                              onClick={() => openManageChapterQuiz(q)}
+                              onClick={() => setManageQuiz(q)}
                               title="Manage questions inline"
                               className={`text-sm truncate flex-1 text-left cursor-pointer ${manageQuiz?.id === q.id ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'}`}
                             >
                               {q.title}
                             </button>
                             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${q.is_published ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                            <button onClick={() => openManageChapterQuiz(q)} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Manage questions"><HelpCircle size={10} /></button>
+                            <button onClick={() => setManageQuiz(q)} className="p-0.5 text-amber-500 hover:text-amber-600 hidden group-hover:block" title="Manage questions"><HelpCircle size={10} /></button>
                             <button onClick={() => openEditChapterQuiz(ch.id, q)} className="p-0.5 text-slate-400 hover:text-slate-600 hidden group-hover:block" title="Quiz settings"><Edit2 size={10} /></button>
                             <button onClick={() => setQuizDeleteTarget(q)} className="p-0.5 text-red-400 hover:text-red-600 hidden group-hover:block"><Trash2 size={10} /></button>
                           </div>

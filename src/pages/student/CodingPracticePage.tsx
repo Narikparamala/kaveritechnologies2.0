@@ -130,10 +130,16 @@ export default function CodingPracticePage() {
   const navigate = useNavigate();
   const chapterId = searchParams.get('chapter');
   const courseId = searchParams.get('course');
+  const lessonId = searchParams.get('lesson');
 
   if (questionId) {
-    // Arrived from a chapter practice list: Back returns there; otherwise the global bank.
-    const backTo = chapterId && courseId ? `/student/course/${courseId}/practice/${chapterId}` : '/student/coding-practice';
+    // Arrived from a practice list (chapter or per-lesson): Back returns
+    // there; otherwise the global bank.
+    const backTo = lessonId && courseId
+      ? `/student/course/${courseId}/lesson-practice/${lessonId}`
+      : chapterId && courseId
+        ? `/student/course/${courseId}/practice/${chapterId}`
+        : '/student/coding-practice';
     return <QuestionWorkspace questionId={questionId} onBack={() => navigate(backTo)} />;
   }
 

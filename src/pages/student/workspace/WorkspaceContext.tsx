@@ -28,11 +28,32 @@ export interface ChapterCodingStep {
   solved: boolean;
 }
 
+/** Per-lesson quiz step (sits BETWEEN lessons in the sidebar flow). */
+export interface LessonQuizStep {
+  id: string;
+  title: string;
+  state: string;
+}
+
+/** Per-lesson coding practice step (opens the Monaco solve/submit page). */
+export interface LessonCodingStep {
+  id: string;
+  title: string;
+  difficulty: string;
+  default_marks: number;
+  solved: boolean;
+  attempts_count: number;
+  passed_test_cases: number;
+  total_test_cases: number;
+}
+
 interface WorkspaceState {
   course: Course | null;
   chapters: ChapterWithLessons[];
   chapterQuizSteps: Map<string, ChapterQuizStep[]>;
   chapterCodingSteps: Map<string, ChapterCodingStep[]>;
+  lessonQuizSteps: Map<string, LessonQuizStep[]>;
+  lessonCodingSteps: Map<string, LessonCodingStep[]>;
   currentLesson: Lesson | null;
   currentChapter: Chapter | null;
   accessMap: Map<string, LessonAccessInfo>;
@@ -84,6 +105,8 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   const [chapters, setChapters] = useState<ChapterWithLessons[]>([]);
   const [chapterQuizSteps, setChapterQuizSteps] = useState<Map<string, ChapterQuizStep[]>>(new Map());
   const [chapterCodingSteps, setChapterCodingSteps] = useState<Map<string, ChapterCodingStep[]>>(new Map());
+  const [lessonQuizSteps, setLessonQuizSteps] = useState<Map<string, LessonQuizStep[]>>(new Map());
+  const [lessonCodingSteps, setLessonCodingSteps] = useState<Map<string, LessonCodingStep[]>>(new Map());
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
   const [accessMap, setAccessMap] = useState<Map<string, LessonAccessInfo>>(new Map());
@@ -137,6 +160,19 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       planItems.forEach(p => { if (p.access === 'completed') progressMap.set(p.lesson_id, true); });
       setProgress(progressMap);
 
+      // Per-lesson quiz steps come straight from the server plan activities
+      // (kind 'quiz' with a quiz_id) — one sidebar step per published quiz.
+      const lqSteps = new Map<string, LessonQuizStep[]>();
+      planItems.forEach(p => {
+        (p.activities ?? []).forEach(a => {
+          if (a.kind !== 'quiz' || !a.quiz_id) return;
+          const list = lqSteps.get(p.lesson_id) ?? [];
+          list.push({ id: a.quiz_id, title: a.title, state: a.state });
+          lqSteps.set(p.lesson_id, list);
+        });
+      });
+      setLessonQuizSteps(lqSteps);
+
       const fullLessons = new Map((lessonsRes.data ?? [] as Lesson[]).map(l => [l.id, l]));
       const lessons: Lesson[] = planItems.map(p => fullLessons.get(p.lesson_id) ?? ({
         id: p.lesson_id,
@@ -176,13 +212,14 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       // and coding questions with this student's completion state.
       const chapterIds = chaps.map(c => c.id);
       if (chapterIds.length > 0) {
-        const [cQuizRes, cqRes, cqaRes, myQuizAttempts] = await Promise.all([
+        const [cQuizRes, cqRes, cqaRes, myQuizAttempts, lessonCodingRes] = await Promise.all([
           supabase.from('quizzes').select('id, chapter_id, title, description, pass_percentage, xp_reward, time_limit_minutes')
             .in('chapter_id', chapterIds).eq('is_published', true).is('lesson_id', null),
           supabase.from('coding_questions').select('id, chapter_id, title, difficulty, default_marks')
             .in('chapter_id', chapterIds).eq('is_published', true),
-          supabase.from('coding_question_attempts').select('question_id, first_solved_at'),
+          supabase.from('coding_question_attempts').select('question_id, first_solved_at').eq('student_id', profile.id),
           supabase.from('quiz_attempts').select('quiz_id, passed').eq('student_id', profile.id),
+          supabase.rpc('get_course_coding_questions', { p_course_id: courseId }),
         ]);
 
         const passedQuizIds = new Set(
@@ -218,9 +255,27 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
           cSteps.set(q.chapter_id, list);
         });
         setChapterCodingSteps(cSteps);
+
+        // Lesson-scoped coding practice steps (lesson_id set) — these render
+        // directly under their lesson in the sidebar, before the next lesson.
+        const lcSteps = new Map<string, LessonCodingStep[]>();
+        ((lessonCodingRes.data ?? []) as Array<any>).forEach(q => {
+          if (!q.lesson_id) return;
+          const list = lcSteps.get(q.lesson_id) ?? [];
+          list.push({
+            id: q.id, title: q.title, difficulty: q.difficulty,
+            default_marks: q.default_marks, solved: !!q.solved,
+            attempts_count: q.attempts_count ?? 0,
+            passed_test_cases: q.passed_test_cases ?? 0,
+            total_test_cases: q.total_test_cases ?? 0,
+          });
+          lcSteps.set(q.lesson_id, list);
+        });
+        setLessonCodingSteps(lcSteps);
       } else {
         setChapterQuizSteps(new Map());
         setChapterCodingSteps(new Map());
+        setLessonCodingSteps(new Map());
       }
 
       // Auto-select first available incomplete lesson (skip locked ones)
@@ -359,7 +414,8 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   }, [currentLesson, profile, isBookmarked]);
 
   const value: WorkspaceContextType = {
-    course, chapters, chapterQuizSteps, chapterCodingSteps, currentLesson, currentChapter,
+    course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps,
+    currentLesson, currentChapter,
     accessMap, progress, courseProgress, lessonProgress, lessonNote,
     isBookmarked, resources, topics, practiceQuestions,
     lessonQuizzes, lessonAssignments, lessonSessions,

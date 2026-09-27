@@ -13,6 +13,12 @@ export interface Profile {
   streak_days: number;
   last_active_date: string | null;
   is_active: boolean;
+  /** Public-profile fields (see migration 20260926140000). */
+  linkedin_url: string | null;
+  github_url: string | null;
+  resume_url: string | null;
+  profile_public: boolean;
+  profile_slug: string | null;
   created_at: string;
   updated_at: string;
 }

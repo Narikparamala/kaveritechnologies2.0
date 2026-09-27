@@ -18,7 +18,7 @@ type StudentWithProgress = Profile & {
 
 export default function FacultyStudentsPage() {
   const { profile: faculty } = useAuth();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const [students, setStudents] = useState<StudentWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -61,10 +61,14 @@ export default function FacultyStudentsPage() {
       }
 
       // Get students enrolled in these courses
-      const { data: enrollments } = await supabase
+      // NOTE: course_enrollments has three FKs to profiles (student_id,
+      // granted_by, revoked_by) — the column hint is required or PostgREST
+      // fails with "more than one relationship found for profiles".
+      const { data: enrollments, error: enrollmentsError } = await supabase
         .from('course_enrollments')
-        .select('*, course:courses(*), student:profiles(*)')
+        .select('*, course:courses(*), student:profiles!course_enrollments_student_id_fkey(*)')
         .in('course_id', courseIds);
+      if (enrollmentsError) throw enrollmentsError;
 
       // Group by student
       const studentMap = new Map<string, StudentWithProgress>();
@@ -102,6 +106,7 @@ export default function FacultyStudentsPage() {
       setStudents(Array.from(studentMap.values()));
     } catch (err) {
       if (import.meta.env.DEV) console.error('Failed to load students:', err);
+      toastError('Could not load students', err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
     }

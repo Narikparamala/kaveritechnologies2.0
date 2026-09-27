@@ -90,6 +90,11 @@ const PREVIEW_PROFILE: Profile = {
   streak_days: 7,
   last_active_date: new Date().toISOString(),
   is_active: true,
+  linkedin_url: null,
+  github_url: null,
+  resume_url: null,
+  profile_public: false,
+  profile_slug: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };

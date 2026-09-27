@@ -24,7 +24,7 @@ type SubmissionFull = AssignmentSubmission & {
 };
 
 export default function SubmissionsPage() {
-  const { profile } = useAuth();
+  const { profile, realRole } = useAuth();
   const { success, error: toastError } = useToast();
   const [submissions, setSubmissions] = useState<SubmissionFull[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,17 +40,23 @@ export default function SubmissionsPage() {
     if (!profile) return;
     setLoading(true);
     try {
-      // In a real app, we'd filter by faculty courses. 
-      // For now, let's fetch all submissions for assignments the faculty has access to.
-      const { data: cf } = await (await import('../../lib/supabase')).supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
+      const { supabase } = await import('../../lib/supabase');
+      const { data: cf } = await supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
       const cIds = (cf ?? []).map((c: any) => c.course_id);
-      if (!cIds.length) { setLoading(false); return; }
 
-      const { data: aData } = await (await import('../../lib/supabase')).supabase.from('assignments').select('id').in('course_id', cIds);
-      const aIds = (aData ?? []).map((a: any) => a.id);
+      // Admins see every submission; faculty only their assigned courses'.
+      // realRole (not the previewed role) so admin powers survive portal previews.
+      let aIds: string[] = [];
+      if (realRole === 'super_admin') {
+        const { data: aData } = await supabase.from('assignments').select('id');
+        aIds = (aData ?? []).map((a: any) => a.id);
+      } else if (cIds.length > 0) {
+        const { data: aData } = await supabase.from('assignments').select('id').in('course_id', cIds);
+        aIds = (aData ?? []).map((a: any) => a.id);
+      }
       if (!aIds.length) { setLoading(false); return; }
 
-      const { data, error } = await (await import('../../lib/supabase')).supabase
+      const { data, error } = await supabase
         .from('assignment_submissions')
         .select('*, assignment:assignments(*), student_profile:profiles!assignment_submissions_student_id_fkey(*)')
         .in('assignment_id', aIds)
@@ -59,9 +65,10 @@ export default function SubmissionsPage() {
 
       if (error) throw error;
       setSubmissions((data ?? []) as any);
-    } catch (e: any) { toastError('Error', e.message); }
+    } catch (e: any) {      toastError('Error', e.message);
+    }
     setLoading(false);
-  }, [profile]);
+  }, [profile, realRole]);
 
   useEffect(() => { loadSubmissions(); }, [loadSubmissions]);
 
@@ -139,12 +146,16 @@ export default function SubmissionsPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="Submissions" subtitle="Review and grade student work" icon={MessageSquare} />
+      <PageHeader title="Assignment Submissions" subtitle="Review and grade student assignment work" icon={MessageSquare} />
 
       {loading ? (
         <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
       ) : submissions.length === 0 ? (
-        <EmptyState icon={MessageSquare} title="No submissions yet" />
+        <EmptyState
+          icon={MessageSquare}
+          title="No submissions yet"
+          description="When students submit an assignment, it appears here for grading. Coding practice and mini-projects are tracked automatically under Coding Submissions."
+        />
       ) : (
         <div className="grid gap-3">
           {submissions.map(sub => (

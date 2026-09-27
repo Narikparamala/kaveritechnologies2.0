@@ -43,6 +43,7 @@ const PlaygroundPage = lazy(() => import('./pages/student/PlaygroundPage'));
 const AssignmentsPage = lazy(() => import('./pages/student/AssignmentsPage'));
 const CodingPracticePage = lazy(() => import('./pages/student/CodingPracticePage'));
 const ChapterPracticePage = lazy(() => import('./pages/student/ChapterPracticePage'));
+const LessonPracticePage = lazy(() => import('./pages/student/LessonPracticePage'));
 const MiniProjectsPage = lazy(() => import('./pages/student/MiniProjectsPage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
@@ -73,6 +74,7 @@ const FacultyLiveSessionFormPage = lazy(() => import('./pages/faculty/FacultyLiv
 const FacultySessionAttendancePage = lazy(() => import('./pages/faculty/FacultySessionAttendancePage'));
 const FacultyStudentsPage = lazy(() => import('./pages/faculty/FacultyStudentsPage'));
 const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStudentDetailPage'));
+const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
 const FacultyOfflineExamsPage = lazy(() => import('./pages/faculty/FacultyOfflineExamsPage'));
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
 const FacultyEnrollmentRequestsPage = lazy(() => import('./pages/faculty/FacultyEnrollmentRequestsPage'));
@@ -185,6 +187,7 @@ export default function App() {
                   {!PREVIEW_ROLE && <Route path="/" element={<LandingPage />} />}
                   <Route path="/courses" element={<CoursesPage />} />
                   <Route path="/courses/:slug" element={<CourseDetailPage />} />
+                  <Route path="/u/:slug" element={<PublicProfilePage />} />
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="/contact" element={<ContactPage />} />
                   <Route path="/pricing" element={<PricingPage />} />
@@ -252,6 +255,7 @@ export default function App() {
                     <Route path="live-classes/:sessionId" element={<LiveSessionDetailPage />} />
                     <Route path="roadmap" element={<RoadmapPage />} />
                     <Route path="course/:courseId/practice/:chapterId" element={<ChapterPracticePage />} />
+                    <Route path="course/:courseId/lesson-practice/:lessonId" element={<LessonPracticePage />} />
                     <Route path="playground" element={<PlaygroundPage />} />
                     <Route path="assignments" element={<AssignmentsPage />} />
                     <Route path="assignments/:assignmentId" element={<AssignmentsPage />} />

@@ -97,11 +97,11 @@ Difficulty: ${difficulty}.
 Vary the scenarios (not all the same story). Each question tests a different angle of the topic.`;
 
   const modelUrl =
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`;
 
   const genRes = await fetch(modelUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'X-goog-api-key': geminiKey },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],

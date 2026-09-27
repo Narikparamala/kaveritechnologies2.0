@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   Clock3,
   Layers3,
+  Mail,
   Plus,
   RefreshCw,
   Send,
@@ -18,6 +21,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   createFacultyTeachingWork,
@@ -99,7 +103,7 @@ function isMissingTeachingWorkSchema(error: unknown) {
 }
 
 export default function FacultyBatchesPage() {
-  const { profile } = useAuth();
+  const { profile, realRole } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('work');
@@ -132,7 +136,10 @@ export default function FacultyBatchesPage() {
     if (!profile?.id) return;
     setLoading(true);
     try {
-      const batchData = await getFacultyBatchAssignments(profile.id);
+      // Super admins oversee all batches; faculty see batches assigned to them.
+      const batchData = await getFacultyBatchAssignments(profile.id, {
+        includeAllForAdmin: realRole === 'super_admin',
+      });
       setBatches(batchData);
     } catch (error) {
       toast.error('Could not load assigned batches', errorMessage(error));
@@ -157,7 +164,7 @@ export default function FacultyBatchesPage() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, realRole]);
 
   useEffect(() => {
     loadData();
@@ -437,6 +444,7 @@ export default function FacultyBatchesPage() {
               </div>
               {item.schedules.length > 0 && <div className="mt-4 space-y-1">{item.schedules.map(schedule => <p key={schedule.id} className="text-xs text-slate-500"><Clock3 size={12} className="inline mr-1" /> Day {schedule.day_of_week}: {formatClock(schedule.start_time)}–{formatClock(schedule.end_time)}</p>)}</div>}
               <button className="btn-primary w-full mt-4" onClick={() => { setWorkForm(current => ({ ...current, batchId: item.batch_id })); setWorkModal(true); }}><Plus size={15} /> Plan teaching work</button>
+              <BatchRoster batchId={item.batch_id} studentCount={item.student_count} />
             </div>
           ))}
         </div>
@@ -482,6 +490,103 @@ export default function FacultyBatchesPage() {
           <div className="flex justify-end gap-2"><button className="btn-secondary" onClick={() => setRequestModal(false)}>Cancel</button><button className="btn-primary" onClick={handleRequest} disabled={saving}>{saving ? 'Sending...' : 'Send request'}</button></div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+interface RosterStudent {
+  id: string;
+  status: string;
+  enrolled_at: string;
+  student: {
+    id: string;
+    full_name: string | null;
+    email: string;
+    avatar_url: string | null;
+    xp_points: number;
+    level: number;
+  } | null;
+}
+
+function BatchRoster({ batchId, studentCount }: { batchId: string; studentCount: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [students, setStudents] = useState<RosterStudent[]>([]);
+
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && students.length === 0 && !loading) {
+      setLoading(true);
+      setError(null);
+      const { data, error: err } = await supabase
+        .from('batch_students')
+        .select('id, status, enrolled_at, student:profiles!batch_students_student_id_fkey(id, full_name, email, avatar_url, xp_points, level)')
+        .eq('batch_id', batchId)
+        .eq('status', 'active')
+        .order('enrolled_at', { ascending: false });
+      if (err) {
+        setError(err.message);
+      } else {
+        setStudents((data ?? []) as unknown as RosterStudent[]);
+      }
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Users size={15} className="text-slate-400" />
+          View students ({studentCount})
+        </span>
+        {open ? <ChevronUp size={15} className="text-slate-400" /> : <ChevronDown size={15} className="text-slate-400" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 animate-fade-in">
+          {loading ? (
+            <p className="p-4 text-sm text-slate-400">Loading students...</p>
+          ) : error ? (
+            <p className="p-4 text-sm text-red-500">Could not load students: {error}</p>
+          ) : students.length === 0 ? (
+            <p className="p-4 text-sm text-slate-400">No active students in this batch yet.</p>
+          ) : (
+            students.map(row => (
+              <Link
+                key={row.id}
+                to={`/faculty/students/${row.student?.id ?? ''}`}
+                className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+              >
+                <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {row.student?.avatar_url ? (
+                    <img src={row.student.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xs font-bold text-primary-600 dark:text-primary-400">
+                      {(row.student?.full_name || row.student?.email || '?')[0].toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                    {row.student?.full_name || 'Unnamed student'}
+                  </p>
+                  <p className="text-xs text-slate-400 flex items-center gap-1 truncate">
+                    <Mail size={10} /> {row.student?.email}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-400 flex-shrink-0">Lv {row.student?.level ?? 1}</span>
+                <ChevronUp size={14} className="text-slate-300 rotate-90 flex-shrink-0" />
+              </Link>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

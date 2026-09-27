@@ -86,8 +86,12 @@ export default function MyCoursesPage() {
             const pct = Math.round(progress_percentage ?? 0);
             return (
               <div key={id} className="card-hover overflow-hidden flex flex-col">
-                <div className="h-36 bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative">
+                <div className="h-36 bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
+                  {course.thumbnail_url ? (
+                    <img src={course.thumbnail_url} alt={course.title} className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
                   <BookOpen size={40} className="text-white/20" />
+                  )}
                   <div className="absolute top-3 right-3">
                     <Badge className={`capitalize text-xs ${getDifficultyColor(course.difficulty)}`}>
                       {course.difficulty}
@@ -102,7 +106,10 @@ export default function MyCoursesPage() {
                   )}
                 </div>
                 <div className="p-5 flex flex-col flex-1">
-                  <h3 className="font-bold text-slate-900 dark:text-white mb-2 line-clamp-2">{course.title}</h3>
+                  <h3 className="font-bold text-slate-900 dark:text-white mb-1 line-clamp-2">{course.title}</h3>
+                  {course.short_description && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{course.short_description}</p>
+                  )}
                   <p className="text-xs text-slate-400 mb-4 flex items-center gap-2">
                     <Clock size={11} /> {course.duration_hours}h
                     <span>· Enrolled {new Date(enrolled_at).toLocaleDateString('en-IN')}</span>
