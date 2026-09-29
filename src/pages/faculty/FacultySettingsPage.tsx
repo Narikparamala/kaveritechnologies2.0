@@ -28,6 +28,7 @@ import {
   getGoogleConnectionStatus,
   getGoogleOAuthUrl,
 } from '../../services/liveSessions';
+import { PushNotificationCard } from '../../components/settings/PushNotificationCard';
 
 type NotificationPreferences = {
   submissions: boolean;
@@ -410,6 +411,8 @@ export default function FacultySettingsPage() {
           ))}
         </div>
       </section>
+
+      <PushNotificationCard />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="mb-5 flex items-start gap-3">
