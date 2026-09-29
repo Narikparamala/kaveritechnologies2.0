@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
@@ -309,10 +310,10 @@ export default function FacultyBatchesPage() {
         icon={Layers3}
         action={
           <div className="flex flex-wrap justify-end gap-2">
-            <button className="btn-secondary" onClick={() => setRequestModal(true)}>
+            <button className="btn-secondary" onClick={() => setRequestModal(true)} disabled={batches.length === 0}>
               <Send size={16} /> Coordination request
             </button>
-            <button className="btn-primary" onClick={openWorkModal} disabled={!schemaReady}>
+            <button className="btn-primary" onClick={openWorkModal} disabled={!schemaReady || batches.length === 0}>
               <Plus size={16} /> Add teaching work
             </button>
           </div>
@@ -419,11 +420,61 @@ export default function FacultyBatchesPage() {
         </div>
       ) : tab === 'batches' ? (
         <div className="grid md:grid-cols-2 gap-4">
+          {batches.length > 0 && (
+            <p className="md:col-span-2 text-xs text-slate-400 -mt-3">
+              Each card lists the linked course. “View students” opens every enrolled student’s detail page.
+            </p>
+          )}
           {batches.length === 0 ? (
-            <div className="card p-10 text-center md:col-span-2">
-              <Users size={34} className="mx-auto text-slate-400 mb-3" />
-              <h3 className="font-semibold text-slate-900 dark:text-white">No batches assigned yet</h3>
-              <p className="text-sm text-slate-500 mt-1">Admin-assigned batches will appear here without affecting your choice of teaching mode.</p>
+            <div className="md:col-span-2">
+              <EmptyState
+                icon={Users}
+                title="No batches assigned to you yet"
+                description="Batches appear here once an admin creates one and links you to it."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button className="btn-secondary" onClick={() => setRequestModal(true)}>
+                      <Send size={15} /> Request a batch assignment
+                    </button>
+                    <Link to="/faculty/courses" className="btn-secondary">
+                      <BookOpen size={15} /> Preview My Courses
+                    </Link>
+                  </div>
+                }
+              />
+              <div className="card max-w-3xl mx-auto p-6 space-y-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">What must exist before a batch shows up here</p>
+                {[
+                  {
+                    title: 'A batch is created by the admin',
+                    detail: 'Batches (e.g. “Python Batch-2”) are created in the admin panel — faculty cannot create them.',
+                    action: null as string | null,
+                  },
+                  {
+                    title: 'You are linked to the batch',
+                    detail: 'The admin adds you via batch faculty (lead trainer or assistant). Unlinked batches stay invisible to you.',
+                    action: 'request' as 'request' | null,
+                  },
+                  {
+                    title: 'The batch has a course linked',
+                    detail: 'A batch without a course cannot schedule teaching work, host students\u2019 progress, or receive assignments.',
+                    action: null as string | null,
+                  },
+                ].map((step, index) => (
+                  <div key={step.title} className="flex items-start gap-4">
+                    <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0 mt-0.5">{index + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{step.title}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{step.detail}</p>
+                      {step.action === 'request' && (
+                        <button className="btn-secondary inline-flex items-center gap-1.5 mt-2 py-1.5 px-3 text-xs" onClick={() => setRequestModal(true)}>
+                          <Send size={13} /> Send a coordination request
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : batches.map(item => (
             <div key={item.id} className="card p-5">
@@ -433,7 +484,13 @@ export default function FacultyBatchesPage() {
                     <h3 className="font-semibold text-slate-900 dark:text-white">{item.batch.name}</h3>
                     <Badge variant={item.batch.status === 'active' ? 'success' : 'default'}>{item.batch.status}</Badge>
                   </div>
-                  <p className="text-sm text-slate-500 mt-1">{item.batch.course?.title ?? 'No course linked'}</p>
+                  {item.batch.course?.title ? (
+                    <p className="text-sm text-slate-500 mt-1">{item.batch.course.title}</p>
+                  ) : (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertTriangle size={13} /> No course linked — ask an admin to set one
+                    </p>
+                  )}
                 </div>
                 <Badge variant="info">{item.role}</Badge>
               </div>
