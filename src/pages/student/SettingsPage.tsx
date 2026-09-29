@@ -6,6 +6,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
+import { PushNotificationCard } from '../../components/settings/PushNotificationCard';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -200,6 +201,9 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+
+        {/* Push notifications (web push via FCM) */}
+        <PushNotificationCard />
 
         {/* Public profile */}
         <div className="card p-6">
