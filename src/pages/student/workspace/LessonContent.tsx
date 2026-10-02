@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronLeft, CheckCircle, BookOpen, Video, FileText, Code,
@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWorkspace } from './WorkspaceContext';
+import { chapterStepCounts, useWorkspace } from './WorkspaceContext';
+import { AnimatedCheck, CelebrationBurst } from '../../../components/motion';
+import { EmptyState } from '../../../components/ui/EmptyState';
 import { VideoEmbed } from './VideoEmbed';
 import { DeliveryBanner } from './DeliveryBanner';
 import { SecureResourceCard } from './SecureResourceCard';
@@ -29,6 +31,12 @@ export function LessonContent() {
 
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [markingComplete, setMarkingComplete] = useState(false);
+  const [celebrate, setCelebrate] = useState<{ title: string; message: string } | null>(null);
+  const celebrateTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+  }, []);
 
   useEffect(() => {
     if (currentLesson) {
@@ -46,7 +54,19 @@ export function LessonContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [goToNextLesson, goToPrevLesson]);
 
-  if (!currentLesson || !course) return null;
+  if (!course) return null;
+  if (!currentLesson) {
+    return (
+      <div className="flex items-center justify-center h-full px-6">
+        <EmptyState
+          icon={Terminal}
+          mascot
+          title="Choose your next challenge"
+          description="Your learning journey continues here — pick a lesson from the sidebar and keep going."
+        />
+      </div>
+    );
+  }
 
   const accessInfo = accessMap.get(currentLesson.id);
   const isLocked = accessInfo?.access === 'locked';
@@ -80,7 +100,28 @@ export function LessonContent() {
 
   async function handleMarkComplete() {
     setMarkingComplete(true);
-    try { await markComplete(); } finally { setMarkingComplete(false); }
+    try {
+      // "Was this lesson the last unfinished item in its chapter?" — computed
+      // from the pre-mark counts, because marking completes exactly one item.
+      const lesson = currentLesson;
+      if (!lesson) return;
+      const chapter = ws.chapters.find(c => c.id === lesson.chapter_id);
+      const countsBefore = chapter
+        ? chapterStepCounts(chapter, ws.lessonQuizSteps, ws.lessonCodingSteps, ws.lessonAssignmentSteps, ws.chapterQuizSteps, ws.chapterCodingSteps, ws.progress)
+        : null;
+      const finishesChapter = countsBefore !== null && countsBefore.total > 0 && countsBefore.done + 1 === countsBefore.total;
+
+      await markComplete();
+
+      // Short celebratory confirmation (~1.5s, decorative, never blocks clicks).
+      setCelebrate(finishesChapter
+        ? { title: 'Chapter complete!', message: `Every item in "${currentChapter?.title ?? 'this chapter'}" is done. Your next chapter is ready.` }
+        : { title: 'Lesson complete!', message: 'Nice work — your next step is ready in the sidebar.' });
+      if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+      celebrateTimer.current = window.setTimeout(() => setCelebrate(null), 1600);
+    } finally {
+      setMarkingComplete(false);
+    }
   }
 
   const sections = [
@@ -398,12 +439,26 @@ export function LessonContent() {
           <button
             onClick={goToNextLesson}
             disabled={currentLessonIndex >= totalLessons - 1}
-            className="btn-primary text-sm py-2 px-4 flex items-center gap-1.5 disabled:opacity-40"
+            className="btn-primary text-sm py-2 px-4 flex items-center gap-1.5 disabled:opacity-40 group"
           >
-            Next <ChevronRight size={14} />
+            Next <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
           </button>
         </div>
       </div>
+
+      {/* Completion celebration — decorative overlay, clicks pass through. */}
+      {celebrate && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-40 flex justify-center px-4" role="status" aria-live="polite">
+          <div className="relative flex items-center gap-3 rounded-2xl border border-emerald-200 bg-white/95 px-5 py-3 shadow-xl dark:border-emerald-800 dark:bg-slate-900/95">
+            <CelebrationBurst show />
+            <AnimatedCheck size={22} className="text-emerald-500" />
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">{celebrate.title}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{celebrate.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

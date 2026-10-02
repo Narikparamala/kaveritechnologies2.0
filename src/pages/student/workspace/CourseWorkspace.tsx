@@ -39,7 +39,10 @@ function WorkspaceShell() {
   const [mobileTab, setMobileTab] = useState<MobileTab>('lesson');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  if (loading) {
+  // Full-page spinner ONLY for the initial course load. Background refetches
+  // (markComplete -> refreshProfile -> loadCourse) keep the shell mounted so
+  // the sidebar and lesson never unmount mid-session.
+  if (loading && !course) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="text-center">

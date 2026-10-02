@@ -4,6 +4,7 @@ import { PREVIEW_ROLE } from './contexts/AuthContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { MotionProvider } from './contexts/MotionContext';
 import { ToastProvider } from './components/ui/Toast';
 import { SecureGradeRetryToasts } from './components/common/SecureGradeRetryToasts';
 import { RoleGuard } from './components/common/RoleGuard';
@@ -48,6 +49,7 @@ const MiniProjectsPage = lazy(() => import('./pages/student/MiniProjectsPage'));
 const QuizzesPage = lazy(() => import('./pages/student/QuizzesPage'));
 const ProjectsPage = lazy(() => import('./pages/student/ProjectsPage'));
 const ProjectWorkspacePage = lazy(() => import('./pages/shared/ProjectWorkspacePage'));
+const MiniProjectManagerPage = lazy(() => import('./pages/shared/MiniProjectManagerPage'));
 const LeaderboardPage = lazy(() => import('./pages/student/LeaderboardPage'));
 const CertificatesPage = lazy(() => import('./pages/student/CertificatesPage'));
 const DownloadsPage = lazy(() => import('./pages/student/DownloadsPage'));
@@ -169,6 +171,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <MotionProvider>
         <AuthProvider>
           <ToastProvider>
             <SecureGradeRetryToasts />
@@ -311,6 +314,7 @@ export default function App() {
                     <Route path="projects" element={<FacultyProjectsPage />} />
                     <Route path="projects/new" element={<FacultyProjectBuilderPage />} />
                     <Route path="projects/:projectId/builder" element={<FacultyProjectBuilderPage />} />
+                    <Route path="mini-projects" element={<MiniProjectManagerPage />} />
                     <Route path="practice/assignments/:assignmentId" element={<AssignmentsPage />} />
                     <Route path="offline-exams" element={<FacultyOfflineExamsPage />} />
                     <Route path="practice/quizzes" element={<QuizzesPage />} />
@@ -361,6 +365,7 @@ export default function App() {
                     <Route path="coding-practice" element={<AdminCodingPracticePage />} />
                     <Route path="coding-practice/editor/:questionId" element={<AdminCodingPracticePage />} />
                     <Route path="projects" element={<AdminProjectsPage />} />
+                    <Route path="mini-projects" element={<MiniProjectManagerPage />} />
                     <Route path="certificates" element={<AdminCertificatesPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
@@ -382,6 +387,7 @@ export default function App() {
             </BrowserRouter>
           </ToastProvider>
         </AuthProvider>
+        </MotionProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { ThemeToggle } from '../ui/ThemeToggle';
-import { useAuth } from '../../contexts/AuthContext';
+import { ROLE_DASHBOARDS, useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/utils';
 
 const navLinks = [
@@ -33,7 +33,7 @@ export function PublicNav() {
     if (!profile) return '/auth/redirect';
     if (profile.role === 'super_admin') return '/admin/dashboard';
     if (profile.role === 'faculty') return '/faculty/dashboard';
-    return '/student/dashboard';
+    return ROLE_DASHBOARDS.student; // single source of truth for the student landing page
   };
 
   return (

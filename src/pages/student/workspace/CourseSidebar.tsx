@@ -1,42 +1,25 @@
 import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, CheckCircle, Circle, BookOpen, Clock, Zap, PanelLeftClose, Video, FileText, Code, Monitor, Lock, HelpCircle, TerminalSquare } from 'lucide-react';
-import { useWorkspace } from './WorkspaceContext';
+import {
+  ChevronRight, CheckCircle, Circle, Clock, Zap, PanelLeftClose, Lock, HelpCircle,
+  TerminalSquare, ClipboardList, Puzzle, FolderKanban, Rocket,
+} from 'lucide-react';
+import { chapterStepCounts, useWorkspace } from './WorkspaceContext';
+import { AnimatedCheck, CelebrationBurst, Collapsible, PopIn, PulseDot, LessonTypeIcon } from '../../../components/motion';
+import type { CourseProjectStep } from '../../../types/database';
 
-/**
- * Chapter completion counts lessons AND every attached step (lesson quizzes,
- * lesson coding practice, chapter quizzes, chapter coding practice). Adding a
- * new quiz or question therefore immediately un-completes the chapter.
- */
-function chapterStepCounts(
-  chapter: { id: string; lessons: { id: string }[] },
-  lessonQuizSteps: Map<string, { state: string }[]>,
-  lessonCodingSteps: Map<string, { solved: boolean }[]>,
-  chapterQuizSteps: Map<string, { passed: boolean }[]>,
-  chapterCodingSteps: Map<string, { solved: boolean }[]>,
-  progress: Map<string, any>,
-): { done: number; total: number } {
-  let done = chapter.lessons.filter(l => progress.has(l.id)).length;
-  let total = chapter.lessons.length;
-  for (const lesson of chapter.lessons) {
-    const lqs = lessonQuizSteps.get(lesson.id) ?? [];
-    done += lqs.filter(q => q.state === 'completed').length;
-    total += lqs.length;
-    const lcs = lessonCodingSteps.get(lesson.id) ?? [];
-    done += lcs.filter(s => s.solved).length;
-    total += lcs.length;
-  }
-  const cqs = chapterQuizSteps.get(chapter.id) ?? [];
-  done += cqs.filter(q => q.passed).length;
-  total += cqs.length;
-  const ccs = chapterCodingSteps.get(chapter.id) ?? [];
-  done += ccs.filter(s => s.solved).length;
-  total += ccs.length;
-  return { done, total };
+function projectStepState(step: CourseProjectStep) {
+  if (step.state === 'completed') return 'completed' as const;
+  if (step.state === 'in_review') return 'in_review' as const;
+  return 'todo' as const;
 }
 
 export function CourseSidebar() {
-  const { course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps, currentLesson, accessMap, progress, courseProgress, selectLesson, toggleSidebar, sidebarCollapsed } = useWorkspace();
+  const {
+    course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps,
+    lessonAssignmentSteps, projectSteps, currentLesson, accessMap, progress, courseProgress,
+    selectLesson, toggleSidebar, sidebarCollapsed, unlockParty,
+  } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
     if (!currentLesson) return new Set();
     return new Set([currentLesson.chapter_id]);
@@ -53,9 +36,21 @@ export function CourseSidebar() {
     });
   };
 
-  const chapterCounts = chapters.map(ch => chapterStepCounts(ch, lessonQuizSteps, lessonCodingSteps, chapterQuizSteps, chapterCodingSteps, progress));
+  const chapterCounts = chapters.map(ch => chapterStepCounts(ch, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, chapterQuizSteps, chapterCodingSteps, progress));
   const completedCount = chapterCounts.reduce((sum, c) => sum + c.done, 0);
   const totalCount = chapterCounts.reduce((sum, c) => sum + c.total, 0);
+
+  // The next lesson the student should pick up — gently highlighted, never
+  // bouncing. Locked lessons stay muted.
+  const nextUpId = (() => {
+    for (const chapter of chapters) {
+      for (const lesson of chapter.lessons) {
+        const access = accessMap.get(lesson.id);
+        if (access && access.access !== 'locked' && !progress.has(lesson.id)) return lesson.id;
+      }
+    }
+    return null;
+  })();
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800">
@@ -90,7 +85,7 @@ export function CourseSidebar() {
       <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
         {chapters.map(chapter => {
           const isExpanded = expandedChapters.has(chapter.id);
-          const { done: chCompleted, total: chTotal } = chapterStepCounts(chapter, lessonQuizSteps, lessonCodingSteps, chapterQuizSteps, chapterCodingSteps, progress);
+          const { done: chCompleted, total: chTotal } = chapterStepCounts(chapter, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, chapterQuizSteps, chapterCodingSteps, progress);
           const isCurrentChapter = currentLesson?.chapter_id === chapter.id;
 
           return (
@@ -99,17 +94,22 @@ export function CourseSidebar() {
                 onClick={() => toggleChapter(chapter.id)}
                 className={`w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isCurrentChapter ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}
               >
-                {isExpanded ? <ChevronDown size={14} className="text-slate-400 flex-shrink-0" /> : <ChevronRight size={14} className="text-slate-400 flex-shrink-0" />}
+                <ChevronRight
+                  size={14}
+                  className={`text-slate-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{chapter.title}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">{chCompleted}/{chTotal} items</p>
                 </div>
                 {chTotal > 0 && chCompleted === chTotal && (
-                  <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
+                  <PopIn className="flex-shrink-0">
+                    <CheckCircle size={14} className="text-emerald-500" />
+                  </PopIn>
                 )}
               </button>
 
-              {isExpanded && (
+              <Collapsible open={isExpanded}>
                 <div className="pb-1">
                   {chapter.lessons.map(lesson => {
                     const isActive = currentLesson?.id === lesson.id;
@@ -130,11 +130,13 @@ export function CourseSidebar() {
                       >
                         <div className="flex-shrink-0">
                           {isCompleted ? (
-                            <CheckCircle size={14} className="text-emerald-500" />
+                            <PopIn><CheckCircle size={14} className="text-emerald-500" /></PopIn>
                           ) : isLocked ? (
                             <Lock size={13} className="text-amber-500" />
                           ) : isActive ? (
                             <div className="w-3.5 h-3.5 rounded-full border-2 border-primary-500 bg-primary-500/20" />
+                          ) : lesson.id === nextUpId ? (
+                            <PulseDot><Circle size={14} className="text-primary-400 dark:text-primary-500" /></PulseDot>
                           ) : (
                             <Circle size={14} className="text-slate-300 dark:text-slate-600" />
                           )}
@@ -148,13 +150,13 @@ export function CourseSidebar() {
                               'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
                             }`}>{lesson.title}</p>
                             {lesson.teaching_mode === 'live_class' && (
-                              <Monitor size={10} className="text-blue-500 flex-shrink-0" aria-label="Live Class" />
+                              <LessonTypeIcon kind="live" size={10} className="text-blue-500" />
                             )}
                             {lesson.teaching_mode === 'recorded_video' && (
-                              <Video size={10} className="text-sky-500 flex-shrink-0" aria-label="Video" />
+                              <LessonTypeIcon kind="video" size={10} className="text-sky-500" />
                             )}
                             {lesson.enable_coding_playground && (
-                              <Code size={10} className="text-teal-500 flex-shrink-0" aria-label="Coding" />
+                              <LessonTypeIcon kind="code" size={10} className="text-teal-500" />
                             )}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
@@ -170,9 +172,10 @@ export function CourseSidebar() {
                         </div>
                       </button>
 
-                      {/* Per-lesson steps: quiz, then coding practice — they sit
-                          BETWEEN lessons in the flow (lesson -> quiz -> practice
-                          -> next lesson), CCBP-style. */}
+                      {/* Per-lesson steps: quiz, then coding practice, then
+                          assignment — they sit BETWEEN lessons in the flow
+                          (lesson -> quiz -> practice -> assignment -> next
+                          lesson), CCBP-style. */}
                       {(lessonQuizSteps.get(lesson.id) ?? []).map(q => (
                         <Link
                           key={`lq-${q.id}`}
@@ -215,6 +218,36 @@ export function CourseSidebar() {
                           </Link>
                         );
                       })()}
+                      {(lessonAssignmentSteps.get(lesson.id) ?? []).map(a => {
+                        const submitted = a.state === 'submitted' || a.state === 'graded' || a.state === 'returned' || a.state === 'resubmitted';
+                        const assignmentLocked = isLocked || a.state === 'locked';
+                        return (
+                          <Link
+                            key={`la-${a.id}`}
+                            to={`/student/assignments/${a.id}?returnTo=${encodeURIComponent(`/student/course/${course.id}`)}`}
+                            title={assignmentLocked ? 'Complete this lesson first' : undefined}
+                            className={`w-full text-left pl-14 pr-3 py-1.5 flex items-center gap-2.5 border-l-2 border-transparent transition-all group ${
+                              isActive ? 'bg-primary-50/60 dark:bg-primary-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                            } ${assignmentLocked ? 'opacity-75' : ''}`}
+                          >
+                            <div className="flex-shrink-0">
+                              {submitted ? (
+                                <CheckCircle size={12} className="text-emerald-500" />
+                              ) : assignmentLocked ? (
+                                <Lock size={12} className="text-slate-400" />
+                              ) : (
+                                <ClipboardList size={12} className="text-primary-500" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{a.title}</p>
+                              <span className="text-[9px] uppercase tracking-wide text-primary-600 dark:text-primary-400">
+                                {submitted ? 'Assignment · submitted' : assignmentLocked ? 'Assignment · locked' : 'Assignment'}
+                              </span>
+                            </div>
+                          </Link>
+                        );
+                      })}
                       </Fragment>
                     );
                   })}
@@ -254,10 +287,96 @@ export function CourseSidebar() {
                     );
                   })()}
                 </div>
-              )}
+              </Collapsible>
             </div>
           );
         })}
+
+        {/* Projects — the end of the journey. Mini projects released to this
+            student's batch and faculty-built course projects, with the gate
+            faculty set: locked steps show why and how much is left. */}
+        {projectSteps.length > 0 && (() => {
+          const remaining = projectSteps.reduce((max, s) => (!s.unlocked && s.remaining > max ? s.remaining : max), 0);
+          const completed = projectSteps.filter(s => s.state === 'completed').length;
+          return (
+            <div className="relative mt-2 border-t border-slate-100 dark:border-slate-800 pt-1 pb-3">
+              {/* Unlock celebration — floats over the section, never blocks clicks. */}
+              {unlockParty && (
+                <PopIn className="pointer-events-none absolute bottom-full left-3 right-3 z-50 mb-1 block">
+                  <div className="relative flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50/95 p-2.5 shadow-lg dark:border-emerald-700 dark:bg-emerald-950/95">
+                    <CelebrationBurst show />
+                    <AnimatedCheck size={16} className="mt-0.5 flex-shrink-0 text-emerald-500" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-emerald-800 dark:text-emerald-200">
+                        🎉 {unlockParty.titles.length === 1 ? 'Project unlocked!' : `${unlockParty.titles.length} projects unlocked!`}
+                      </p>
+                      <p className="truncate text-[10px] text-emerald-700 dark:text-emerald-300">{unlockParty.titles.join(' · ')}</p>
+                    </div>
+                  </div>
+                </PopIn>
+              )}
+              <div className="flex items-center gap-2 px-4 py-2">
+                <Rocket size={13} className="text-primary-500 flex-shrink-0" />
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Projects</p>
+                <span className="text-[10px] text-slate-400">{completed}/{projectSteps.length} done</span>
+              </div>
+              {remaining > 0 && (
+                <p className="px-4 pb-1 text-[10px] text-amber-600 dark:text-amber-400">
+                  Complete {remaining} more course item{remaining === 1 ? '' : 's'} to unlock gated projects
+                </p>
+              )}
+              {projectSteps.map(step => {
+                const locked = !step.unlocked;
+                const state = projectStepState(step);
+                const Icon = step.kind === 'mini' ? Puzzle : FolderKanban;
+                const rowClass = `w-full text-left pl-9 pr-3 py-2 flex items-start gap-2.5 border-l-2 border-transparent transition-all ${
+                  locked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`;
+                const row = (
+                  <>
+                    <div className="flex-shrink-0 pt-0.5">
+                      {state === 'completed' ? (
+                        <PopIn><CheckCircle size={14} className="text-emerald-500" /></PopIn>
+                      ) : state === 'in_review' ? (
+                        <Clock size={14} className="text-amber-500" />
+                      ) : locked ? (
+                        <Lock size={14} className="text-amber-500" />
+                      ) : (
+                        <Icon size={14} className="text-primary-500" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs leading-relaxed truncate ${locked ? 'text-slate-400 dark:text-slate-500' : 'text-slate-600 dark:text-slate-400'}`}>{step.title}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[9px] uppercase tracking-wide text-slate-400">
+                          {step.kind === 'mini' ? 'Mini project' : 'Project'}
+                          {step.meta ? ` · ${step.meta}` : ''}
+                          {state === 'in_review' ? ' · in review' : state === 'completed' ? ' · completed' : ''}
+                        </span>
+                        {(step.concepts ?? []).slice(0, 3).map(c => (
+                          <span key={c} className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-px text-[9px] font-medium text-slate-500 dark:text-slate-400">{c}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                );
+                return locked ? (
+                  <div key={`${step.kind}-${step.ref_id}`} className={rowClass} title={step.reason || 'Locked'}>
+                    {row}
+                  </div>
+                ) : (
+                  <Link
+                    key={`${step.kind}-${step.ref_id}`}
+                    to={step.kind === 'mini' ? `/student/mini-projects/${step.ref_id}` : `/student/projects/${step.ref_id}/workspace`}
+                    className={rowClass}
+                  >
+                    {row}
+                  </Link>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

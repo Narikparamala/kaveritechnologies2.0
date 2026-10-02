@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { markLessonComplete, getLessonProgress, getLessonNotes, getBookmark, getLessonResources, getStudentCoursePlan, saveNote, toggleBookmark } from '../../../services/lessons';
-import type { Course, Chapter, Lesson, LessonProgress, LessonNote, LessonResource, LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession, LessonAccessInfo, LessonPlanItem } from '../../../types/database';
+import type { Course, Chapter, Lesson, LessonProgress, LessonNote, LessonResource, LessonTopic, LessonPracticeQuestion, Quiz, Assignment, LiveSession, LessonAccessInfo, LessonPlanItem, CourseProjectStep } from '../../../types/database';
 
 export interface ChapterWithLessons extends Chapter {
   lessons: Lesson[];
@@ -47,6 +47,50 @@ export interface LessonCodingStep {
   total_test_cases: number;
 }
 
+/** Per-lesson assignment step (sits after quiz/practice in the sidebar flow). */
+export interface LessonAssignmentStep {
+  id: string;
+  title: string;
+  /** Latest submission status: available | draft | submitted | graded | returned | resubmitted. */
+  state: string;
+}
+
+/**
+ * Chapter completion counts lessons AND every attached step (lesson quizzes,
+ * lesson coding practice, lesson assignments, chapter quizzes, chapter coding
+ * practice). Shared by the sidebar counts and the lesson-complete celebration.
+ */
+export function chapterStepCounts(
+  chapter: { id: string; lessons: { id: string }[] },
+  lessonQuizSteps: Map<string, LessonQuizStep[]>,
+  lessonCodingSteps: Map<string, LessonCodingStep[]>,
+  lessonAssignmentSteps: Map<string, LessonAssignmentStep[]>,
+  chapterQuizSteps: Map<string, ChapterQuizStep[]>,
+  chapterCodingSteps: Map<string, ChapterCodingStep[]>,
+  progress: Map<string, boolean>,
+): { done: number; total: number } {
+  let done = chapter.lessons.filter(l => progress.has(l.id)).length;
+  let total = chapter.lessons.length;
+  for (const lesson of chapter.lessons) {
+    const lqs = lessonQuizSteps.get(lesson.id) ?? [];
+    done += lqs.filter(q => q.state === 'completed').length;
+    total += lqs.length;
+    const lcs = lessonCodingSteps.get(lesson.id) ?? [];
+    done += lcs.filter(s => s.solved).length;
+    total += lcs.length;
+    const las = lessonAssignmentSteps.get(lesson.id) ?? [];
+    done += las.filter(a => a.state === 'submitted' || a.state === 'graded' || a.state === 'returned' || a.state === 'resubmitted').length;
+    total += las.length;
+  }
+  const cqs = chapterQuizSteps.get(chapter.id) ?? [];
+  done += cqs.filter(q => q.passed).length;
+  total += cqs.length;
+  const ccs = chapterCodingSteps.get(chapter.id) ?? [];
+  done += ccs.filter(s => s.solved).length;
+  total += ccs.length;
+  return { done, total };
+}
+
 interface WorkspaceState {
   course: Course | null;
   chapters: ChapterWithLessons[];
@@ -54,6 +98,7 @@ interface WorkspaceState {
   chapterCodingSteps: Map<string, ChapterCodingStep[]>;
   lessonQuizSteps: Map<string, LessonQuizStep[]>;
   lessonCodingSteps: Map<string, LessonCodingStep[]>;
+  lessonAssignmentSteps: Map<string, LessonAssignmentStep[]>;
   currentLesson: Lesson | null;
   currentChapter: Chapter | null;
   accessMap: Map<string, LessonAccessInfo>;
@@ -68,6 +113,12 @@ interface WorkspaceState {
   lessonQuizzes: Quiz[];
   lessonAssignments: Assignment[];
   lessonSessions: LiveSession[];
+  /** Course sidebar project steps (mini projects + course projects) with lock state. */
+  projectSteps: CourseProjectStep[];
+  /** Set briefly when a gated project flips to unlocked — the sidebar shows
+   *  a celebration card. Lives in the provider so it survives course refetches
+   *  (markComplete -> refreshProfile -> loadCourse re-runs mid-session). */
+  unlockParty: { titles: string[] } | null;
   loading: boolean;
   lessonLoading: boolean;
   sidebarCollapsed: boolean;
@@ -106,6 +157,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   const [chapterQuizSteps, setChapterQuizSteps] = useState<Map<string, ChapterQuizStep[]>>(new Map());
   const [chapterCodingSteps, setChapterCodingSteps] = useState<Map<string, ChapterCodingStep[]>>(new Map());
   const [lessonQuizSteps, setLessonQuizSteps] = useState<Map<string, LessonQuizStep[]>>(new Map());
+  const [lessonAssignmentSteps, setLessonAssignmentSteps] = useState<Map<string, LessonAssignmentStep[]>>(new Map());
   const [lessonCodingSteps, setLessonCodingSteps] = useState<Map<string, LessonCodingStep[]>>(new Map());
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
@@ -121,15 +173,51 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   const [lessonQuizzes, setLessonQuizzes] = useState<Quiz[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<Assignment[]>([]);
   const [lessonSessions, setLessonSessions] = useState<LiveSession[]>([]);
+  const [projectSteps, setProjectSteps] = useState<CourseProjectStep[]>([]);
+  const [unlockParty, setUnlockParty] = useState<{ titles: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
+  // Celebrate the moment a gated project unlocks — the student just finished
+  // the last course item standing between them and it. Detected by diffing
+  // unlocked flags across projectSteps updates; first load never celebrates.
+  // Timers are only cleared on unmount so the second refetch that markComplete
+  // triggers (refreshProfile -> loadCourse) cannot swallow the countdown.
+  const prevUnlockedRef = useRef<Map<string, boolean> | null>(null);
+  const showTimerRef = useRef<number | null>(null);
+  const hideTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const prev = prevUnlockedRef.current;
+    prevUnlockedRef.current = new Map(projectSteps.map(s => [`${s.kind}-${s.ref_id}`, s.unlocked]));
+    if (!prev) return;
+    const fresh = projectSteps.filter(s => prev.get(`${s.kind}-${s.ref_id}`) === false && s.unlocked);
+    if (fresh.length === 0) return;
+    if (showTimerRef.current !== null) window.clearTimeout(showTimerRef.current);
+    if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+    // Land just after the lesson completion overlay (~1.6s) has faded.
+    showTimerRef.current = window.setTimeout(() => {
+      setUnlockParty({ titles: fresh.map(s => s.title) });
+      hideTimerRef.current = window.setTimeout(() => setUnlockParty(null), 4500);
+    }, 1500);
+  }, [projectSteps]);
+
+  useEffect(() => () => {
+    if (showTimerRef.current !== null) window.clearTimeout(showTimerRef.current);
+    if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+  }, []);
+
+  // The courseId whose data is currently loaded. Lets loadCourse tell the
+  // initial mount apart from a background refetch of the same course.
+  const lastLoadedCourseIdRef = useRef<string | null>(null);
+
   const allLessonsFlat = chapters.flatMap(ch => ch.lessons);
   const currentLessonIndex = currentLesson ? allLessonsFlat.findIndex(l => l.id === currentLesson.id) : -1;
 
-  // Load course structure
+  // Load course structure. Re-runs on profile refresh (XP updates after
+  // markComplete) — as a background refetch, without unmounting the shell.
   useEffect(() => {
     if (!profile) return;
     loadCourse();
@@ -137,15 +225,31 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
 
   async function loadCourse() {
     if (!profile) return;
-    setLoading(true);
+    // Only the first load of a course may show the full-page spinner.
+    // Background refetches (markComplete -> refreshProfile -> loadCourse,
+    // profile refreshes, etc.) keep the shell mounted so the sidebar and
+    // lesson never unmount mid-session.
+    const isInitialLoad = lastLoadedCourseIdRef.current !== courseId;
+    lastLoadedCourseIdRef.current = courseId;
+    if (isInitialLoad) {
+      // Different course than what's on screen — drop stale data so the shell
+      // shows its spinner instead of mixing two courses' content.
+      if (course) setCourse(null);
+      setLoading(true);
+    }
     try {
-      const [courseRes, chaptersRes, lessonsRes, enrollmentRes, planRes] = await Promise.all([
+      const [courseRes, chaptersRes, lessonsRes, enrollmentRes, planRes, projectStepsRes] = await Promise.all([
         supabase.from('courses').select('*').eq('id', courseId).maybeSingle(),
         supabase.from('chapters').select('*').eq('course_id', courseId).eq('is_published', true).order('order_index'),
         supabase.from('lessons').select('*').eq('course_id', courseId).eq('is_published', true).order('order_index'),
         supabase.from('course_enrollments').select('progress_percentage').eq('course_id', courseId).eq('student_id', profile.id).maybeSingle(),
         getStudentCoursePlan(courseId),
+        supabase.rpc('get_course_project_steps', { p_course_id: courseId }),
       ]);
+
+      setProjectSteps(((projectStepsRes.data ?? []) as CourseProjectStep[])
+        .slice()
+        .sort((a, b) => (a.kind === b.kind ? a.title.localeCompare(b.title) : a.kind === 'mini' ? -1 : 1)));
 
       setCourse(courseRes.data as Course | null);
       setCourseProgress(enrollmentRes.data?.progress_percentage ?? 0);
@@ -172,6 +276,19 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
         });
       });
       setLessonQuizSteps(lqSteps);
+
+      // Per-lesson assignment steps — the plan already carries each published
+      // lesson assignment with the student's latest submission status.
+      const laSteps = new Map<string, LessonAssignmentStep[]>();
+      planItems.forEach(p => {
+        (p.activities ?? []).forEach(a => {
+          if (a.kind !== 'assignment' || !a.assignment_id) return;
+          const list = laSteps.get(p.lesson_id) ?? [];
+          list.push({ id: a.assignment_id, title: a.title, state: a.state });
+          laSteps.set(p.lesson_id, list);
+        });
+      });
+      setLessonAssignmentSteps(laSteps);
 
       const fullLessons = new Map((lessonsRes.data ?? [] as Lesson[]).map(l => [l.id, l]));
       const lessons: Lesson[] = planItems.map(p => fullLessons.get(p.lesson_id) ?? ({
@@ -278,15 +395,20 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
         setLessonCodingSteps(new Map());
       }
 
-      // Auto-select first available incomplete lesson (skip locked ones)
+      // Auto-select the first available incomplete lesson (skip locked ones)
+      // — but only when nothing valid is selected yet. On background refetches
+      // keep the lesson the student is viewing instead of yanking them to the
+      // top of the course mid-session.
       const flat = chaptersWithLessons.flatMap(c => c.lessons);
-      const firstAvailableIncomplete = flat.find(l => accessMap.get(l.id)?.access === 'available' && !progressMap.has(l.id));
-      const firstUnlocked = flat.find(l => accessMap.get(l.id)?.access !== 'locked');
-      const target = firstAvailableIncomplete ?? firstUnlocked ?? flat[0];
-      if (target) {
-        setCurrentLesson(target);
-        setCurrentChapter(chaps.find(c => c.id === target.chapter_id) ?? null);
-        loadLessonData(target.id);
+      if (!currentLesson || !flat.some(l => l.id === currentLesson.id)) {
+        const firstAvailableIncomplete = flat.find(l => accessMap.get(l.id)?.access === 'available' && !progressMap.has(l.id));
+        const firstUnlocked = flat.find(l => accessMap.get(l.id)?.access !== 'locked');
+        const target = firstAvailableIncomplete ?? firstUnlocked ?? flat[0];
+        if (target) {
+          setCurrentLesson(target);
+          setCurrentChapter(chaps.find(c => c.id === target.chapter_id) ?? null);
+          loadLessonData(target.id);
+        }
       }
     } catch (err) {
       console.error('Failed to load course:', err);
@@ -397,6 +519,13 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       const nextProgress = new Map<string, boolean>();
       planItems.forEach(p => { if (p.access === 'completed') nextProgress.set(p.lesson_id, true); });
       setProgress(nextProgress);
+      // Completing items can unlock gated project steps in the sidebar.
+      try {
+        const stepsRes = await supabase.rpc('get_course_project_steps', { p_course_id: currentLesson.course_id });
+        setProjectSteps(((stepsRes.data ?? []) as CourseProjectStep[])
+          .slice()
+          .sort((a, b) => (a.kind === b.kind ? a.title.localeCompare(b.title) : a.kind === 'mini' ? -1 : 1)));
+      } catch { /* keep the previous steps */ }
     } catch { /* keep optimistic local state */ }
     await refreshProfile();
   }, [currentLesson, profile, refreshProfile]);
@@ -414,11 +543,13 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   }, [currentLesson, profile, isBookmarked]);
 
   const value: WorkspaceContextType = {
-    course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps,
+    course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps,
     currentLesson, currentChapter,
     accessMap, progress, courseProgress, lessonProgress, lessonNote,
     isBookmarked, resources, topics, practiceQuestions,
     lessonQuizzes, lessonAssignments, lessonSessions,
+    projectSteps,
+    unlockParty,
     loading, lessonLoading, sidebarCollapsed, rightPanelCollapsed,
     selectLesson, goToNextLesson, goToPrevLesson, markComplete,
     saveStudentNote, toggleStudentBookmark,
