@@ -4,8 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/generate-sw-config.mjs && vite",
+    "dev": "infisical run --env=dev -- npm run dev:plain",
+    "dev:plain": "node scripts/generate-sw-config.mjs && vite",
     "build": "node scripts/generate-sw-config.mjs && vite build",
+    "build:infisical": "infisical run --env=prod -- npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
