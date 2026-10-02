@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink } from 'lucide-react';
+import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink, Puzzle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { getSecureJudgeLanguages } from '../../services/secureGrading';
+import { getSecureJudgeLanguages, securelyRunCustom } from '../../services/secureGrading';
 import { getCourseChapters, getChapterLessonsAll } from '../../services/faculty';
 import {
   QUESTIONS_CSV_TEMPLATE,
@@ -24,7 +24,7 @@ import {
   type ValidatedQuestion,
 } from '../../lib/contentImport';
 
-type Tab = 'slides' | 'questions' | 'quizzes' | 'lessons' | 'ai';
+type Tab = 'slides' | 'questions' | 'quizzes' | 'lessons' | 'ai' | 'mini-ai';
 
 const TABS: { id: Tab; label: string; icon: typeof FileText; description: string }[] = [
   { id: 'slides', label: 'Slides → Practice', icon: Wand2, description: 'Paste a lesson\'s slide content — every "Practice time" block becomes a validated coding question, plus an optional MCQ quiz, all attached to the lesson as drafts.' },
@@ -32,6 +32,7 @@ const TABS: { id: Tab; label: string; icon: typeof FileText; description: string
   { id: 'quizzes', label: 'Quizzes', icon: ListChecks, description: 'One CSV = MCQ / true-false / short-answer quizzes, grouped by quiz title. Imported as drafts for review.' },
   { id: 'lessons', label: 'Lessons + Slides', icon: Presentation, description: 'One CSV = chapters, lessons, and slide/video materials. Canva links are resolved and embedded automatically.' },
   { id: 'ai', label: 'AI Drafts', icon: Sparkles, description: 'Describe a topic — the AI drafts questions with solutions and tests. Drafts go through the same validation before import; nothing publishes itself.' },
+  { id: 'mini-ai', label: 'AI Mini Projects', icon: Puzzle, description: 'Describe a mini project in one line — the AI drafts it with a reference solution and tests, the judge verifies it, and it saves as a draft in Mini Projects for you to review.' },
 ];
 
 function downloadTemplate(content: string, filename: string) {
@@ -75,6 +76,26 @@ export default function ContentImportPage() {
   const [aiCount, setAiCount] = useState(5);
   const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'medium' | 'hard' | 'mixed'>('mixed');
   const [aiBusy, setAiBusy] = useState(false);
+
+  // --- AI Mini Projects tab state ---
+  type MiniDraft = {
+    title: string;
+    topic: string;
+    problem_statement: string;
+    starter_code: string;
+    reference_solution: string;
+    tests: { input_text: string; expected_output: string; is_hidden: boolean }[];
+  };
+  const [miniPrompt, setMiniPrompt] = useState('');
+  const [miniDraft, setMiniDraft] = useState<MiniDraft | null>(null);
+  // Concepts are faculty-confirmed — the AI only suggests them. The gate is a
+  // faculty choice: require the whole course before students can open it.
+  const [miniConcepts, setMiniConcepts] = useState('');
+  const [miniGate, setMiniGate] = useState<'none' | 'all_course_items'>('none');
+  const [miniBusy, setMiniBusy] = useState(false);
+  const [miniVerify, setMiniVerify] = useState<{ done: boolean; pass: number; total: number; results: { input: string; expected: string; actual: string; passed: boolean; status: string }[] } | null>(null);
+  const [miniSaving, setMiniSaving] = useState(false);
+  const [miniDone, setMiniDone] = useState<{ id: string; title: string; published: boolean; linkedBatches: number } | null>(null);
 
   // Slides → Practice state
   const [slidesStage, setSlidesStage] = useState<'pick' | 'generated'>('pick');
@@ -392,6 +413,134 @@ export default function ContentImportPage() {
     }
   }, [aiTopic, aiCount, aiDifficulty]);
 
+  const generateMini = useCallback(async () => {
+    if (miniPrompt.trim().length < 5) return;
+    setMiniBusy(true);
+    setFatal('');
+    setMiniVerify(null);
+    setMiniDone(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Session expired - please sign in again.');
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-mini-project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ prompt: miniPrompt }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? `Generation failed (${res.status})`);
+      const draft = body?.draft ?? null;
+      if (!draft) throw new Error('The AI returned no draft. Try again.');
+      setMiniDraft(draft);
+      setMiniConcepts(Array.isArray(draft.concepts) ? draft.concepts.join(', ') : '');
+      setMiniGate('none');
+    } catch (e) {
+      setFatal(e instanceof Error ? e.message : 'Generation failed.');
+    } finally {
+      setMiniBusy(false);
+    }
+  }, [miniPrompt]);
+
+  // Auto-verify: run the reference solution against every test through the
+  // secure judge (same execution path student submissions use).
+  const verifyMini = useCallback(async () => {
+    if (!miniDraft) return;
+    setMiniBusy(true);
+    setFatal('');
+    try {
+      const languages = await getSecureJudgeLanguages();
+      const python = languages.find(l => /^Python/i.test(l.name));
+      if (!python) throw new Error('No Python runtime available on the grading runner.');
+      const results: { input: string; expected: string; actual: string; passed: boolean; status: string }[] = [];
+      for (const t of miniDraft.tests) {
+        const r = await securelyRunCustom(miniDraft.reference_solution, t.input_text, python.id);
+        const actual = (r.result.actual ?? '').replace(/\r\n/g, '\n').trimEnd();
+        const expected = t.expected_output.replace(/\r\n/g, '\n').trimEnd();
+        results.push({
+          input: t.input_text,
+          expected,
+          actual,
+          // Same rule as student submissions: the program must exit cleanly
+          // AND the stdout must match exactly.
+          passed: r.result.status === 'accepted' && actual === expected,
+          status: r.result.status,
+        });
+      }
+      setMiniVerify({ done: true, pass: results.filter(x => x.passed).length, total: results.length, results });
+    } catch (e) {
+      setFatal(e instanceof Error ? e.message : 'Verification failed.');
+    } finally {
+      setMiniBusy(false);
+    }
+  }, [miniDraft]);
+
+  // Save as draft in coding_vscode_assignments (never auto-publishes).
+  const saveMini = useCallback(async (publish: boolean) => {
+    if (!miniDraft || !profile) return;
+    if (miniGate === 'all_course_items' && !courseId) {
+      setFatal("Pick a course first — the prerequisite gate compares against that course's items.");
+      return;
+    }
+    setMiniSaving(true);
+    setFatal('');
+    try {
+      const key = miniDraft.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'mini-project';
+      const concepts = miniConcepts.split(',').map(c => c.trim()).filter(Boolean).slice(0, 8);
+      const { data: inserted, error } = await supabase
+        .from('coding_vscode_assignments')
+        .insert({
+          assignment_key: `${key}-${Date.now().toString(36).slice(-4)}`,
+          title: miniDraft.title.trim(),
+          topic: miniDraft.topic.trim() || 'Mini Projects',
+          question: miniDraft.problem_statement,
+          language: 'python',
+          file_name: 'main.py',
+          starter_code: miniDraft.starter_code,
+          marks: 10,
+          concepts,
+          prerequisite_mode: miniGate,
+          is_published: publish,
+          created_by: profile.id,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      const { error: testsError } = await supabase.from('coding_vscode_test_cases').insert(
+        miniDraft.tests.map((t, i) => ({ assignment_id: inserted!.id, input_text: t.input_text, expected_output: t.expected_output, is_hidden: t.is_hidden, position: i + 1 })),
+      );
+      if (testsError) throw testsError;
+      // Course-link: release to every batch of the chosen course so the project
+      // shows up in that course's sidebar (same rule the manager's bulk link uses).
+      let linkedBatches = 0;
+      if (courseId) {
+        const { data: courseBatches, error: batchError } = await supabase
+          .from('batches')
+          .select('id')
+          .eq('course_id', courseId);
+        if (batchError) throw batchError;
+        const links = (courseBatches ?? []).map(b => ({ assignment_id: inserted!.id, batch_id: b.id, is_permanently_released: true }));
+        if (links.length > 0) {
+          const { error: linkError } = await supabase
+            .from('coding_vscode_assignment_batches')
+            .upsert(links, { onConflict: 'assignment_id,batch_id', ignoreDuplicates: true });
+          if (linkError) throw linkError;
+          linkedBatches = links.length;
+        }
+      }
+      setMiniDone({ id: inserted!.id, title: miniDraft.title, published: publish, linkedBatches });
+      setMiniDraft(null);
+      setMiniVerify(null);
+      setMiniPrompt('');
+      setMiniConcepts('');
+      setMiniGate('none');
+    } catch (e) {
+      setFatal(e instanceof Error ? e.message : 'Save failed.');
+    } finally {
+      setMiniSaving(false);
+    }
+  }, [miniDraft, profile, miniConcepts, miniGate, courseId]);
+
   const activeTab = useMemo(() => TABS.find(t => t.id === tab)!, [tab]);
 
   if (!profile) {
@@ -499,6 +648,155 @@ export default function ContentImportPage() {
           <p className="mt-2 text-xs text-teal-600">Drafts land in the Coding Questions tab — review, validate, then import.</p>
         </div>
       )}
+
+      {/* AI Mini Projects panel */}
+      {tab === 'mini-ai' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">Draft a mini project with AI</p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            One line is enough: &quot;a Python quiz score calculator&quot;. The AI returns a full draft with a reference
+            solution and tests. <strong>Verify</strong> executes the solution on the secure judge, you edit anything you
+            disagree with, then save it as a draft in Mini Projects.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={miniPrompt}
+              onChange={e => setMiniPrompt(e.target.value)}
+              placeholder="e.g. a currency denomination counter for Indian notes"
+              className="flex-1 rounded-lg border border-amber-300 px-3 py-2 text-sm dark:border-amber-700"
+              onKeyDown={e => { if (e.key === 'Enter' && !miniBusy && miniPrompt.trim().length >= 5) void generateMini(); }}
+            />
+            <button
+              onClick={generateMini}
+              disabled={miniBusy || miniPrompt.trim().length < 5}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {miniBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {miniBusy ? 'Drafting...' : 'Generate draft'}
+            </button>
+          </div>
+
+          {miniDraft && (
+            <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-white p-3 dark:border-amber-800 dark:bg-slate-900">
+              <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
+                <input className="input text-sm font-semibold" value={miniDraft.title}
+                  onChange={e => setMiniDraft(d => d ? { ...d, title: e.target.value } : d)} placeholder="Title" />
+                <input className="input text-sm" value={miniDraft.topic}
+                  onChange={e => setMiniDraft(d => d ? { ...d, topic: e.target.value } : d)} placeholder="Topic" />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Concepts this project requires (AI suggested — you decide)</label>
+                  <input className="input text-sm" value={miniConcepts}
+                    onChange={e => setMiniConcepts(e.target.value)} placeholder="Lists, Loops, Strings" />
+                  <p className="mt-1 text-[11px] text-slate-400">Comma separated. Shown to students as tags on the project and in the course sidebar.</p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Prerequisite for students</label>
+                  <select className="input text-sm" value={miniGate}
+                    onChange={e => setMiniGate(e.target.value as 'none' | 'all_course_items')}>
+                    <option value="none">Always available once released</option>
+                    <option value="all_course_items">Unlock only when all course items are completed</option>
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {miniGate === 'all_course_items'
+                      ? (courseId
+                          ? 'Students see it locked in the course sidebar until every lesson, quiz, practice question and assignment is done.'
+                          : "Pick a course above first — the gate compares against that course's items.")
+                      : 'Students can open it as soon as it is released to their batch.'}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">Problem statement (students read this)</label>
+                <textarea className="input font-mono text-xs" rows={8} value={miniDraft.problem_statement}
+                  onChange={e => setMiniDraft(d => d ? { ...d, problem_statement: e.target.value } : d)} />
+              </div>
+              <div className="grid gap-2 lg:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Starter code</label>
+                  <textarea className="input font-mono text-xs" rows={8} value={miniDraft.starter_code}
+                    onChange={e => setMiniDraft(d => d ? { ...d, starter_code: e.target.value } : d)} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Reference solution (used for auto-verify, never shown to students)</label>
+                  <textarea className="input font-mono text-xs" rows={8} value={miniDraft.reference_solution}
+                    onChange={e => setMiniDraft(d => d ? { ...d, reference_solution: e.target.value } : d)} />
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-500">Tests ({miniDraft.tests.length}) - edit freely; hidden tests are what students must figure out</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {miniDraft.tests.map((t, i) => (
+                    <div key={i} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                      <label className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
+                        <input type="checkbox" checked={t.is_hidden}
+                          onChange={e => setMiniDraft(d => d ? { ...d, tests: d.tests.map((x, j) => j === i ? { ...x, is_hidden: e.target.checked } : x) } : d)} />
+                        hidden
+                      </label>
+                      <textarea className="input mb-1 font-mono text-xs" rows={2} value={t.input_text} placeholder="stdin"
+                        onChange={e => setMiniDraft(d => d ? { ...d, tests: d.tests.map((x, j) => j === i ? { ...x, input_text: e.target.value } : x) } : d)} />
+                      <textarea className="input font-mono text-xs" rows={2} value={t.expected_output} placeholder="expected stdout"
+                        onChange={e => setMiniDraft(d => d ? { ...d, tests: d.tests.map((x, j) => j === i ? { ...x, expected_output: e.target.value } : x) } : d)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={verifyMini} disabled={miniBusy}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                  {miniBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  {miniVerify ? 'Re-verify' : 'Verify with judge'}
+                </button>
+                {miniVerify && (
+                  <span className={'text-sm font-semibold ' + (miniVerify.pass === miniVerify.total ? 'text-emerald-600' : 'text-red-600')}>
+                    {miniVerify.pass}/{miniVerify.total} tests passed
+                  </span>
+                )}
+                <div className="ml-auto flex gap-2">
+                  <button onClick={() => void saveMini(false)} disabled={miniSaving || !miniVerify || miniVerify.pass !== miniVerify.total}
+                    className="btn-secondary text-sm disabled:opacity-50"
+                    title="Save as draft - publish later from the Mini Projects manager">
+                    {miniSaving ? <Loader2 size={14} className="animate-spin" /> : null} Save as draft
+                  </button>
+                  <button onClick={() => void saveMini(true)} disabled={miniSaving || !miniVerify || miniVerify.pass !== miniVerify.total}
+                    className="btn-primary text-sm disabled:opacity-50" title="Save and publish to students immediately">
+                    Save &amp; publish
+                  </button>
+                </div>
+              </div>
+              {miniVerify && (
+                <div className="space-y-1">
+                  {miniVerify.results.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      {r.passed ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />}
+                      <div className={r.passed ? 'text-slate-500 dark:text-slate-400' : 'text-red-700'}>
+                        <span className="font-mono">in:</span> <span className="font-mono whitespace-pre-wrap">{r.input || '(empty)'}</span>
+                        {!r.passed && (
+                          <span> - expected <span className="font-mono whitespace-pre-wrap">{r.expected}</span>, got <span className="font-mono whitespace-pre-wrap">{r.actual || '(nothing)'}</span> ({r.status})</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-slate-400">Save is locked until every test passes - broken drafts cannot reach students.</p>
+            </div>
+          )}
+
+          {miniDone && (
+            <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+              Saved <strong>{miniDone.title}</strong> as a {miniDone.published ? 'published mini project' : 'draft'}.
+              {miniDone.linkedBatches > 0
+                ? ` Released to ${miniDone.linkedBatches} batch${miniDone.linkedBatches === 1 ? '' : 'es'} of the chosen course — it now appears in that course's sidebar.`
+                : ' Link it to a course from the Mini Projects page to show it in a course sidebar.'}
+              {' '}Manage it (edit tests, course-link, publish) in the <strong>Mini Projects</strong> page.
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* Slides → Practice panel */}
       {tab === 'slides' && (

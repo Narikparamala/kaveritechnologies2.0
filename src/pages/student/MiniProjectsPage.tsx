@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowLeft, BadgeCheck, CheckCircle2, Code2, Cpu,
@@ -11,6 +11,7 @@ import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { getSecureJudgeLanguages, invokeSecureGrader, type JudgeLanguage } from '../../services/secureGrading';
 import CodeEditor from '../../components/common/CodeEditor';
+import { Reveal, Stagger, StaggerItem } from '../../components/motion';
 
 type VsCodeAssignment = {
   id: string;
@@ -22,6 +23,7 @@ type VsCodeAssignment = {
   file_name: string | null;
   starter_code: string | null;
   marks: number;
+  concepts: string[];
 };
 
 type SubmissionRow = {
@@ -88,7 +90,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
         const [assignmentsResult, submissionsResult] = await Promise.all([
           supabase
             .from('coding_vscode_assignments')
-            .select('id,assignment_key,title,topic,question,language,file_name,starter_code,marks')
+            .select('id,assignment_key,title,topic,question,language,file_name,starter_code,marks,concepts')
             .eq('is_published', true)
             .order('assignment_key'),
           supabase
@@ -159,19 +161,20 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       {assignments.length === 0 ? (
         <EmptyState
           icon={Code2}
+          mascot
           title="No projects released yet"
           description="Projects released to your batch by faculty will appear here and in the VS Code extension."
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <Stagger className="grid gap-4 md:grid-cols-2">
           {assignments.map(assignment => {
             const submission = latestByKey.get(assignment.assignment_key);
             const verified = submission?.verification_status === 'verified';
             const allPassed = verified && submission.verified_passed === submission.verified_total;
             const inProgress = submission?.verification_status === 'pending' || submission?.verification_status === 'error';
             return (
+              <StaggerItem key={assignment.id}>
               <button
-                key={assignment.id}
                 onClick={() => onOpen(assignment.id)}
                 className="card group flex min-h-48 flex-col p-5 text-left transition hover:-translate-y-0.5 hover:border-primary-400 hover:shadow-xl"
               >
@@ -190,6 +193,15 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
                   {assignment.title}
                 </h2>
                 {assignment.topic && <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{assignment.topic}</p>}
+                {(assignment.concepts ?? []).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(assignment.concepts ?? []).slice(0, 5).map(concept => (
+                      <span key={concept} className="rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                        {concept}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="mt-2 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{assignment.question}</p>
                 <div className="mt-auto flex items-center justify-between pt-4 text-xs text-slate-400">
                   <span className="inline-flex items-center gap-1"><Terminal size={12} /> {assignment.language}</span>
@@ -203,9 +215,10 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
                   </p>
                 )}
               </button>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
     </div>
   );
@@ -259,10 +272,10 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
     try {
       const assignmentResult = await supabase
         .from('coding_vscode_assignments')
-        .select('id,assignment_key,title,topic,question,language,file_name,starter_code,marks')
-        .eq('id', assignmentId)
-        .eq('is_published', true)
-        .maybeSingle();
+          .select('id,assignment_key,title,topic,question,language,file_name,starter_code,marks,concepts')
+          .eq('id', assignmentId)
+          .eq('is_published', true)
+          .maybeSingle();
       if (assignmentResult.error) throw assignmentResult.error;
       const loadedAssignment = assignmentResult.data as VsCodeAssignment | null;
       if (!loadedAssignment) { setNotFound(true); return; }
@@ -332,8 +345,10 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
           actual: actual || result.stderr || '',
           stderr: result.stderr,
         });
+        // Progressive: each result row appears as its test finishes, so the
+        // list visibly turns green one test at a time.
+        setResults([...nextResults]);
       }
-      setResults(nextResults);
     } catch (error) {
       toastError('Sample tests could not run', errorMessage(error));
     } finally {
@@ -460,6 +475,9 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant="info">{assignment.marks} marks</Badge>
             {assignment.topic && <Badge variant="default">{assignment.topic}</Badge>}
+            {(assignment.concepts ?? []).map(concept => (
+              <Badge key={concept} variant="default"><span className="text-primary-600 dark:text-primary-400">{concept}</span></Badge>
+            ))}
           </div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{assignment.title}</h2>
           <p className="mt-4 whitespace-pre-wrap leading-7 text-slate-700 dark:text-slate-300">{assignment.question}</p>
@@ -531,24 +549,39 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {results.length === 0 ? (
-                <div className="flex h-full min-h-32 flex-col items-center justify-center text-center text-slate-500">
-                  <CheckCircle2 size={24} className="mb-2 text-slate-600" />
-                  <p className="text-sm">Run sample tests to check your code before submitting.</p>
-                </div>
+                running ? (
+                  <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 text-center text-slate-400">
+                    <span className="inline-block h-3.5 w-2 animate-pulse rounded-[2px] bg-primary-400" aria-hidden />
+                    <p className="text-sm">Running tests…</p>
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-32 flex-col items-center justify-center text-center text-slate-500">
+                    <CheckCircle2 size={24} className="mb-2 text-slate-600" />
+                    <p className="text-sm">Run sample tests to check your code before submitting.</p>
+                  </div>
+                )
               ) : (
                 <div className="space-y-2">
                   {results.map((result, index) => (
-                    <div key={result.id} className={`rounded-lg border p-2.5 text-xs ${result.passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
-                      <div className={`flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {result.passed ? <CheckCircle2 size={13} /> : <XCircle size={13} />} Sample {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}
+                    <Reveal key={result.id}>
+                      <div className={`rounded-lg border p-2.5 text-xs ${result.passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
+                        <div className={`flex items-center gap-2 font-semibold ${result.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {result.passed ? <CheckCircle2 size={13} /> : <XCircle size={13} />} Sample {index + 1}: {result.passed ? 'PASSED' : 'FAILED'}
+                        </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Input</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-slate-200">{result.input || '(no input)'}</pre></div>
+                          <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Expected</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-emerald-300">{result.expected}</pre></div>
+                          <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Your Output</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-slate-200">{result.actual || '(no output)'}</pre></div>
+                        </div>
                       </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                        <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Input</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-slate-200">{result.input || '(no input)'}</pre></div>
-                        <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Expected</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-emerald-300">{result.expected}</pre></div>
-                        <div className="rounded bg-slate-950/60 p-2"><span className="text-[10px] uppercase text-slate-500">Your Output</span><pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-slate-200">{result.actual || '(no output)'}</pre></div>
-                      </div>
-                    </div>
+                    </Reveal>
                   ))}
+                  {running && (
+                    <div className="flex items-center gap-2 py-1 text-xs text-slate-400">
+                      <span className="inline-block h-3 w-1.5 animate-pulse rounded-[1px] bg-primary-400" aria-hidden />
+                      Running tests…
+                    </div>
+                  )}
                 </div>
               )}
             </div>
