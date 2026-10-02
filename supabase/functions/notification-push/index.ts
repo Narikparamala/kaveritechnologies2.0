@@ -21,7 +21,8 @@
 // are exhausted.
 //
 // FCM auth: the service account JSON arrives via the
-// FCM_SERVICE_ACCOUNT_JSON secret. A JWT (RS256, signed with
+// FCM_SERVICE_ACCOUNT_JSON secret, or as a fallback from Supabase Vault
+// (secret name fcm_service_account_json). A JWT (RS256, signed with
 // crypto.subtle) is exchanged for an OAuth access token, cached in
 // memory until ~5 min before expiry.
 // =====================================================================
@@ -293,6 +294,52 @@ async function sendToFcm(
   return classifyRecipientError(response.status);
 }
 
+// ---------- FCM service account: env secret first, Vault fallback ----------
+//
+// Preferred source is the FCM_SERVICE_ACCOUNT_JSON function secret. When it
+// is unset, the value is looked up in Supabase Vault (secret names
+// fcm_service_account_json or FCM_SERVICE_ACCOUNT_JSON, read through the
+// service-role-only get_server_secret RPC — the same mechanism the mailer
+// uses) so the key can be stored database-encrypted instead of in the plain
+// function-secret list. Env keeps precedence. Only the source is logged,
+// never any value; a failed Vault read degrades to the honest
+// PUSH_NOT_CONFIGURED skip.
+async function loadVaultServiceAccount(admin: AdminClient): Promise<string> {
+  for (const name of ['fcm_service_account_json', 'FCM_SERVICE_ACCOUNT_JSON']) {
+    const { data, error } = await admin.rpc('get_server_secret', { p_name: name });
+    if (error) {
+      console.error(`[notification-push] vault lookup failed for ${name}`, error.message);
+      return '';
+    }
+    const value = typeof data === 'string' ? data.trim() : '';
+    if (value) return value;
+  }
+  return '';
+}
+
+async function loadServiceAccount(
+  admin: AdminClient,
+): Promise<{ serviceAccount: ServiceAccount | null; projectId: string; source: 'env' | 'vault' | 'none' }> {
+  let raw = (Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '').trim();
+  let source: 'env' | 'vault' | 'none' = raw ? 'env' : 'none';
+
+  if (!raw) {
+    raw = await loadVaultServiceAccount(admin);
+    source = raw ? 'vault' : 'none';
+  }
+
+  if (!raw) return { serviceAccount: null, projectId: '', source: 'none' };
+
+  try {
+    const serviceAccount = JSON.parse(raw) as ServiceAccount;
+    const projectId = serviceAccount.project_id || Deno.env.get('FCM_PROJECT_ID') || '';
+    return { serviceAccount, projectId, source };
+  } catch {
+    console.error(`[notification-push] service account from ${source} is not valid JSON`);
+    return { serviceAccount: null, projectId: '', source };
+  }
+}
+
 // ---------- main ----------
 
 Deno.serve(async req => {
@@ -354,22 +401,16 @@ Deno.serve(async req => {
 
   // Config check: without a service account nothing can be sent — fail
   // transiently (row retries, later fails honestly after max attempts).
-  const saRaw = (Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '').trim();
-  let serviceAccount: ServiceAccount | null = null;
-  let projectId = '';
-  if (saRaw) {
-    try {
-      serviceAccount = JSON.parse(saRaw) as ServiceAccount;
-      projectId = serviceAccount.project_id || Deno.env.get('FCM_PROJECT_ID') || '';
-    } catch {
-      console.error('[notification-push] FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
-    }
+  const { serviceAccount, projectId, source } = await loadServiceAccount(admin);
+  if (source !== 'none') {
+    console.log(`[notification-push] service account source: ${source}`);
   }
   if (!serviceAccount || !projectId || !serviceAccount.client_email || !serviceAccount.private_key) {
     // Mirror the email pipeline's disabled-mode semantics: nothing attempted,
     // no retry budget burned, honestly labelled for ops.
     const resolved = await resolveDelivery(admin, outboxId, 'skipped', {
-      last_error: 'PUSH_NOT_CONFIGURED: set FCM_SERVICE_ACCOUNT_JSON (service account JSON) + FCM_PROJECT_ID',
+      last_error:
+        'PUSH_NOT_CONFIGURED: set FCM_SERVICE_ACCOUNT_JSON or vault secret fcm_service_account_json (service account JSON) + FCM_PROJECT_ID',
     });
     if (!resolved) return json({ error: 'Could not record state', code: 'RESOLVE_FAILED' }, 500);
     return json({ ok: true, outbox_id: outboxId, status: 'skipped', code: 'PUSH_NOT_CONFIGURED' }, 200);
