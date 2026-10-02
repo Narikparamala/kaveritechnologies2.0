@@ -35,13 +35,8 @@ supabase/config.toml.backup
 *.vsix
 __pycache__/
 
-# freebuff scratch (tokens, logs, one-off scripts)
-.freebuff/step1.sql
-.freebuff/*.log
-.freebuff/*-token.txt
-.freebuff/vault.json
-.freebuff/curl-headers.txt
-.freebuff/qa-signup.cjs
+# freebuff scratch (tokens, logs, one-off scripts) — QA sessions, vault values
+.freebuff/
 
 # generated at build time by scripts/generate-sw-config.mjs
 public/firebase-config.js
