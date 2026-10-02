@@ -25,6 +25,7 @@ import {
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Reveal } from '../../components/motion';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -1057,6 +1058,7 @@ function ResultSummary({
 function SecureTestCard({ test, displayIndex }: { test: SecureTestResult; displayIndex: number }) {
   const label = test.hidden ? `Hidden Test ${displayIndex}` : `Visible Test ${displayIndex}`;
   return (
+    <Reveal>
     <div className={`rounded-xl border p-3 ${test.passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className={`flex items-center gap-2 text-sm font-semibold ${test.passed ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1079,6 +1081,7 @@ function SecureTestCard({ test, displayIndex }: { test: SecureTestResult; displa
         </div>
       )}
     </div>
+    </Reveal>
   );
 }
 
@@ -1102,6 +1105,7 @@ function VisibleTestCard({
   memoryKb: number | null;
 }) {
   return (
+    <Reveal>
     <div className={`rounded-xl border p-3 ${passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className={`flex items-center gap-2 text-sm font-semibold ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1119,6 +1123,7 @@ function VisibleTestCard({
         <ResultValue label="Your Output" value={actual || '(no output)'} tone={passed ? 'success' : 'error'} />
       </div>
     </div>
+    </Reveal>
   );
 }
 

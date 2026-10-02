@@ -6,6 +6,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
 import { SkeletonCard } from '../../components/ui/LoadingSpinner';
+import { Stagger, StaggerItem } from '../../components/motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getDifficultyColor } from '../../lib/utils';
@@ -81,14 +82,14 @@ export default function MyCoursesPage() {
           }
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <Stagger className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(({ id, course, progress_percentage, enrolled_at, completed_at }) => {
             const pct = Math.round(progress_percentage ?? 0);
             return (
-              <div key={id} className="card-hover overflow-hidden flex flex-col">
-                <div className="h-36 bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
+              <StaggerItem key={id} className="card-hover overflow-hidden flex flex-col">
+                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
                   {course.thumbnail_url ? (
-                    <img src={course.thumbnail_url} alt={course.title} className="absolute inset-0 w-full h-full object-cover" />
+                    <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="absolute inset-0 w-full h-full object-contain bg-white" />
                   ) : (
                   <BookOpen size={40} className="text-white/20" />
                   )}
@@ -131,10 +132,10 @@ export default function MyCoursesPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
     </div>
   );

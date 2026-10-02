@@ -3,6 +3,7 @@ import { Settings, Sun, Moon, Lock, Eye, EyeOff, CheckCircle, Info, Globe, Copy,
 import { useAuth } from '../../contexts/AuthContext';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAppMotion, type MotionPreference } from '../../contexts/MotionContext';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
@@ -10,6 +11,7 @@ import { PushNotificationCard } from '../../components/settings/PushNotification
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { preference, setPreference } = useAppMotion();
   const { success, error: toastError } = useToast();
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
   const [showPw, setShowPw] = useState(false);
@@ -173,6 +175,36 @@ export default function SettingsPage() {
               </div>
               {theme === 'dark' && <CheckCircle size={16} className="text-primary-400 ml-auto flex-shrink-0" />}
             </button>
+          </div>
+        </div>
+
+        {/* Motion preferences */}
+        <div className="card p-6">
+          <h2 className="font-bold text-slate-900 dark:text-white mb-1">Reduce motion</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            Minimises decorative animations across the app — useful for accessibility or slower devices.
+            Everything still works the same, just without the movement.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {([
+              { value: 'system' as MotionPreference, label: 'Follow device', desc: 'Use my OS setting' },
+              { value: 'on' as MotionPreference, label: 'Reduce motion', desc: 'Animations off' },
+              { value: 'off' as MotionPreference, label: 'Full motion', desc: 'Animations on' },
+            ]).map(option => (
+              <button
+                key={option.value}
+                onClick={() => setPreference(option.value)}
+                aria-pressed={preference === option.value}
+                className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
+                  preference === option.value
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <span className={`text-sm font-medium ${preference === option.value ? 'text-primary-700 dark:text-primary-300' : 'text-slate-700 dark:text-slate-300'}`}>{option.label}</span>
+                <span className="text-xs text-slate-400">{option.desc}</span>
+              </button>
+            ))}
           </div>
         </div>
 
