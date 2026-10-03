@@ -87,9 +87,12 @@ export default function MyCoursesPage() {
             const pct = Math.round(progress_percentage ?? 0);
             return (
               <StaggerItem key={id} className="card-hover overflow-hidden flex flex-col">
-                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
+                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden p-5">
                   {course.thumbnail_url ? (
-                    <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="absolute inset-0 w-full h-full object-contain bg-white" />
+                    // The plate never fills the tile: wide white-background logo
+                    // images (e.g. the Python logo) otherwise render as a giant
+                    // white slab on the card. Framed centered plate instead.
+                    <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="max-h-full max-w-full rounded-lg bg-white object-contain p-2 shadow-lg ring-1 ring-slate-900/10" />
                   ) : (
                   <BookOpen size={40} className="text-white/20" />
                   )}

@@ -684,8 +684,12 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   }
 
   return (
-    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <header className="z-10 flex h-14 flex-none items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+    // Mobile: a normal flowing page — the whole layout scrolls with the page
+    // (an h-screen overflow-hidden shell here trapped everything inside a few
+    // tiny inner scroll zones and made the page feel frozen on phones).
+    // Desktop: fixed-height split view with independent panes.
+    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950 lg:h-screen lg:min-h-0 lg:overflow-hidden">
+      <header className="sticky top-0 z-20 flex h-14 flex-none items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button onClick={onBack} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Back to question bank">
             <ArrowLeft size={19} />
@@ -723,9 +727,11 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
       <div
         ref={splitContainerRef}
         style={{ '--problem-pane-width': `${problemPaneWidth}%` } as CSSProperties}
-        className="grid min-h-0 flex-1 grid-rows-[minmax(420px,auto)_minmax(720px,auto)] overflow-y-auto lg:grid-cols-[var(--problem-pane-width)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
+        // One auto-height column on mobile (page scroll handles it), the
+        // draggable split panes with internal scrolling on desktop.
+        className="grid flex-1 lg:min-h-0 lg:grid-cols-[var(--problem-pane-width)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
       >
-        <section className="overflow-y-auto p-5 lg:p-7">
+        <section className="p-5 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:p-7">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant={question.difficulty === 'easy' ? 'success' : question.difficulty === 'medium' ? 'warning' : 'error'}>
               {question.difficulty}
@@ -789,7 +795,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           </span>
         </button>
 
-        <section className="flex min-h-[720px] min-w-0 flex-col bg-slate-950 lg:min-h-0">
+        <section className="flex min-w-0 flex-col bg-slate-950 lg:min-h-0">
           <div className="flex h-11 flex-none items-center justify-between border-b border-slate-800 px-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Terminal size={14} className="text-primary-400" />
@@ -811,7 +817,9 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               </select>
             </label>
           </div>
-          <div className="min-h-[320px] flex-1 lg:min-h-0">
+          {/* Fixed, comfortable height on mobile (Monaco scrolls internally);
+              grows with the pane on desktop. */}
+          <div className="h-80 shrink-0 sm:h-[22rem] lg:h-auto lg:min-h-0 lg:flex-1">
             <CodeEditor
               height="100%"
               language={editorLanguage.monaco}
@@ -821,7 +829,9 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             />
           </div>
 
-          <div className="flex h-[390px] min-h-[300px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%]">
+          {/* Natural height on mobile (the page scrolls); fixed share of the
+              pane on desktop. */}
+          <div className="flex flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%] lg:min-h-0">
             <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
               <div className="flex items-center gap-1" role="tablist" aria-label="Code execution panels">
                 <PanelTab active={resultTab === 'tests'} onClick={() => setResultTab('tests')}>
@@ -878,7 +888,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               )}
 
               {resultTab === 'output' && (
-                <div className="h-full rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <div className="min-h-0 rounded-lg border border-slate-800 bg-slate-950 p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <Terminal size={13} /> Program output
@@ -893,7 +903,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
                       </div>
                     )}
                   </div>
-                  <pre className="max-h-full overflow-auto whitespace-pre-wrap font-mono text-sm text-slate-100">
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap font-mono text-sm text-slate-100 lg:max-h-full">
                     {customOutput || 'Run with custom input to see stdout and errors here.'}
                   </pre>
                 </div>
