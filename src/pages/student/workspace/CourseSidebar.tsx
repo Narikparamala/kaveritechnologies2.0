@@ -63,7 +63,9 @@ export function CourseSidebar() {
           </button>
         </div>
         {course.thumbnail_url && (
-          <img src={course.thumbnail_url} alt="" className="w-full h-24 object-cover rounded-xl mb-2" />
+          // Letterboxed plate, not object-cover: wide white-background logos
+          // (e.g. the Python logo) get cropped into an unreadable zoomed band.
+          <img src={course.thumbnail_url} alt="" className="w-full h-24 rounded-xl mb-2 bg-white object-contain p-2 ring-1 ring-slate-900/10" />
         )}
         {course.short_description && (
           <p className="text-[11px] text-slate-400 mb-2 line-clamp-2">{course.short_description}</p>

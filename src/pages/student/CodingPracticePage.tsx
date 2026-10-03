@@ -472,7 +472,12 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             .from('coding_question_attempts')
             .select('submitted_code,language_id')
             .eq('question_id', questionId)
-            .maybeSingle(),
+            // RLS scopes rows to this student, but the table keeps one row per
+            // submission — multiple attempts previously made maybeSingle()
+            // throw "JSON object requested, multiple (or no) rows returned"
+            // and the question refused to open. Latest attempt restores code.
+            .order('last_attempted_at', { ascending: false })
+            .limit(1),
         ]);
 
         if (questionResponse.error) throw questionResponse.error;
@@ -485,7 +490,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           return;
         }
         const loadedTests = (testsResponse.data ?? []) as QuestionTestCase[];
-        const previousAttempt = attemptResponse.data as { submitted_code: string | null; language_id: number | null } | null;
+        const previousAttempt = (attemptResponse.data?.[0] ?? null) as { submitted_code: string | null; language_id: number | null } | null;
         attemptRef.current = previousAttempt;
         if (!active) return;
 
