@@ -63,9 +63,13 @@ export function CourseSidebar() {
           </button>
         </div>
         {course.thumbnail_url && (
-          // Letterboxed plate, not object-cover: wide white-background logos
-          // (e.g. the Python logo) get cropped into an unreadable zoomed band.
-          <img src={course.thumbnail_url} alt="" className="w-full h-24 rounded-xl mb-2 bg-white object-contain p-2 ring-1 ring-slate-900/10" />
+          // Compact centered chip, not a full-width plate: wide white-background
+          // logos (e.g. the Python logo) otherwise read as a big white banner
+          // merging into the sidebar. Letterboxed (not object-cover) so the
+          // logo never gets cropped into an unreadable zoomed band.
+          <div className="mb-3 flex justify-center">
+            <img src={course.thumbnail_url} alt="" className="max-h-20 max-w-[62%] rounded-xl bg-white object-contain p-1.5 ring-1 ring-slate-200 dark:ring-slate-700" />
+          </div>
         )}
         {course.short_description && (
           <p className="text-[11px] text-slate-400 mb-2 line-clamp-2">{course.short_description}</p>

@@ -89,10 +89,13 @@ export default function MyCoursesPage() {
               <StaggerItem key={id} className="card-hover overflow-hidden flex flex-col">
                 <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden p-5">
                   {course.thumbnail_url ? (
-                    // The plate never fills the tile: wide white-background logo
-                    // images (e.g. the Python logo) otherwise render as a giant
-                    // white slab on the card. Framed centered plate instead.
-                    <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="max-h-full max-w-full rounded-lg bg-white object-contain p-2 shadow-lg ring-1 ring-slate-900/10" />
+                    // The plate hugs the image and is capped well below the
+                    // tile size: wide white-background logo images (e.g. the
+                    // Python logo) otherwise render as a giant white slab on
+                    // the card. Small framed chip on the gradient instead.
+                    <div className="flex max-h-[58%] max-w-[70%] items-center justify-center overflow-hidden rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-900/10">
+                      <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="max-h-full max-w-full object-contain" />
+                    </div>
                   ) : (
                   <BookOpen size={40} className="text-white/20" />
                   )}

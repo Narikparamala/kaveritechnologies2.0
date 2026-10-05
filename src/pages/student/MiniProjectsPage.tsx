@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowLeft, BadgeCheck, CheckCircle2, Code2, Cpu,
-  Eye, GripHorizontal, GripVertical, Loader2, RefreshCw, Send, Terminal, XCircle,
+  AlertTriangle, ArrowLeft, BadgeCheck, BookOpen, CheckCircle2, Code2, Cpu,
+  Eye, GripHorizontal, GripVertical, ListChecks, Loader2, RefreshCw, Send, Terminal, XCircle,
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
@@ -236,6 +236,9 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
   const [submitting, setSubmitting] = useState(false);
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // Mobile (<lg) shows one workspace section at a time (Problem / Code /
+  // Results tabs) instead of a long stacked scroll; desktop keeps the split.
+  const [mobileTab, setMobileTab] = useState<'problem' | 'code' | 'results'>('problem');
 
   // Draggable workspace: brief|editor split (x) and editor|results split (y).
   const shellRef = useRef<HTMLDivElement>(null);
@@ -359,6 +362,8 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
   const submitSolution = async () => {
     if (!assignment || !code.trim()) return;
     setSubmitting(true);
+    // On mobile, jump to the results tab so the verdict is visible.
+    setMobileTab('results');
     try {
       // Insert through the same RLS-guarded REST path the VS Code extension uses.
       const { data: authData } = await supabase.auth.getUser();
@@ -469,6 +474,41 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
         </div>
       )}
 
+      {/* Mobile: Problem / Code / Results segmented tabs instead of one long
+          stacked scroll. Sticky under the header; hidden on desktop, which
+          keeps the draggable split panes. */}
+      <nav
+        className="sticky top-14 z-10 flex flex-none items-stretch gap-1 border-b border-slate-200 bg-white p-1.5 dark:border-slate-800 dark:bg-slate-900 lg:hidden"
+        role="tablist"
+        aria-label="Workspace sections"
+      >
+        <MobileWorkspaceTab
+          active={mobileTab === 'problem'}
+          onClick={() => setMobileTab('problem')}
+          icon={BookOpen}
+          label="Problem"
+        />
+        <MobileWorkspaceTab
+          active={mobileTab === 'code'}
+          onClick={() => setMobileTab('code')}
+          icon={Code2}
+          label="Code"
+        />
+        <MobileWorkspaceTab
+          active={mobileTab === 'results'}
+          onClick={() => setMobileTab('results')}
+          icon={ListChecks}
+          label="Results"
+          badge={running || submitting
+            ? '…'
+            : results.length > 0
+              ? `${results.filter(result => result.passed).length}/${results.length}`
+              : verified && submission?.verified_passed != null
+                ? `${submission.verified_passed}/${submission.verified_total}`
+                : undefined}
+        />
+      </nav>
+
       <div
         ref={shellRef}
         style={{ '--split': `${splitPct}%` } as CSSProperties}
@@ -476,7 +516,7 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
         // panes on desktop.
         className="grid flex-1 lg:min-h-0 lg:grid-cols-[var(--split)_6px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
       >
-        <section className="p-5 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:p-7">
+        <section className={`p-5 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:p-7 ${mobileTab === 'problem' ? '' : 'hidden lg:block'}`}>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant="info">{assignment.marks} marks</Badge>
             {assignment.topic && <Badge variant="default">{assignment.topic}</Badge>}
@@ -515,7 +555,7 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
           <GripVertical size={12} className="text-slate-400 dark:text-slate-600" />
         </div>
 
-        <section ref={paneRef} className="flex min-w-0 flex-col bg-slate-950 lg:min-h-0">
+        <section ref={paneRef} className={`flex min-w-0 flex-col bg-slate-950 lg:min-h-0 ${mobileTab === 'problem' ? 'hidden lg:flex' : ''}`}>
           <div className="flex h-11 flex-none items-center justify-between border-b border-slate-800 px-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Terminal size={14} className="text-primary-400" />
@@ -527,9 +567,10 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
               </span>
             )}
           </div>
-          {/* Fixed, comfortable height on mobile (Monaco scrolls internally);
-              grows with the pane on desktop. */}
-          <div className="h-80 shrink-0 sm:h-[22rem] lg:h-auto lg:min-h-0 lg:flex-1">
+          {/* Focused editor height on mobile (Monaco scrolls internally);
+              grows with the pane on desktop. Hidden on the mobile Results tab
+              but kept mounted so the code survives tab switches. */}
+          <div className={`h-[65dvh] shrink-0 sm:h-[24rem] lg:h-auto lg:min-h-0 lg:flex-1 ${mobileTab === 'code' ? '' : 'hidden lg:block'}`}>
             <CodeEditor value={code} onChange={setCode} language="python" />
           </div>
 
@@ -546,7 +587,7 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
               pane on desktop. */}
           <div
             style={{ '--rp': `${resultsPct}%` } as CSSProperties}
-            className="flex flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[var(--rp)] lg:min-h-[120px]"
+            className={`flex flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[var(--rp)] lg:min-h-[120px] ${mobileTab === 'results' ? '' : 'hidden lg:flex'}`}
           >
             <div className="flex flex-none items-center justify-between border-b border-slate-800 px-3 py-2">
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
@@ -556,7 +597,7 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
                 {running ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Run Sample Tests
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 max-h-[calc(100dvh-12rem)] lg:max-h-none">
               {results.length === 0 ? (
                 running ? (
                   <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 text-center text-slate-400">
@@ -601,4 +642,39 @@ function ProjectWorkspace({ assignmentId, onBack }: { assignmentId: string; onBa
   );
 }
 
+function MobileWorkspaceTab({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  badge,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof Code2;
+  label: string;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-semibold transition ${
+        active
+          ? 'bg-primary-600 text-white shadow-sm'
+          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+      }`}
+    >
+      <Icon size={15} className="flex-none" />
+      {label}
+      {badge != null && (
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${active ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
 
