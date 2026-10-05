@@ -9,6 +9,7 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { StudentBatchesCard } from '../../components/common/StudentBatchesCard';
 import { getStudentSupportRecords, createSupportRecord, updateSupportRecord } from '../../services/companyManagement';
 import { getCourseLessonsAll, releaseLessonForStudent, revokeLessonRelease } from '../../services/faculty';
 import type { Profile, CourseEnrollment, Course, LessonProgress, AssignmentSubmission, StudentSupportRecord, LessonPlanItem } from '../../types/database';
@@ -191,6 +192,9 @@ export default function FacultyStudentDetailPage() {
               <p className="text-xs text-slate-500">Day Streak</p>
             </div>
           </div>
+
+          {/* Batches & all course memberships */}
+          <StudentBatchesCard studentId={studentId!} />
 
           {/* Enrolled in Your Courses */}
           <div className="card p-6">

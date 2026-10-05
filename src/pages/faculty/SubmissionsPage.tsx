@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { MessageSquare, CheckCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { MessageSquare, AlertCircle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -24,10 +25,13 @@ type SubmissionFull = AssignmentSubmission & {
 };
 
 export default function SubmissionsPage() {
-  const { profile } = useAuth();
+  const { profile, realRole } = useAuth();
   const { success, error: toastError } = useToast();
   const [submissions, setSubmissions] = useState<SubmissionFull[]>([]);
   const [loading, setLoading] = useState(true);
+  // Snapshot of the prerequisite chain so the empty state can point at the missing link.
+  // For super_admin, assignedCourses is the total platform course count.
+  const [chain, setChain] = useState({ courses: 0, assignments: 0, drafts: 0, failed: false });
   
   // Grading State
   const [grading, setGrading] = useState<SubmissionFull | null>(null);
@@ -40,17 +44,44 @@ export default function SubmissionsPage() {
     if (!profile) return;
     setLoading(true);
     try {
-      // In a real app, we'd filter by faculty courses. 
-      // For now, let's fetch all submissions for assignments the faculty has access to.
-      const { data: cf } = await (await import('../../lib/supabase')).supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
+      const { supabase } = await import('../../lib/supabase');
+      const { data: cf } = await supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
       const cIds = (cf ?? []).map((c: any) => c.course_id);
-      if (!cIds.length) { setLoading(false); return; }
 
-      const { data: aData } = await (await import('../../lib/supabase')).supabase.from('assignments').select('id').in('course_id', cIds);
-      const aIds = (aData ?? []).map((a: any) => a.id);
+      // Admins see every submission; faculty only their assigned courses'.
+      // realRole (not the previewed role) so admin powers survive portal previews.
+      let aIds: string[] = [];
+      if (realRole === 'super_admin') {
+        const { data: aData } = await supabase.from('assignments').select('id');
+        aIds = (aData ?? []).map((a: any) => a.id);
+      } else if (cIds.length > 0) {
+        const { data: aData } = await supabase.from('assignments').select('id').in('course_id', cIds);
+        aIds = (aData ?? []).map((a: any) => a.id);
+      }
+      if (realRole !== 'super_admin') {
+        let next = { courses: cIds.length, assignments: 0, drafts: 0, failed: false };
+        if (cIds.length > 0) {
+          try {
+            const { data: aRows, error: aErr } = await supabase
+              .from('assignments')
+              .select('status')
+              .in('course_id', cIds);
+            if (aErr) throw aErr;
+            next = {
+              courses: cIds.length,
+              assignments: (aRows ?? []).length,
+              drafts: (aRows ?? []).filter((a: any) => a.status === 'draft').length,
+              failed: false,
+            };
+          } catch {
+            next = { ...next, failed: true };
+          }
+        }
+        setChain(next);
+      }
       if (!aIds.length) { setLoading(false); return; }
 
-      const { data, error } = await (await import('../../lib/supabase')).supabase
+      const { data, error } = await supabase
         .from('assignment_submissions')
         .select('*, assignment:assignments(*), student_profile:profiles!assignment_submissions_student_id_fkey(*)')
         .in('assignment_id', aIds)
@@ -59,9 +90,13 @@ export default function SubmissionsPage() {
 
       if (error) throw error;
       setSubmissions((data ?? []) as any);
-    } catch (e: any) { toastError('Error', e.message); }
+      if (realRole === 'super_admin') setChain(c => ({ ...c, failed: false }));
+    } catch (e: any) {
+      if (realRole === 'super_admin') setChain(c => ({ ...c, failed: true }));
+      toastError('Error', e.message);
+    }
     setLoading(false);
-  }, [profile]);
+  }, [profile, realRole]);
 
   useEffect(() => { loadSubmissions(); }, [loadSubmissions]);
 
@@ -137,14 +172,122 @@ export default function SubmissionsPage() {
     return false;
   };
 
+  // Staged prerequisite chain: a submission only exists once every step below is done.
+  const isAdmin = realRole === 'super_admin';
+  const submissionsChain = isAdmin ? [
+    {
+      title: 'At least one course exists',
+      done: chain.courses > 0,
+      detail: chain.courses > 0
+        ? `${chain.courses} course${chain.courses === 1 ? '' : 's'} exist on the platform.`
+        : 'No courses exist yet — the first course must be created before assignments.',
+      action: chain.courses > 0 ? null : { to: '/admin/courses', label: 'Open Admin Courses' },
+    },
+    {
+      title: 'An assignment is created',
+      done: chain.assignments > 0,
+      detail: chain.assignments > 0
+        ? `${chain.assignments} assignment${chain.assignments === 1 ? '' : 's'} exist${chain.assignments === 1 ? 's' : ''} in total.`
+        : 'No assignments exist in any course yet — create one to get started.',
+      action: chain.assignments > 0 ? null : { to: '/admin/assignments', label: 'Open Admin Assignments' },
+    },
+    {
+      title: 'The assignment is published',
+      done: chain.assignments > chain.drafts,
+      detail: chain.drafts > 0
+        ? `${chain.drafts} draft${chain.drafts === 1 ? ' is' : 's are'} waiting — publish them so students can submit.`
+        : 'Published assignments become visible to enrolled students.',
+      action: chain.drafts > 0 ? { to: '/admin/assignments', label: 'Review drafts' } : null,
+    },
+    {
+      title: 'A student submits work',
+      done: false,
+      detail: 'Students submit from their Assignments tab; every submission then lands here for grading.',
+      action: null,
+    },
+  ] : [
+    {
+      title: 'You are assigned to at least one course',
+      done: chain.courses > 0,
+      detail: chain.courses > 0
+        ? `${chain.courses} course${chain.courses === 1 ? ' is' : 's are'} assigned to you by the admin.`
+        : 'An admin needs to assign you to a course — assignments can only be created inside one.',
+      action: chain.courses > 0 ? null : { to: '/faculty/courses', label: 'Check My Courses' },
+    },
+    {
+      title: 'An assignment is created for one of your courses',
+      done: chain.assignments > 0,
+      detail: chain.assignments > 0
+        ? `${chain.assignments} assignment${chain.assignments === 1 ? '' : 's'} found, ${chain.drafts} still in draft.`
+        : 'Create an assignment for one of your courses — it starts as a draft.',
+      action: chain.assignments > 0 ? null : { to: '/faculty/assignments/new', label: 'Create assignment' },
+    },
+    {
+      title: 'The assignment is published',
+      done: chain.assignments > chain.drafts,
+      detail: chain.drafts > 0
+        ? `${chain.drafts} draft${chain.drafts === 1 ? ' is' : 's are'} waiting in Assignments — publish to make it visible to students.`
+        : 'Published assignments become visible to enrolled students.',
+      action: chain.assignments > 0 && chain.drafts > 0 ? { to: '/faculty/assignments', label: 'Open Assignments to publish' } : null,
+    },
+    {
+      title: 'A student submits work',
+      done: false,
+      detail: 'Students submit from their Assignments tab; every submission then lands here for grading.',
+      action: { to: '/faculty/students', label: 'View enrolled students' },
+    },
+  ];
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="Submissions" subtitle="Review and grade student work" icon={MessageSquare} />
+      <PageHeader title="Assignment Submissions" subtitle="Review and grade student assignment work" icon={MessageSquare} />
 
       {loading ? (
         <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 bg-slate-100 dark:bg-slate-800 rounded-2xl animate-pulse" />)}</div>
       ) : submissions.length === 0 ? (
-        <EmptyState icon={MessageSquare} title="No submissions yet" />
+        <>
+        {realRole === 'super_admin' ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="No submissions across any course yet"
+            description={
+              chain.failed
+                ? 'Assignments could not be checked, so the staging below may be incomplete.'
+                : 'A submission appears here once an assignment is published and a student submits it. The chain below shows where it is currently blocked.'
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={MessageSquare}
+            title="No submissions to grade yet"
+            description="Coding practice and mini-projects are tracked separately under Coding Submissions."
+          />
+        )}
+        <div className="card max-w-3xl mx-auto p-6 space-y-5">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">What must exist before a submission appears here</p>
+          {submissionsChain.map((step, index) => (
+            <div key={step.title} className="flex items-start gap-4">
+              <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0 mt-0.5">{index + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white flex-wrap">
+                  {step.title}
+                  {step.done ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400"><CheckCircle size={13} /> Ready</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400"><AlertCircle size={13} /> Missing</span>
+                  )}
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{step.detail}</p>
+                {step.action && (
+                  <Link to={step.action.to} className="btn-secondary inline-flex items-center gap-1.5 mt-2 py-1.5 px-3 text-xs">
+                    {step.action.label}
+                  </Link>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        </>
       ) : (
         <div className="grid gap-3">
           {submissions.map(sub => (

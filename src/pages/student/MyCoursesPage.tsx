@@ -6,6 +6,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
 import { SkeletonCard } from '../../components/ui/LoadingSpinner';
+import { Stagger, StaggerItem } from '../../components/motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getDifficultyColor } from '../../lib/utils';
@@ -81,13 +82,23 @@ export default function MyCoursesPage() {
           }
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <Stagger className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(({ id, course, progress_percentage, enrolled_at, completed_at }) => {
             const pct = Math.round(progress_percentage ?? 0);
             return (
-              <div key={id} className="card-hover overflow-hidden flex flex-col">
-                <div className="h-36 bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative">
+              <StaggerItem key={id} className="card-hover overflow-hidden flex flex-col">
+                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden p-5">
+                  {course.thumbnail_url ? (
+                    // The plate hugs the image and is capped well below the
+                    // tile size: wide white-background logo images (e.g. the
+                    // Python logo) otherwise render as a giant white slab on
+                    // the card. Small framed chip on the gradient instead.
+                    <div className="flex max-h-[58%] max-w-[70%] items-center justify-center overflow-hidden rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-900/10">
+                      <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="max-h-full max-w-full object-contain" />
+                    </div>
+                  ) : (
                   <BookOpen size={40} className="text-white/20" />
+                  )}
                   <div className="absolute top-3 right-3">
                     <Badge className={`capitalize text-xs ${getDifficultyColor(course.difficulty)}`}>
                       {course.difficulty}
@@ -102,7 +113,10 @@ export default function MyCoursesPage() {
                   )}
                 </div>
                 <div className="p-5 flex flex-col flex-1">
-                  <h3 className="font-bold text-slate-900 dark:text-white mb-2 line-clamp-2">{course.title}</h3>
+                  <h3 className="font-bold text-slate-900 dark:text-white mb-1 line-clamp-2">{course.title}</h3>
+                  {course.short_description && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{course.short_description}</p>
+                  )}
                   <p className="text-xs text-slate-400 mb-4 flex items-center gap-2">
                     <Clock size={11} /> {course.duration_hours}h
                     <span>· Enrolled {new Date(enrolled_at).toLocaleDateString('en-IN')}</span>
@@ -124,10 +138,10 @@ export default function MyCoursesPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
     </div>
   );

@@ -39,7 +39,10 @@ function WorkspaceShell() {
   const [mobileTab, setMobileTab] = useState<MobileTab>('lesson');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  if (loading) {
+  // Full-page spinner ONLY for the initial course load. Background refetches
+  // (markComplete -> refreshProfile -> loadCourse) keep the shell mounted so
+  // the sidebar and lesson never unmount mid-session.
+  if (loading && !course) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="text-center">
@@ -64,7 +67,9 @@ function WorkspaceShell() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
+    // h-dvh follows the mobile browser's visible viewport (h-screen hides
+    // the bottom behind the collapsing URL bar on phones).
+    <div className="h-dvh flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
       {/* Top bar - minimal, always visible */}
       <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center px-4 gap-3 flex-shrink-0 z-30">
         <button
@@ -85,7 +90,12 @@ function WorkspaceShell() {
           )}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex flex-1 min-w-0 items-center gap-2">
+          {course.thumbnail_url && (
+            // Contained (not cropped) so white-background logos read cleanly
+            // at this tiny size, inline beside the title.
+            <img src={course.thumbnail_url} alt="" className="h-6 w-6 rounded bg-white object-contain p-px ring-1 ring-slate-900/10 flex-shrink-0" />
+          )}
           <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{course.title}</h1>
         </div>
 

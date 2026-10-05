@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   Clock3,
   Layers3,
+  Mail,
   Plus,
   RefreshCw,
   Send,
@@ -16,8 +19,10 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   createFacultyTeachingWork,
@@ -99,7 +104,7 @@ function isMissingTeachingWorkSchema(error: unknown) {
 }
 
 export default function FacultyBatchesPage() {
-  const { profile } = useAuth();
+  const { profile, realRole } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('work');
@@ -132,7 +137,10 @@ export default function FacultyBatchesPage() {
     if (!profile?.id) return;
     setLoading(true);
     try {
-      const batchData = await getFacultyBatchAssignments(profile.id);
+      // Super admins oversee all batches; faculty see batches assigned to them.
+      const batchData = await getFacultyBatchAssignments(profile.id, {
+        includeAllForAdmin: realRole === 'super_admin',
+      });
       setBatches(batchData);
     } catch (error) {
       toast.error('Could not load assigned batches', errorMessage(error));
@@ -157,7 +165,7 @@ export default function FacultyBatchesPage() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, realRole]);
 
   useEffect(() => {
     loadData();
@@ -302,10 +310,10 @@ export default function FacultyBatchesPage() {
         icon={Layers3}
         action={
           <div className="flex flex-wrap justify-end gap-2">
-            <button className="btn-secondary" onClick={() => setRequestModal(true)}>
+            <button className="btn-secondary" onClick={() => setRequestModal(true)} disabled={batches.length === 0}>
               <Send size={16} /> Coordination request
             </button>
-            <button className="btn-primary" onClick={openWorkModal} disabled={!schemaReady}>
+            <button className="btn-primary" onClick={openWorkModal} disabled={!schemaReady || batches.length === 0}>
               <Plus size={16} /> Add teaching work
             </button>
           </div>
@@ -412,11 +420,61 @@ export default function FacultyBatchesPage() {
         </div>
       ) : tab === 'batches' ? (
         <div className="grid md:grid-cols-2 gap-4">
+          {batches.length > 0 && (
+            <p className="md:col-span-2 text-xs text-slate-400 -mt-3">
+              Each card lists the linked course. “View students” opens every enrolled student’s detail page.
+            </p>
+          )}
           {batches.length === 0 ? (
-            <div className="card p-10 text-center md:col-span-2">
-              <Users size={34} className="mx-auto text-slate-400 mb-3" />
-              <h3 className="font-semibold text-slate-900 dark:text-white">No batches assigned yet</h3>
-              <p className="text-sm text-slate-500 mt-1">Admin-assigned batches will appear here without affecting your choice of teaching mode.</p>
+            <div className="md:col-span-2">
+              <EmptyState
+                icon={Users}
+                title="No batches assigned to you yet"
+                description="Batches appear here once an admin creates one and links you to it."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button className="btn-secondary" onClick={() => setRequestModal(true)}>
+                      <Send size={15} /> Request a batch assignment
+                    </button>
+                    <Link to="/faculty/courses" className="btn-secondary">
+                      <BookOpen size={15} /> Preview My Courses
+                    </Link>
+                  </div>
+                }
+              />
+              <div className="card max-w-3xl mx-auto p-6 space-y-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">What must exist before a batch shows up here</p>
+                {[
+                  {
+                    title: 'A batch is created by the admin',
+                    detail: 'Batches (e.g. “Python Batch-2”) are created in the admin panel — faculty cannot create them.',
+                    action: null as string | null,
+                  },
+                  {
+                    title: 'You are linked to the batch',
+                    detail: 'The admin adds you via batch faculty (lead trainer or assistant). Unlinked batches stay invisible to you.',
+                    action: 'request' as 'request' | null,
+                  },
+                  {
+                    title: 'The batch has a course linked',
+                    detail: 'A batch without a course cannot schedule teaching work, host students\u2019 progress, or receive assignments.',
+                    action: null as string | null,
+                  },
+                ].map((step, index) => (
+                  <div key={step.title} className="flex items-start gap-4">
+                    <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0 mt-0.5">{index + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{step.title}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{step.detail}</p>
+                      {step.action === 'request' && (
+                        <button className="btn-secondary inline-flex items-center gap-1.5 mt-2 py-1.5 px-3 text-xs" onClick={() => setRequestModal(true)}>
+                          <Send size={13} /> Send a coordination request
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : batches.map(item => (
             <div key={item.id} className="card p-5">
@@ -426,7 +484,13 @@ export default function FacultyBatchesPage() {
                     <h3 className="font-semibold text-slate-900 dark:text-white">{item.batch.name}</h3>
                     <Badge variant={item.batch.status === 'active' ? 'success' : 'default'}>{item.batch.status}</Badge>
                   </div>
-                  <p className="text-sm text-slate-500 mt-1">{item.batch.course?.title ?? 'No course linked'}</p>
+                  {item.batch.course?.title ? (
+                    <p className="text-sm text-slate-500 mt-1">{item.batch.course.title}</p>
+                  ) : (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <AlertTriangle size={13} /> No course linked — ask an admin to set one
+                    </p>
+                  )}
                 </div>
                 <Badge variant="info">{item.role}</Badge>
               </div>
@@ -437,6 +501,7 @@ export default function FacultyBatchesPage() {
               </div>
               {item.schedules.length > 0 && <div className="mt-4 space-y-1">{item.schedules.map(schedule => <p key={schedule.id} className="text-xs text-slate-500"><Clock3 size={12} className="inline mr-1" /> Day {schedule.day_of_week}: {formatClock(schedule.start_time)}–{formatClock(schedule.end_time)}</p>)}</div>}
               <button className="btn-primary w-full mt-4" onClick={() => { setWorkForm(current => ({ ...current, batchId: item.batch_id })); setWorkModal(true); }}><Plus size={15} /> Plan teaching work</button>
+              <BatchRoster batchId={item.batch_id} studentCount={item.student_count} />
             </div>
           ))}
         </div>
@@ -482,6 +547,103 @@ export default function FacultyBatchesPage() {
           <div className="flex justify-end gap-2"><button className="btn-secondary" onClick={() => setRequestModal(false)}>Cancel</button><button className="btn-primary" onClick={handleRequest} disabled={saving}>{saving ? 'Sending...' : 'Send request'}</button></div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+interface RosterStudent {
+  id: string;
+  status: string;
+  enrolled_at: string;
+  student: {
+    id: string;
+    full_name: string | null;
+    email: string;
+    avatar_url: string | null;
+    xp_points: number;
+    level: number;
+  } | null;
+}
+
+function BatchRoster({ batchId, studentCount }: { batchId: string; studentCount: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [students, setStudents] = useState<RosterStudent[]>([]);
+
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && students.length === 0 && !loading) {
+      setLoading(true);
+      setError(null);
+      const { data, error: err } = await supabase
+        .from('batch_students')
+        .select('id, status, enrolled_at, student:profiles!batch_students_student_id_fkey(id, full_name, email, avatar_url, xp_points, level)')
+        .eq('batch_id', batchId)
+        .eq('status', 'active')
+        .order('enrolled_at', { ascending: false });
+      if (err) {
+        setError(err.message);
+      } else {
+        setStudents((data ?? []) as unknown as RosterStudent[]);
+      }
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Users size={15} className="text-slate-400" />
+          View students ({studentCount})
+        </span>
+        {open ? <ChevronUp size={15} className="text-slate-400" /> : <ChevronDown size={15} className="text-slate-400" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 animate-fade-in">
+          {loading ? (
+            <p className="p-4 text-sm text-slate-400">Loading students...</p>
+          ) : error ? (
+            <p className="p-4 text-sm text-red-500">Could not load students: {error}</p>
+          ) : students.length === 0 ? (
+            <p className="p-4 text-sm text-slate-400">No active students in this batch yet.</p>
+          ) : (
+            students.map(row => (
+              <Link
+                key={row.id}
+                to={`/faculty/students/${row.student?.id ?? ''}`}
+                className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+              >
+                <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {row.student?.avatar_url ? (
+                    <img src={row.student.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xs font-bold text-primary-600 dark:text-primary-400">
+                      {(row.student?.full_name || row.student?.email || '?')[0].toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                    {row.student?.full_name || 'Unnamed student'}
+                  </p>
+                  <p className="text-xs text-slate-400 flex items-center gap-1 truncate">
+                    <Mail size={10} /> {row.student?.email}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-400 flex-shrink-0">Lv {row.student?.level ?? 1}</span>
+                <ChevronUp size={14} className="text-slate-300 rotate-90 flex-shrink-0" />
+              </Link>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

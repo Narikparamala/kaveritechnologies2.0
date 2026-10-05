@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
+  BookOpen,
   Building2,
   CheckCircle2,
   Clock3,
@@ -13,6 +14,7 @@ import {
   Filter,
   Flame,
   GripVertical,
+  ListChecks,
   Loader2,
   Play,
   RefreshCw,
@@ -25,6 +27,7 @@ import {
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Reveal } from '../../components/motion';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -130,10 +133,16 @@ export default function CodingPracticePage() {
   const navigate = useNavigate();
   const chapterId = searchParams.get('chapter');
   const courseId = searchParams.get('course');
+  const lessonId = searchParams.get('lesson');
 
   if (questionId) {
-    // Arrived from a chapter practice list: Back returns there; otherwise the global bank.
-    const backTo = chapterId && courseId ? `/student/course/${courseId}/practice/${chapterId}` : '/student/coding-practice';
+    // Arrived from a practice list (chapter or per-lesson): Back returns
+    // there; otherwise the global bank.
+    const backTo = lessonId && courseId
+      ? `/student/course/${courseId}/lesson-practice/${lessonId}`
+      : chapterId && courseId
+        ? `/student/course/${courseId}/practice/${chapterId}`
+        : '/student/coding-practice';
     return <QuestionWorkspace questionId={questionId} onBack={() => navigate(backTo)} />;
   }
 
@@ -380,6 +389,9 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   const [results, setResults] = useState<SecureTestResult[]>([]);
   const [finalResult, setFinalResult] = useState<SecurePracticeResult | null>(null);
   const [resultTab, setResultTab] = useState<ResultTab>('tests');
+  // Mobile (<lg) shows one workspace section at a time instead of a long
+  // stacked scroll; desktop keeps the draggable split panes.
+  const [mobileTab, setMobileTab] = useState<'problem' | 'code' | 'results'>('problem');
   const [problemPaneWidth, setProblemPaneWidth] = useState(47);
   const [resizing, setResizing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -465,7 +477,12 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             .from('coding_question_attempts')
             .select('submitted_code,language_id')
             .eq('question_id', questionId)
-            .maybeSingle(),
+            // RLS scopes rows to this student, but the table keeps one row per
+            // submission — multiple attempts previously made maybeSingle()
+            // throw "JSON object requested, multiple (or no) rows returned"
+            // and the question refused to open. Latest attempt restores code.
+            .order('last_attempted_at', { ascending: false })
+            .limit(1),
         ]);
 
         if (questionResponse.error) throw questionResponse.error;
@@ -478,7 +495,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           return;
         }
         const loadedTests = (testsResponse.data ?? []) as QuestionTestCase[];
-        const previousAttempt = attemptResponse.data as { submitted_code: string | null; language_id: number | null } | null;
+        const previousAttempt = (attemptResponse.data?.[0] ?? null) as { submitted_code: string | null; language_id: number | null } | null;
         attemptRef.current = previousAttempt;
         if (!active) return;
 
@@ -633,6 +650,8 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
     setFinalResult(null);
     setCustomResult(null);
     setResultTab('tests');
+    // On mobile, jump to the results tab so the verdict is visible.
+    setMobileTab('results');
     try {
       const result = await securelyGradePractice(question.id, code, selectedLanguageId);
       setFinalResult(result);
@@ -677,8 +696,12 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
   }
 
   return (
-    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <header className="z-10 flex h-14 flex-none items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
+    // Mobile: a normal flowing page — the whole layout scrolls with the page
+    // (an h-screen overflow-hidden shell here trapped everything inside a few
+    // tiny inner scroll zones and made the page feel frozen on phones).
+    // Desktop: fixed-height split view with independent panes.
+    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950 lg:h-screen lg:min-h-0 lg:overflow-hidden">
+      <header className="sticky top-0 z-20 flex h-14 flex-none items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button onClick={onBack} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Back to question bank">
             <ArrowLeft size={19} />
@@ -713,12 +736,49 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
         </div>
       )}
 
+      {/* Mobile: Problem / Code / Results segmented tabs instead of one long
+          stacked scroll. Sticky under the header; hidden on desktop, which
+          keeps the draggable split panes. */}
+      <nav
+        className="sticky top-14 z-10 flex flex-none items-stretch gap-1 border-b border-slate-200 bg-white p-1.5 dark:border-slate-800 dark:bg-slate-900 lg:hidden"
+        role="tablist"
+        aria-label="Workspace sections"
+      >
+        <MobileWorkspaceTab
+          active={mobileTab === 'problem'}
+          onClick={() => setMobileTab('problem')}
+          icon={BookOpen}
+          label="Problem"
+        />
+        <MobileWorkspaceTab
+          active={mobileTab === 'code'}
+          onClick={() => setMobileTab('code')}
+          icon={Code2}
+          label="Code"
+        />
+        <MobileWorkspaceTab
+          active={mobileTab === 'results'}
+          onClick={() => setMobileTab('results')}
+          icon={ListChecks}
+          label="Results"
+          badge={running || submitting
+            ? '…'
+            : finalResult
+              ? `${finalResult.passed}/${finalResult.total}`
+              : results.length > 0
+                ? `${results.filter(result => result.passed).length}/${results.length}`
+                : undefined}
+        />
+      </nav>
+
       <div
         ref={splitContainerRef}
         style={{ '--problem-pane-width': `${problemPaneWidth}%` } as CSSProperties}
-        className="grid min-h-0 flex-1 grid-rows-[minmax(420px,auto)_minmax(720px,auto)] overflow-y-auto lg:grid-cols-[var(--problem-pane-width)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
+        // One auto-height column on mobile (page scroll handles it), the
+        // draggable split panes with internal scrolling on desktop.
+        className="grid flex-1 lg:min-h-0 lg:grid-cols-[var(--problem-pane-width)_7px_minmax(0,1fr)] lg:grid-rows-1 lg:overflow-hidden"
       >
-        <section className="overflow-y-auto p-5 lg:p-7">
+        <section className={`p-5 sm:p-6 lg:min-h-0 lg:overflow-y-auto lg:p-7 ${mobileTab === 'problem' ? '' : 'hidden lg:block'}`}>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge variant={question.difficulty === 'easy' ? 'success' : question.difficulty === 'medium' ? 'warning' : 'error'}>
               {question.difficulty}
@@ -782,7 +842,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
           </span>
         </button>
 
-        <section className="flex min-h-[720px] min-w-0 flex-col bg-slate-950 lg:min-h-0">
+        <section className={`flex min-w-0 flex-col bg-slate-950 lg:min-h-0 ${mobileTab === 'problem' ? 'hidden lg:flex' : ''}`}>
           <div className="flex h-11 flex-none items-center justify-between border-b border-slate-800 px-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <Terminal size={14} className="text-primary-400" />
@@ -804,7 +864,10 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               </select>
             </label>
           </div>
-          <div className="min-h-[320px] flex-1 lg:min-h-0">
+          {/* Focused editor height on mobile (Monaco scrolls internally);
+              grows with the pane on desktop. Hidden on the mobile Results tab
+              but kept mounted so the code survives tab switches. */}
+          <div className={`h-[65dvh] shrink-0 sm:h-[24rem] lg:h-auto lg:min-h-0 lg:flex-1 ${mobileTab === 'code' ? '' : 'hidden lg:block'}`}>
             <CodeEditor
               height="100%"
               language={editorLanguage.monaco}
@@ -814,7 +877,9 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
             />
           </div>
 
-          <div className="flex h-[390px] min-h-[300px] flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%]">
+          {/* Natural height on mobile (capped to the viewport); fixed share of
+              the pane on desktop. */}
+          <div className={`flex flex-none flex-col border-t border-slate-800 bg-slate-900 lg:h-[44%] lg:min-h-0 ${mobileTab === 'results' ? '' : 'hidden lg:flex'}`}>
             <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
               <div className="flex items-center gap-1" role="tablist" aria-label="Code execution panels">
                 <PanelTab active={resultTab === 'tests'} onClick={() => setResultTab('tests')}>
@@ -838,7 +903,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 max-h-[calc(100dvh-13rem)] lg:max-h-none">
               {resultTab === 'tests' && (
                 <TestResultsPanel
                   finalResult={finalResult}
@@ -871,7 +936,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               )}
 
               {resultTab === 'output' && (
-                <div className="h-full rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <div className="min-h-0 rounded-lg border border-slate-800 bg-slate-950 p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <Terminal size={13} /> Program output
@@ -886,7 +951,7 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
                       </div>
                     )}
                   </div>
-                  <pre className="max-h-full overflow-auto whitespace-pre-wrap font-mono text-sm text-slate-100">
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap font-mono text-sm text-slate-100 lg:max-h-full">
                     {customOutput || 'Run with custom input to see stdout and errors here.'}
                   </pre>
                 </div>
@@ -905,6 +970,42 @@ function InfoBlock({ title, content }: { title: string; content: string }) {
       <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">{title}</h3>
       <div className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{content}</div>
     </div>
+  );
+}
+
+function MobileWorkspaceTab({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  badge,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof Code2;
+  label: string;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-semibold transition ${
+        active
+          ? 'bg-primary-600 text-white shadow-sm'
+          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+      }`}
+    >
+      <Icon size={15} className="flex-none" />
+      {label}
+      {badge != null && (
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${active ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
+          {badge}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -1051,6 +1152,7 @@ function ResultSummary({
 function SecureTestCard({ test, displayIndex }: { test: SecureTestResult; displayIndex: number }) {
   const label = test.hidden ? `Hidden Test ${displayIndex}` : `Visible Test ${displayIndex}`;
   return (
+    <Reveal>
     <div className={`rounded-xl border p-3 ${test.passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className={`flex items-center gap-2 text-sm font-semibold ${test.passed ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1073,6 +1175,7 @@ function SecureTestCard({ test, displayIndex }: { test: SecureTestResult; displa
         </div>
       )}
     </div>
+    </Reveal>
   );
 }
 
@@ -1096,6 +1199,7 @@ function VisibleTestCard({
   memoryKb: number | null;
 }) {
   return (
+    <Reveal>
     <div className={`rounded-xl border p-3 ${passed ? 'border-emerald-800/70 bg-emerald-950/20' : 'border-red-800/70 bg-red-950/20'}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className={`flex items-center gap-2 text-sm font-semibold ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1113,6 +1217,7 @@ function VisibleTestCard({
         <ResultValue label="Your Output" value={actual || '(no output)'} tone={passed ? 'success' : 'error'} />
       </div>
     </div>
+    </Reveal>
   );
 }
 

@@ -52,7 +52,8 @@ export default function ChapterPracticePage() {
           supabase.rpc('get_chapter_coding_questions', { p_chapter_id: chapterId }),
           supabase.from('chapters').select('title').eq('id', chapterId).maybeSingle(),
           supabase.from('coding_question_attempts')
-            .select('question_id, passed_test_cases, total_test_cases, status, first_solved_at'),
+            .select('question_id, passed_test_cases, total_test_cases, status, first_solved_at')
+            .eq('student_id', profile.id),
         ]);
 
         if (!active) return;

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Menu, X, Eye } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
+import { Logo } from '../ui/Logo';
 
 interface DashboardLayoutProps {
   sidebar: ReactNode;
@@ -19,7 +20,9 @@ export function DashboardLayout({ sidebar, children }: DashboardLayoutProps) {
   const { isPortalPreview, role, resetPortal } = useAuth();
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden">
+    // h-dvh follows the mobile browser's visible viewport (h-screen hides
+    // the bottom of the shell behind the collapsing URL bar on phones).
+    <div className="flex h-dvh bg-slate-50 dark:bg-slate-900 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -55,7 +58,7 @@ export function DashboardLayout({ sidebar, children }: DashboardLayoutProps) {
           >
             <Menu size={20} className="text-slate-600 dark:text-slate-400" />
           </button>
-          <span className="font-semibold text-slate-900 dark:text-white">Kaveri Academy</span>
+          <Logo size="sm" />
         </div>
 
         {isPortalPreview && (

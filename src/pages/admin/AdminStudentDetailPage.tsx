@@ -7,6 +7,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { supabase } from '../../lib/supabase';
+import { StudentBatchesCard } from '../../components/common/StudentBatchesCard';
 import { getStudentWithDetails, createSupportRecord, updateSupportRecord, getStudentSupportRecords } from '../../services/companyManagement';
 import type { Profile, CourseEnrollment, Course, LessonProgress, StudentSupportRecord, Certificate, AssignmentSubmission } from '../../types/database';
 
@@ -171,6 +172,9 @@ export default function AdminStudentDetailPage() {
               <p className="text-xs text-slate-500">Certificates</p>
             </div>
           </div>
+
+          {/* Batches & all course memberships */}
+          <StudentBatchesCard studentId={studentId!} />
 
           {/* Enrolled Courses */}
           <div className="card p-6">

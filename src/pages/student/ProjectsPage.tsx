@@ -20,6 +20,7 @@ import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { SkeletonCard } from '../../components/ui/LoadingSpinner';
+import { Stagger, StaggerItem } from '../../components/motion';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { DEVELOPER_EMAIL, useAuth } from '../../contexts/AuthContext';
@@ -296,13 +297,18 @@ export default function ProjectsPage() {
           {[1, 2, 3, 4, 5, 6].map(index => <SkeletonCard key={index} />)}
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={FolderKanban} title={practiceMode ? 'This project is not available for practice' : 'No projects found'} />
+        <EmptyState
+          icon={FolderKanban}
+          mascot
+          title={practiceMode ? 'This project is not available for practice' : 'No projects here yet'}
+          description={practiceMode ? undefined : 'Projects for your courses will appear here as soon as faculty publish them.'}
+        />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <Stagger className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(project => {
             const submission = submissions.get(project.id);
             return (
-              <div key={project.id} className="card-hover p-5 flex flex-col">
+              <StaggerItem key={project.id} className="card-hover p-5 flex flex-col">
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <h3 className="font-bold text-slate-900 dark:text-white">{project.title}</h3>
                   {submission && <Badge variant={statusVariant(submission.status)} className="text-xs flex-shrink-0 capitalize">{submission.status}</Badge>}
@@ -333,10 +339,10 @@ export default function ProjectsPage() {
                     {practiceMode ? 'View Project Brief' : submission ? 'Submission' : 'Brief & Submit'}
                   </button>
                 </div>
-              </div>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title={practiceMode ? `Practice: ${submitModal?.title}` : `Project: ${submitModal?.title}`} size="xl">

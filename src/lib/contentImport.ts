@@ -329,8 +329,22 @@ export async function validateQuestionRows(
 export async function importValidatedQuestions(
   validated: ValidatedQuestion[],
   createdBy: string,
+  attach?: { lessonId?: string | null; chapterId?: string | null },
 ): Promise<ImportSummary> {
   const summary: ImportSummary = { created: 0, failed: 0, issues: [] };
+
+  // Continue the lesson/chapter ordering after the questions already there.
+  let lessonOrder = 0;
+  let chapterOrder = 0;
+  if (attach?.lessonId) {
+    const { count } = await supabase
+      .from('coding_questions').select('id', { count: 'exact', head: true }).eq('lesson_id', attach.lessonId);
+    lessonOrder = count ?? 0;
+  } else if (attach?.chapterId) {
+    const { count } = await supabase
+      .from('coding_questions').select('id', { count: 'exact', head: true }).eq('chapter_id', attach.chapterId);
+    chapterOrder = count ?? 0;
+  }
 
   // Reserve slugs from existing questions first.
   const taken = new Set<string>();
@@ -368,6 +382,10 @@ export async function importValidatedQuestions(
         source_type: 'faculty_created',
         is_published: row.publish,
         created_by: createdBy,
+        lesson_id: attach?.lessonId ?? null,
+        lesson_order_index: attach?.lessonId ? lessonOrder++ : null,
+        chapter_id: attach?.lessonId ? null : attach?.chapterId ?? null,
+        chapter_order_index: !attach?.lessonId && attach?.chapterId ? chapterOrder++ : null,
       })
       .select('id')
       .single();
@@ -506,6 +524,7 @@ export async function importQuizRows(
   rows: QuizRow[],
   courseId: string,
   createdBy: string,
+  attach?: { lessonId?: string | null; chapterId?: string | null },
 ): Promise<ImportSummary> {
   const summary: ImportSummary = { created: 0, failed: 0, issues: [] };
 
@@ -545,7 +564,14 @@ export async function importQuizRows(
       // Title already in use by a published quiz — create a new draft variant.
       const { data: created, error } = await supabase
         .from('quizzes')
-        .insert({ course_id: courseId, title, is_published: false, created_by: createdBy })
+        .insert({
+          course_id: courseId,
+          title,
+          is_published: false,
+          created_by: createdBy,
+          lesson_id: attach?.lessonId ?? null,
+          chapter_id: attach?.chapterId ?? null,
+        })
         .select('id')
         .single();
       if (error || !created) {
@@ -561,7 +587,14 @@ export async function importQuizRows(
     } else {
       const { data: created, error } = await supabase
         .from('quizzes')
-        .insert({ course_id: courseId, title, is_published: false, created_by: createdBy })
+        .insert({
+          course_id: courseId,
+          title,
+          is_published: false,
+          created_by: createdBy,
+          lesson_id: attach?.lessonId ?? null,
+          chapter_id: attach?.chapterId ?? null,
+        })
         .select('id')
         .single();
       if (error || !created) {
@@ -826,4 +859,20 @@ export function draftToQuestionRow(draft: GeneratedDraft, rowNumber: number): Qu
     publish: false, // drafts stay drafts until reviewed
     tests: draft.tests,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Slide-dump heuristics (instant paste feedback for the Slides → Practice tab)
+// ---------------------------------------------------------------------------
+
+/**
+ * Splits a raw slide dump into "SLIDE N" blocks and estimates how many contain
+ * a practice exercise. Heuristics only — the AI does the real interpretation.
+ */
+export function parseSlidePracticeBlocks(slides: string): { slideCount: number; practiceCount: number } {
+  const text = slides.replace(/\r\n/g, '\n');
+  const slideCount = (text.match(/^={3,}[\s\S]*?SLIDE\s*\d+[\s\S]*?={3,}$/gim) || []).length
+    || (text.match(/^SLIDE\s*\d+$/gim) || []).length;
+  const practiceCount = (text.match(/practice\s*time/gi) || []).length;
+  return { slideCount, practiceCount };
 }

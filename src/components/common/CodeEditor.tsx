@@ -36,7 +36,8 @@ const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ defa
 
 export type CodeEditorProps = {
   value: string;
-  onChange: (value: string) => void;
+  /** Omit for read-only embeds. */
+  onChange?: (value: string) => void;
   /** Monaco language id: python, javascript, typescript, html, css, json, sql, cpp, java… */
   language?: string;
   height?: string;
@@ -97,7 +98,7 @@ export default function CodeEditor({
           language={language}
           theme={theme ?? (dark ? 'vs-dark' : 'light')}
           value={value}
-          onChange={v => onChange(v ?? '')}
+          onChange={v => onChange?.(v ?? '')}
           options={merged}
         />
       </Suspense>

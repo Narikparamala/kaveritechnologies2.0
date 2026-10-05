@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import QuizQuestionsManager from '../../components/faculty/QuizQuestionsManager';
 import {
   getFacultyCourses, getFacultyQuizzes, createQuiz, updateQuiz, deleteQuiz,
@@ -21,6 +22,7 @@ export default function FacultyQuizzesPage() {
   const { success, error: toastError } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<(Quiz & { course: Course })[]>([]);
+  const [lessonTitles, setLessonTitles] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // Quiz CRUD
@@ -45,6 +47,14 @@ export default function FacultyQuizzesPage() {
     const [cs, qs] = await Promise.all([getFacultyCourses(profile.id), getFacultyQuizzes(profile.id)]);
     setCourses(cs);
     setQuizzes(qs);
+    // Lesson titles for the per-quiz "belongs to lesson" column.
+    const quizLessonIds = [...new Set(qs.map(q => q.lesson_id).filter(Boolean))] as string[];
+    const titles = new Map<string, string>();
+    if (quizLessonIds.length) {
+      const { data: ls } = await supabase.from('lessons').select('id, title').in('id', quizLessonIds);
+      (ls ?? []).forEach((l: { id: string; title: string }) => titles.set(l.id, l.title));
+    }
+    setLessonTitles(titles);
     if (cs.length > 0 && !quizForm.course_id) setQuizForm(f => ({ ...f, course_id: cs[0].id }));
     setLoading(false);
   }, [profile]);
@@ -144,6 +154,7 @@ export default function FacultyQuizzesPage() {
                     </span>
                   </div>
                   <p className="text-xs text-primary-600 dark:text-primary-400 mb-1">{q.course?.title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">{(q.lesson_id && lessonTitles.get(q.lesson_id)) ? <>📘 {lessonTitles.get(q.lesson_id)}</> : <span className="italic">General (no lesson)</span>}</p>
                   {q.description && <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{q.description}</p>}
                   <div className="flex items-center gap-4 text-xs text-slate-400 mt-2 flex-wrap">
                     <span>Pass: {q.pass_percentage}%</span>

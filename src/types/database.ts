@@ -13,6 +13,12 @@ export interface Profile {
   streak_days: number;
   last_active_date: string | null;
   is_active: boolean;
+  /** Public-profile fields (see migration 20260926140000). */
+  linkedin_url: string | null;
+  github_url: string | null;
+  resume_url: string | null;
+  profile_public: boolean;
+  profile_slug: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -247,6 +253,40 @@ export interface LessonBookmark {
   student_id: string;
   lesson_id: string;
   created_at: string;
+}
+
+/** Browser mini project (coding_vscode_assignments). `concepts` are the
+ *  faculty-confirmed tags describing what the project requires — the AI only
+ *  suggests them. `prerequisite_mode` gates the project behind course progress. */
+export interface CodingVscodeAssignment {
+  id: string;
+  assignment_key: string;
+  title: string;
+  topic: string | null;
+  question: string;
+  language: string;
+  file_name: string | null;
+  starter_code: string | null;
+  marks: number;
+  concepts: string[];
+  prerequisite_mode: 'none' | 'all_course_items';
+  is_published: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One "Project" step in the course sidebar (get_course_project_steps RPC). */
+export interface CourseProjectStep {
+  kind: 'mini' | 'project';
+  ref_id: string;
+  title: string;
+  meta: string;
+  concepts: string[];
+  state: 'todo' | 'in_review' | 'completed';
+  unlocked: boolean;
+  reason: string;
+  remaining: number;
 }
 
 export interface Assignment {

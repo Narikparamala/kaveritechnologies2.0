@@ -1,39 +1,46 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronLeft, CheckCircle, BookOpen, Video, FileText, Code,
-  ExternalLink, ChevronDown, Lightbulb, Eye, EyeOff, Play, Clock, Zap,
-  Bookmark, BookmarkCheck, Loader2, Award, ClipboardList, HelpCircle,
+  ExternalLink, ChevronDown, Lightbulb, Play, Clock, Zap,
+  Bookmark, BookmarkCheck, Loader2, Award, ClipboardList,
   PanelLeftOpen, PanelRightOpen, Copy, Terminal, Lock,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useWorkspace } from './WorkspaceContext';
+import { chapterStepCounts, useWorkspace } from './WorkspaceContext';
+import { AnimatedCheck, CelebrationBurst } from '../../../components/motion';
+import { EmptyState } from '../../../components/ui/EmptyState';
 import { VideoEmbed } from './VideoEmbed';
 import { DeliveryBanner } from './DeliveryBanner';
 import { SecureResourceCard } from './SecureResourceCard';
+// Practice/quizzes render as dedicated flow steps between lessons — the
+// LessonPracticePage and the quiz runner handle them, not this page.
 
 export function LessonContent() {
   const navigate = useNavigate();
   const ws = useWorkspace();
   const {
-    currentLesson, currentChapter, course, resources, topics, practiceQuestions,
-    lessonQuizzes, lessonAssignments, lessonSessions, lessonLoading,
+    currentLesson, currentChapter, course, resources, topics,
+    lessonAssignments, lessonSessions, lessonLoading,
     goToNextLesson, goToPrevLesson, markComplete, toggleStudentBookmark,
     currentLessonIndex, totalLessons, sidebarCollapsed, rightPanelCollapsed,
     toggleSidebar, toggleRightPanel, progress, isBookmarked, accessMap,
+    lessonQuizzes, lessonCodingSteps,
   } = ws;
 
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
-  const [expandedHints, setExpandedHints] = useState<Set<string>>(new Set());
-  const [showSolutions, setShowSolutions] = useState<Set<string>>(new Set());
   const [markingComplete, setMarkingComplete] = useState(false);
+  const [celebrate, setCelebrate] = useState<{ title: string; message: string } | null>(null);
+  const celebrateTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+  }, []);
 
   useEffect(() => {
     if (currentLesson) {
       setExpandedTopics(new Set());
-      setExpandedHints(new Set());
-      setShowSolutions(new Set());
     }
   }, [currentLesson?.id]);
 
@@ -47,7 +54,19 @@ export function LessonContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [goToNextLesson, goToPrevLesson]);
 
-  if (!currentLesson || !course) return null;
+  if (!course) return null;
+  if (!currentLesson) {
+    return (
+      <div className="flex items-center justify-center h-full px-6">
+        <EmptyState
+          icon={Terminal}
+          mascot
+          title="Choose your next challenge"
+          description="Your learning journey continues here — pick a lesson from the sidebar and keep going."
+        />
+      </div>
+    );
+  }
 
   const accessInfo = accessMap.get(currentLesson.id);
   const isLocked = accessInfo?.access === 'locked';
@@ -81,7 +100,28 @@ export function LessonContent() {
 
   async function handleMarkComplete() {
     setMarkingComplete(true);
-    try { await markComplete(); } finally { setMarkingComplete(false); }
+    try {
+      // "Was this lesson the last unfinished item in its chapter?" — computed
+      // from the pre-mark counts, because marking completes exactly one item.
+      const lesson = currentLesson;
+      if (!lesson) return;
+      const chapter = ws.chapters.find(c => c.id === lesson.chapter_id);
+      const countsBefore = chapter
+        ? chapterStepCounts(chapter, ws.lessonQuizSteps, ws.lessonCodingSteps, ws.lessonAssignmentSteps, ws.chapterQuizSteps, ws.chapterCodingSteps, ws.progress)
+        : null;
+      const finishesChapter = countsBefore !== null && countsBefore.total > 0 && countsBefore.done + 1 === countsBefore.total;
+
+      await markComplete();
+
+      // Short celebratory confirmation (~1.5s, decorative, never blocks clicks).
+      setCelebrate(finishesChapter
+        ? { title: 'Chapter complete!', message: `Every item in "${currentChapter?.title ?? 'this chapter'}" is done. Your next chapter is ready.` }
+        : { title: 'Lesson complete!', message: 'Nice work — your next step is ready in the sidebar.' });
+      if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+      celebrateTimer.current = window.setTimeout(() => setCelebrate(null), 1600);
+    } finally {
+      setMarkingComplete(false);
+    }
   }
 
   const sections = [
@@ -92,8 +132,8 @@ export function LessonContent() {
     notes.length > 0 && 'materials',
     (currentLesson.code_example || codeExamples.length > 0) && 'code',
     topics.length > 0 && 'topics',
-    practiceQuestions.length > 0 && 'practice',
-    lessonQuizzes.length > 0 && 'quizzes',
+    // Practice and quizzes deliberately NOT on the lesson page: they are
+    // separate flow steps (lesson -> quiz -> coding practice -> next lesson).
     lessonAssignments.length > 0 && 'assignments',
   ].filter(Boolean) as string[];
 
@@ -324,69 +364,29 @@ export function LessonContent() {
             </Section>
           )}
 
-          {/* Practice Questions */}
-          {practiceQuestions.length > 0 && (
-            <Section id="practice" title="Practice Questions" icon={HelpCircle}>
-              <div className="space-y-4">
-                {practiceQuestions.map((q, i) => (
-                  <div key={q.id} className="card p-5">
-                    <div className="flex items-start gap-3 mb-3">
-                      <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-600 text-xs font-bold flex items-center justify-center flex-shrink-0">Q{i + 1}</span>
-                      <p className="text-sm text-slate-900 dark:text-white font-medium leading-relaxed">{q.question_text}</p>
-                    </div>
-                    {q.hint && (
-                      <button
-                        onClick={() => setExpandedHints(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n; })}
-                        className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 mb-2 ml-9"
-                      >
-                        <Lightbulb size={11} /> {expandedHints.has(q.id) ? 'Hide Hint' : 'Show Hint'}
-                      </button>
-                    )}
-                    {expandedHints.has(q.id) && q.hint && (
-                      <div className="ml-9 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-lg text-xs text-amber-700 dark:text-amber-400 mb-2">{q.hint}</div>
-                    )}
-                    {q.expected_output && (
-                      <div className="ml-9 mt-2">
-                        <p className="text-xs text-slate-400 mb-1">Expected Output:</p>
-                        <pre className="bg-slate-900 text-emerald-400 text-xs p-3 rounded-lg font-mono">{q.expected_output}</pre>
-                      </div>
-                    )}
-                    {q.show_solution && q.sample_solution && (
-                      <div className="ml-9 mt-3">
-                        <button
-                          onClick={() => setShowSolutions(prev => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n; })}
-                          className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1"
-                        >
-                          {showSolutions.has(q.id) ? <EyeOff size={11} /> : <Eye size={11} />}
-                          {showSolutions.has(q.id) ? 'Hide Solution' : 'View Solution'}
-                        </button>
-                        {showSolutions.has(q.id) && (
-                          <pre className="bg-slate-900 text-slate-100 text-xs p-3 rounded-lg font-mono mt-2 overflow-x-auto">{q.sample_solution}</pre>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Quizzes */}
-          {lessonQuizzes.length > 0 && (
-            <Section id="quizzes" title="Lesson Quizzes" icon={Award}>
-              {lessonQuizzes.map(q => (
-                <div key={q.id} className="card p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
-                    <Award size={18} className="text-amber-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{q.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Pass: {q.pass_percentage}% | +{q.xp_reward} XP</p>
-                  </div>
-                  <button onClick={() => navigate(`/student/quizzes?returnTo=/student/course/${course.id}`)} className="btn-secondary text-xs py-1.5 px-3">Take Quiz</button>
-                </div>
-              ))}
-            </Section>
+          {/* Per-lesson coding practice + quiz steps: NOT rendered inline on
+              the lesson page. They are separate flow steps between lessons —
+              see the sidebar (Lesson -> Quiz -> Coding Practice -> next lesson)
+              and the dedicated practice pages. */}
+          {(lessonQuizzes.length > 0 || (lessonCodingSteps.get(currentLesson.id) ?? []).length > 0) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {lessonQuizzes.length > 0 && (
+                <Link
+                  to={`/student/quizzes?quizId=${lessonQuizzes[0].id}&returnTo=${encodeURIComponent(`/student/course/${course.id}`)}`}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  <Award size={14} /> Take the quiz for this lesson
+                </Link>
+              )}
+              {(lessonCodingSteps.get(currentLesson.id) ?? []).length > 0 && (
+                <Link
+                  to={`/student/course/${course.id}/lesson-practice/${currentLesson.id}`}
+                  className="btn-primary flex items-center gap-2 text-sm"
+                >
+                  <Terminal size={14} /> Practice coding →
+                </Link>
+              )}
+            </div>
           )}
 
           {/* Assignments */}
@@ -439,12 +439,26 @@ export function LessonContent() {
           <button
             onClick={goToNextLesson}
             disabled={currentLessonIndex >= totalLessons - 1}
-            className="btn-primary text-sm py-2 px-4 flex items-center gap-1.5 disabled:opacity-40"
+            className="btn-primary text-sm py-2 px-4 flex items-center gap-1.5 disabled:opacity-40 group"
           >
-            Next <ChevronRight size={14} />
+            Next <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
           </button>
         </div>
       </div>
+
+      {/* Completion celebration — decorative overlay, clicks pass through. */}
+      {celebrate && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-40 flex justify-center px-4" role="status" aria-live="polite">
+          <div className="relative flex items-center gap-3 rounded-2xl border border-emerald-200 bg-white/95 px-5 py-3 shadow-xl dark:border-emerald-800 dark:bg-slate-900/95">
+            <CelebrationBurst show />
+            <AnimatedCheck size={22} className="text-emerald-500" />
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">{celebrate.title}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{celebrate.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

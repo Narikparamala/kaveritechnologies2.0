@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload
+  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -15,8 +15,9 @@ const NAV_ITEMS = [
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
   { label: 'Question Bank', icon: HelpCircle, to: '/question-bank' },
   { label: 'Content Import', icon: Upload, to: '/content-import' },
-  { label: 'Submissions', icon: MessageSquare, to: '/submissions' },
+  { label: 'Assignment Submissions', icon: FileText, to: '/submissions' },
   { label: 'Coding Submissions', icon: Code2, to: '/coding-submissions' },
+  { label: 'Mini Projects', icon: Puzzle, to: '/mini-projects' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
   { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
