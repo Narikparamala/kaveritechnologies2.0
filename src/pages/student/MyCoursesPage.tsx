@@ -87,15 +87,13 @@ export default function MyCoursesPage() {
             const pct = Math.round(progress_percentage ?? 0);
             return (
               <StaggerItem key={id} className="card-hover overflow-hidden flex flex-col">
-                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden p-5">
+                <div className="aspect-video bg-gradient-to-br from-primary-600 to-primary-800 flex items-center justify-center relative overflow-hidden">
                   {course.thumbnail_url ? (
-                    // The plate hugs the image and is capped well below the
-                    // tile size: wide white-background logo images (e.g. the
-                    // Python logo) otherwise render as a giant white slab on
-                    // the card. Small framed chip on the gradient instead.
-                    <div className="flex max-h-[58%] max-w-[70%] items-center justify-center overflow-hidden rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-900/10">
-                      <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="max-h-full max-w-full object-contain" />
-                    </div>
+                    // Full-bleed cover: covers uploaded through the faculty
+                    // crop tool are pre-framed to this exact 16:9 aspect, so
+                    // the image fills the card with no white slabs or
+                    // letterboxing. Legacy logos center-crop until re-uploaded.
+                    <img src={course.thumbnail_url} alt={course.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
                   ) : (
                   <BookOpen size={40} className="text-white/20" />
                   )}
