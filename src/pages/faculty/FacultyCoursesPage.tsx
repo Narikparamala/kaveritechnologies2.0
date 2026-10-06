@@ -10,6 +10,7 @@ import { getDifficultyColor, slugify } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { createCourse } from '../../services/faculty';
+import ThumbnailUploadField from '../../components/common/ThumbnailUploadField';
 import type { Course } from '../../types/database';
 
 function CourseThumbnail({ src, alt }: { src?: string | null; alt: string }) {
@@ -239,11 +240,7 @@ export default function FacultyCoursesPage() {
             {slugError && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={11} />{slugError}</p>}
             <p className="text-xs text-slate-400 mt-1">Used in the course URL. Auto-generated from title.</p>
           </div>
-          <div>
-            <label className="label">Cover Image URL</label>
-            <input className="input" placeholder="https://images.pexels.com/..." value={form.thumbnail_url} onChange={e => setForm(f => ({ ...f, thumbnail_url: e.target.value }))} />
-            <p className="text-xs text-slate-400 mt-1">Paste an external image URL. File upload requires storage configuration.</p>
-          </div>
+          <ThumbnailUploadField value={form.thumbnail_url} onChange={url => setForm(f => ({ ...f, thumbnail_url: url }))} />
           <div>
             <label className="label">Short Description</label>
             <input className="input" placeholder="Brief description for course cards..." value={form.short_description} onChange={e => setForm(f => ({ ...f, short_description: e.target.value }))} />

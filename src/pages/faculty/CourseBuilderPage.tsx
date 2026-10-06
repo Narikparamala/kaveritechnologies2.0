@@ -20,6 +20,7 @@ import {
   getLessonCodingQuestions, getBankQuestionsNotInLesson,
 } from '../../services/faculty';
 import LessonEditorTabs from './LessonEditorTabs';
+import ThumbnailUploadField from '../../components/common/ThumbnailUploadField';
 import QuizQuestionsManager from '../../components/faculty/QuizQuestionsManager';
 import type { Course, Chapter, Lesson, Quiz, TeachingMode } from '../../types/database';
 
@@ -761,11 +762,7 @@ export default function CourseBuilderPage() {
             <label className="label">Course Title</label>
             <input className="input" value={courseForm.title} onChange={e => setCourseForm(f => ({ ...f, title: e.target.value }))} />
           </div>
-          <div>
-            <label className="label">Cover Image URL</label>
-            <input className="input" placeholder="https://..." value={courseForm.thumbnail_url} onChange={e => setCourseForm(f => ({ ...f, thumbnail_url: e.target.value }))} />
-            <p className="text-xs text-slate-400 mt-1">Paste an external image URL. File upload requires storage configuration.</p>
-          </div>
+          <ThumbnailUploadField value={courseForm.thumbnail_url} onChange={url => setCourseForm(f => ({ ...f, thumbnail_url: url }))} />
           <div>
             <label className="label">Short Description (card)</label>
             <input className="input" placeholder="Brief description for course cards..." value={courseForm.short_description} onChange={e => setCourseForm(f => ({ ...f, short_description: e.target.value }))} />

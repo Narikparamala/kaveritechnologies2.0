@@ -81,6 +81,10 @@ function WorkspaceShell() {
         </button>
         <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 hidden lg:block" />
 
+        {/* No course title here on purpose: the sidebar header already shows
+            the course name and cover, and a second copy in the topbar was
+            redundant clutter (user request). */}
+
         {/* Desktop: toggle buttons when panels are collapsed */}
         <div className="hidden lg:flex items-center gap-1">
           {sidebarCollapsed && (
@@ -90,14 +94,7 @@ function WorkspaceShell() {
           )}
         </div>
 
-        <div className="flex flex-1 min-w-0 items-center gap-2">
-          {course.thumbnail_url && (
-            // Contained (not cropped) so white-background logos read cleanly
-            // at this tiny size, inline beside the title.
-            <img src={course.thumbnail_url} alt="" className="h-6 w-6 rounded bg-white object-contain p-px ring-1 ring-slate-900/10 flex-shrink-0" />
-          )}
-          <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{course.title}</h1>
-        </div>
+        <div className="flex-1" />
 
         <div className="hidden lg:flex items-center gap-1">
           {rightPanelCollapsed && (
