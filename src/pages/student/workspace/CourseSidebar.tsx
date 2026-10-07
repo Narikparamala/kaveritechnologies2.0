@@ -2,23 +2,16 @@ import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronRight, CheckCircle, Circle, Clock, Zap, PanelLeftClose, Lock, HelpCircle,
-  TerminalSquare, ClipboardList, Puzzle, FolderKanban, Rocket,
+  TerminalSquare, ClipboardList,
 } from 'lucide-react';
 import { chapterStepCounts, useWorkspace } from './WorkspaceContext';
-import { AnimatedCheck, CelebrationBurst, Collapsible, PopIn, PulseDot, LessonTypeIcon } from '../../../components/motion';
-import type { CourseProjectStep } from '../../../types/database';
-
-function projectStepState(step: CourseProjectStep) {
-  if (step.state === 'completed') return 'completed' as const;
-  if (step.state === 'in_review') return 'in_review' as const;
-  return 'todo' as const;
-}
+import { Collapsible, PopIn, PulseDot, LessonTypeIcon } from '../../../components/motion';
 
 export function CourseSidebar() {
   const {
     course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps,
-    lessonAssignmentSteps, projectSteps, currentLesson, accessMap, progress, courseProgress,
-    selectLesson, toggleSidebar, sidebarCollapsed, unlockParty,
+    lessonAssignmentSteps, currentLesson, accessMap, progress, courseProgress,
+    selectLesson, toggleSidebar, sidebarCollapsed,
   } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
     if (!currentLesson) return new Set();
@@ -62,12 +55,6 @@ export function CourseSidebar() {
             <PanelLeftClose size={16} />
           </button>
         </div>
-        {course.thumbnail_url && (
-          // Full-bleed cover strip: covers uploaded through the faculty crop
-          // tool are pre-framed to 16:9, so this fills cleanly with no white
-          // letterbox bands around logo images.
-          <img src={course.thumbnail_url} alt="" className="mb-3 h-24 w-full rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700" />
-        )}
         {course.short_description && (
           <p className="text-[11px] text-slate-400 mb-2 line-clamp-2">{course.short_description}</p>
         )}
@@ -295,91 +282,6 @@ export function CourseSidebar() {
           );
         })}
 
-        {/* Projects — the end of the journey. Mini projects released to this
-            student's batch and faculty-built course projects, with the gate
-            faculty set: locked steps show why and how much is left. */}
-        {projectSteps.length > 0 && (() => {
-          const remaining = projectSteps.reduce((max, s) => (!s.unlocked && s.remaining > max ? s.remaining : max), 0);
-          const completed = projectSteps.filter(s => s.state === 'completed').length;
-          return (
-            <div className="relative mt-2 border-t border-slate-100 dark:border-slate-800 pt-1 pb-3">
-              {/* Unlock celebration — floats over the section, never blocks clicks. */}
-              {unlockParty && (
-                <PopIn className="pointer-events-none absolute bottom-full left-3 right-3 z-50 mb-1 block">
-                  <div className="relative flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50/95 p-2.5 shadow-lg dark:border-emerald-700 dark:bg-emerald-950/95">
-                    <CelebrationBurst show />
-                    <AnimatedCheck size={16} className="mt-0.5 flex-shrink-0 text-emerald-500" />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-bold text-emerald-800 dark:text-emerald-200">
-                        🎉 {unlockParty.titles.length === 1 ? 'Project unlocked!' : `${unlockParty.titles.length} projects unlocked!`}
-                      </p>
-                      <p className="truncate text-[10px] text-emerald-700 dark:text-emerald-300">{unlockParty.titles.join(' · ')}</p>
-                    </div>
-                  </div>
-                </PopIn>
-              )}
-              <div className="flex items-center gap-2 px-4 py-2">
-                <Rocket size={13} className="text-primary-500 flex-shrink-0" />
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Projects</p>
-                <span className="text-[10px] text-slate-400">{completed}/{projectSteps.length} done</span>
-              </div>
-              {remaining > 0 && (
-                <p className="px-4 pb-1 text-[10px] text-amber-600 dark:text-amber-400">
-                  Complete {remaining} more course item{remaining === 1 ? '' : 's'} to unlock gated projects
-                </p>
-              )}
-              {projectSteps.map(step => {
-                const locked = !step.unlocked;
-                const state = projectStepState(step);
-                const Icon = step.kind === 'mini' ? Puzzle : FolderKanban;
-                const rowClass = `w-full text-left pl-9 pr-3 py-2 flex items-start gap-2.5 border-l-2 border-transparent transition-all ${
-                  locked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`;
-                const row = (
-                  <>
-                    <div className="flex-shrink-0 pt-0.5">
-                      {state === 'completed' ? (
-                        <PopIn><CheckCircle size={14} className="text-emerald-500" /></PopIn>
-                      ) : state === 'in_review' ? (
-                        <Clock size={14} className="text-amber-500" />
-                      ) : locked ? (
-                        <Lock size={14} className="text-amber-500" />
-                      ) : (
-                        <Icon size={14} className="text-primary-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs leading-relaxed truncate ${locked ? 'text-slate-400 dark:text-slate-500' : 'text-slate-600 dark:text-slate-400'}`}>{step.title}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-[9px] uppercase tracking-wide text-slate-400">
-                          {step.kind === 'mini' ? 'Mini project' : 'Project'}
-                          {step.meta ? ` · ${step.meta}` : ''}
-                          {state === 'in_review' ? ' · in review' : state === 'completed' ? ' · completed' : ''}
-                        </span>
-                        {(step.concepts ?? []).slice(0, 3).map(c => (
-                          <span key={c} className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-px text-[9px] font-medium text-slate-500 dark:text-slate-400">{c}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                );
-                return locked ? (
-                  <div key={`${step.kind}-${step.ref_id}`} className={rowClass} title={step.reason || 'Locked'}>
-                    {row}
-                  </div>
-                ) : (
-                  <Link
-                    key={`${step.kind}-${step.ref_id}`}
-                    to={step.kind === 'mini' ? `/student/mini-projects/${step.ref_id}` : `/student/projects/${step.ref_id}/workspace`}
-                    className={rowClass}
-                  >
-                    {row}
-                  </Link>
-                );
-              })}
-            </div>
-          );
-        })()}
       </div>
     </div>
   );
