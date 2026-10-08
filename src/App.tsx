@@ -88,6 +88,7 @@ const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPa
 const FacultyProjectBuilderPage = lazy(() => import('./pages/faculty/FacultyProjectBuilderPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
 const FacultyBatchesPage = lazy(() => import('./pages/faculty/FacultyBatchesPage'));
+const FacultyTimetablePage = lazy(() => import('./pages/faculty/FacultyTimetablePage'));
 const FacultyCalendarPage = lazy(() => import('./pages/faculty/FacultyCalendarPage'));
 const FacultyNotificationsPage = lazy(() => import('./pages/faculty/FacultyNotificationsPage'));
 const FacultyProfilePage = lazy(() => import('./pages/faculty/FacultyProfilePage'));
@@ -291,6 +292,7 @@ export default function App() {
                     <Route path="live-classes/:sessionId/edit" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/attendance" element={<FacultySessionAttendancePage />} />
                     <Route path="batches" element={<FacultyBatchesPage />} />
+                    <Route path="timetable" element={<FacultyTimetablePage />} />
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />

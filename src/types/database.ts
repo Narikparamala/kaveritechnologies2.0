@@ -656,6 +656,10 @@ export interface LiveSession {
   course_id: string;
   chapter_id: string | null;
   lesson_id: string | null;
+  /** Null = course-wide (visible to all enrolled); set = visible to that batch only. */
+  batch_id: string | null;
+  /** When true, marking a student 'attended' auto-releases the lesson to them. */
+  unlocks_lesson: boolean;
   title: string;
   description: string | null;
   session_date: string;

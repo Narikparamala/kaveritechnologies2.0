@@ -7,6 +7,7 @@ import { WorkspaceProvider, useWorkspace } from './WorkspaceContext';
 import { CourseSidebar } from './CourseSidebar';
 import { LessonContent } from './LessonContent';
 import { RightPanel } from './RightPanel';
+import { NextClassBanner } from './NextClassBanner';
 
 export default function CourseWorkspace() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -112,6 +113,9 @@ function WorkspaceShell() {
           <Menu size={18} />
         </button>
       </header>
+
+      {/* Next live class (batch session) — join + auto attendance */}
+      <NextClassBanner courseId={course.id} />
 
       {/* Desktop 3-panel layout */}
       <div className="flex-1 hidden lg:flex overflow-hidden">

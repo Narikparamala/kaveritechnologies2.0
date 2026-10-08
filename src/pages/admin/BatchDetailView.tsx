@@ -15,6 +15,14 @@ import type {
 } from '../../types/database';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Morning (< 12:00), afternoon (12:00–17:00) or evening (>= 17:00) shift from a slot's start time. */
+function shiftOf(startTime: string): { label: string; className: string } {
+  const hour = parseInt(startTime.split(':')[0] ?? '0', 10) || 0;
+  if (hour < 12) return { label: 'Morning', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' };
+  if (hour < 17) return { label: 'Afternoon', className: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300' };
+  return { label: 'Evening', className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300' };
+}
 const TABS = [
   { key: 'students', label: 'Students', icon: GraduationCap },
   { key: 'faculty', label: 'Faculty', icon: UserPlus },
@@ -347,7 +355,10 @@ export default function BatchDetailView({ batchId, onBack }: Props) {
                     <Clock size={18} className="text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{DAYS[s.day_of_week]}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">{DAYS[s.day_of_week]}</p>
+                      <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full font-semibold ${shiftOf(s.start_time).className}`}>{shiftOf(s.start_time).label}</span>
+                    </div>
                     <p className="text-xs text-slate-500">{s.start_time} - {s.end_time}</p>
                     {s.topic && <p className="text-xs text-slate-400 truncate mt-0.5">{s.topic}</p>}
                   </div>

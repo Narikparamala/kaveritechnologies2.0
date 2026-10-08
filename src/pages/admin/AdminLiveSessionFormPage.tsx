@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Video, Calendar, Clock, Link, Save, Loader2, HelpCircle, ExternalLink } from 'lucide-react';
+import { Video, Calendar, Clock, Link, Save, Loader2, HelpCircle, ExternalLink, Users } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -21,9 +21,13 @@ export default function AdminLiveSessionFormPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<{ id: string; name: string }[]>([]);
+  const [lessons, setLessons] = useState<{ id: string; title: string }[]>([]);
 
   const [form, setForm] = useState({
     course_id: '',
+    batch_id: '',
+    lesson_id: '',
     title: '',
     description: '',
     session_date: '',
@@ -33,6 +37,7 @@ export default function AdminLiveSessionFormPage() {
     preparation_notes: '',
     slides_unlocked: false,
     materials_unlocked: false,
+    unlocks_lesson: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,6 +54,20 @@ export default function AdminLiveSessionFormPage() {
     setCourses((data || []) as Course[]);
   };
 
+  // Batch and lesson options follow the chosen course. Clearing the picked
+  // batch/lesson happens in the course select's onChange (not here), so an
+  // edit-mode load can set course + batch + lesson together without the
+  // option-loading effect wiping them back out.
+  useEffect(() => {
+    if (!form.course_id) { setBatches([]); setLessons([]); return; }
+    let cancelled = false;
+    supabase.from('batches').select('id, name').eq('course_id', form.course_id).order('name')
+      .then(({ data }) => { if (!cancelled) setBatches(data ?? []); });
+    supabase.from('lessons').select('id, title').eq('course_id', form.course_id).eq('is_published', true).order('order_index')
+      .then(({ data }) => { if (!cancelled) setLessons(data ?? []); });
+    return () => { cancelled = true; };
+  }, [form.course_id]);
+
   const loadSession = async () => {
     setLoading(true);
     try {
@@ -58,6 +77,8 @@ export default function AdminLiveSessionFormPage() {
         const sessionDate = new Date(session.session_date);
         setForm({
           course_id: session.course_id,
+          batch_id: (session as any).batch_id || '',
+          lesson_id: session.lesson_id || '',
           title: session.title,
           description: session.description || '',
           session_date: sessionDate.toISOString().split('T')[0],
@@ -67,6 +88,7 @@ export default function AdminLiveSessionFormPage() {
           preparation_notes: session.preparation_notes || '',
           slides_unlocked: session.slides_unlocked,
           materials_unlocked: session.materials_unlocked,
+          unlocks_lesson: (session as any).unlocks_lesson ?? false,
         });
       }
     } catch (err) {
@@ -98,6 +120,9 @@ export default function AdminLiveSessionFormPage() {
       const sessionDateTime = new Date(`${form.session_date}T${form.session_time}`);
       const input = {
         course_id: form.course_id,
+        batch_id: form.batch_id || null,
+        lesson_id: form.lesson_id || null,
+        unlocks_lesson: form.unlocks_lesson,
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         session_date: sessionDateTime.toISOString(),
@@ -144,7 +169,7 @@ export default function AdminLiveSessionFormPage() {
               <select
                 className={`input-field ${errors.course_id ? 'border-red-500' : ''}`}
                 value={form.course_id}
-                onChange={e => setForm(f => ({ ...f, course_id: e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, course_id: e.target.value, batch_id: '', lesson_id: '' }))}
               >
                 <option value="">Select course</option>
                 {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
@@ -208,6 +233,56 @@ export default function AdminLiveSessionFormPage() {
                 {[30, 45, 60, 75, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
               </select>
             </div>
+          </div>
+        </div>
+
+        <div className="card p-6">
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Users size={18} className="text-primary-600" />
+            Batch &amp; Lesson Unlock
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Batch</label>
+              <select
+                className="input-field"
+                value={form.batch_id}
+                onChange={e => setForm(f => ({ ...f, batch_id: e.target.value }))}
+              >
+                <option value="">Whole course (all enrolled students)</option>
+                {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                {form.batch_id
+                  ? 'Only students of this batch see and can join this class — that is their registration.'
+                  : 'Every actively enrolled student of the course sees this class.'}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Lesson</label>
+              <select
+                className="input-field"
+                value={form.lesson_id}
+                onChange={e => setForm(f => ({ ...f, lesson_id: e.target.value }))}
+              >
+                <option value="">No lesson (standalone class)</option>
+                {lessons.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+              </select>
+            </div>
+            {form.lesson_id && (
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.unlocks_lesson}
+                  onChange={e => setForm(f => ({ ...f, unlocks_lesson: e.target.checked }))}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">
+                  Attending this class unlocks the lesson
+                  <span className="block text-xs text-slate-400">Students marked present get the lesson released automatically; you can release to absentees later.</span>
+                </span>
+              </label>
+            )}
           </div>
         </div>
 
