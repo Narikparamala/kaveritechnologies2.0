@@ -145,6 +145,8 @@ export interface LessonActivity {
   session_id?: string;
   quiz_id?: string;
   assignment_id?: string;
+  mini_id?: string;
+  marks?: number;
   recording?: string;
   date?: string;
 }
@@ -654,6 +656,10 @@ export interface LiveSession {
   course_id: string;
   chapter_id: string | null;
   lesson_id: string | null;
+  /** Null = course-wide (visible to all enrolled); set = visible to that batch only. */
+  batch_id: string | null;
+  /** When true, marking a student 'attended' auto-releases the lesson to them. */
+  unlocks_lesson: boolean;
   title: string;
   description: string | null;
   session_date: string;
@@ -969,41 +975,4 @@ export interface JobApplication {
   updated_at: string;
   job?: JobPosting;
   student?: Profile;
-}
-
-// Offline Exam types
-export type OfflineExamStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
-export type OfflineExamAttendance = 'registered' | 'present' | 'absent';
-
-export interface OfflineExam {
-  id: string;
-  course_id: string;
-  title: string;
-  description: string | null;
-  exam_date: string;
-  duration_minutes: number;
-  max_marks: number;
-  venue: string | null;
-  status: OfflineExamStatus;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-  // Joined fields
-  course?: Course;
-}
-
-export interface OfflineExamStudent {
-  id: string;
-  exam_id: string;
-  student_id: string;
-  marks_obtained: number | null;
-  scanned_sheet_url: string | null;
-  attendance_status: OfflineExamAttendance;
-  graded_by: string | null;
-  graded_at: string | null;
-  created_at: string;
-  updated_at: string;
-  // Joined fields
-  student?: Profile;
-  exam?: OfflineExam;
 }

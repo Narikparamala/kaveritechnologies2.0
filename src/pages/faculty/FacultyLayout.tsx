@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle
+  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle, CalendarClock
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
+  { label: 'My Timetable', icon: CalendarClock, to: '/timetable' },
 
   { label: 'Lessons', icon: FileText, to: '/lessons' },
   { label: 'Assignments', icon: ClipboardList, to: '/assignments' },
@@ -20,7 +21,6 @@ const NAV_ITEMS = [
   { label: 'Mini Projects', icon: Puzzle, to: '/mini-projects' },
   { label: 'Quizzes', icon: HelpCircle, to: '/quizzes' },
   { label: 'Projects', icon: FolderKanban, to: '/projects' },
-  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
   { label: 'Enrollment Requests', icon: UserPlus, to: '/enrollment-requests' },
   { label: 'My Batches & Work', icon: Users, to: '/batches' },
   { label: 'My Students', icon: Users, to: '/students' },

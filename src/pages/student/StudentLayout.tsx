@@ -20,7 +20,6 @@ const NAV_ITEMS = [
   { label: 'Jobs & Placements', icon: Briefcase, to: '/jobs' },
   { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
   { label: 'Certificates', icon: Award, to: '/certificates' },
-  { label: 'Offline Exams', icon: FileText, to: '/offline-exams' },
   { label: 'Downloads', icon: Download, to: '/downloads' },
   { label: 'Calendar', icon: Calendar, to: '/calendar' },
   { label: 'Notes & Bookmarks', icon: BookMarked, to: '/notes' },

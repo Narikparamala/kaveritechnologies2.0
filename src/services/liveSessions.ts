@@ -13,7 +13,10 @@ export interface SessionWithDetails extends Omit<LiveSession, 'course' | 'facult
 export interface CreateSessionInput {
   course_id: string;
   chapter_id?: string;
-  lesson_id?: string;
+  lesson_id?: string | null;
+  /** Null = course-wide session; set = visible to (and joinable by) that batch only. */
+  batch_id?: string | null;
+  unlocks_lesson?: boolean;
   title: string;
   description?: string;
   session_date: string;
@@ -31,6 +34,9 @@ export interface UpdateSessionInput {
   status?: 'scheduled' | 'live' | 'completed' | 'cancelled';
   slides_unlocked?: boolean;
   materials_unlocked?: boolean;
+  batch_id?: string | null;
+  lesson_id?: string | null;
+  unlocks_lesson?: boolean;
   preparation_notes?: string;
 }
 

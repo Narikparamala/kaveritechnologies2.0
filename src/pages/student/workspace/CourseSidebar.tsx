@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronRight, CheckCircle, Circle, Clock, Zap, PanelLeftClose, Lock, HelpCircle,
-  TerminalSquare, ClipboardList,
+  TerminalSquare, ClipboardList, Puzzle,
 } from 'lucide-react';
 import { chapterStepCounts, useWorkspace } from './WorkspaceContext';
 import { Collapsible, PopIn, PulseDot, LessonTypeIcon } from '../../../components/motion';
@@ -10,7 +10,7 @@ import { Collapsible, PopIn, PulseDot, LessonTypeIcon } from '../../../component
 export function CourseSidebar() {
   const {
     course, chapters, chapterQuizSteps, chapterCodingSteps, lessonQuizSteps, lessonCodingSteps,
-    lessonAssignmentSteps, currentLesson, accessMap, progress, courseProgress,
+    lessonAssignmentSteps, lessonMiniSteps, currentLesson, accessMap, progress, courseProgress,
     selectLesson, toggleSidebar, sidebarCollapsed,
   } = useWorkspace();
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => {
@@ -29,7 +29,7 @@ export function CourseSidebar() {
     });
   };
 
-  const chapterCounts = chapters.map(ch => chapterStepCounts(ch, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, chapterQuizSteps, chapterCodingSteps, progress));
+  const chapterCounts = chapters.map(ch => chapterStepCounts(ch, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, lessonMiniSteps, chapterQuizSteps, chapterCodingSteps, progress));
   const completedCount = chapterCounts.reduce((sum, c) => sum + c.done, 0);
   const totalCount = chapterCounts.reduce((sum, c) => sum + c.total, 0);
 
@@ -75,7 +75,7 @@ export function CourseSidebar() {
       <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
         {chapters.map(chapter => {
           const isExpanded = expandedChapters.has(chapter.id);
-          const { done: chCompleted, total: chTotal } = chapterStepCounts(chapter, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, chapterQuizSteps, chapterCodingSteps, progress);
+          const { done: chCompleted, total: chTotal } = chapterStepCounts(chapter, lessonQuizSteps, lessonCodingSteps, lessonAssignmentSteps, lessonMiniSteps, chapterQuizSteps, chapterCodingSteps, progress);
           const isCurrentChapter = currentLesson?.chapter_id === chapter.id;
 
           return (
@@ -233,6 +233,31 @@ export function CourseSidebar() {
                               <p className="text-[11px] leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{a.title}</p>
                               <span className="text-[9px] uppercase tracking-wide text-primary-600 dark:text-primary-400">
                                 {submitted ? 'Assignment · submitted' : assignmentLocked ? 'Assignment · locked' : 'Assignment'}
+                              </span>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                      {/* Per-lesson mini project steps — the last step of the
+                          lesson flow (lesson -> quiz -> practice -> assignment
+                          -> mini project). */}
+                      {(lessonMiniSteps.get(lesson.id) ?? []).map(m => {
+                        const miniCompleted = m.state === 'completed';
+                        return (
+                          <Link
+                            key={`lm-${m.id}`}
+                            to={`/student/mini-projects/${m.id}`}
+                            className={`w-full text-left pl-14 pr-3 py-1.5 flex items-center gap-2.5 border-l-2 border-transparent transition-all group ${
+                              isActive ? 'bg-primary-50/60 dark:bg-primary-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <div className="flex-shrink-0">
+                              {miniCompleted ? <CheckCircle size={12} className="text-emerald-500" /> : <Puzzle size={12} className="text-amber-500" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] leading-relaxed truncate text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{m.title}</p>
+                              <span className="text-[9px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                {miniCompleted ? 'Mini Project · completed' : `Mini Project · ${m.marks} marks`}
                               </span>
                             </div>
                           </Link>

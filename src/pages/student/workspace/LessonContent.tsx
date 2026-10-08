@@ -107,7 +107,7 @@ export function LessonContent() {
       if (!lesson) return;
       const chapter = ws.chapters.find(c => c.id === lesson.chapter_id);
       const countsBefore = chapter
-        ? chapterStepCounts(chapter, ws.lessonQuizSteps, ws.lessonCodingSteps, ws.lessonAssignmentSteps, ws.chapterQuizSteps, ws.chapterCodingSteps, ws.progress)
+        ? chapterStepCounts(chapter, ws.lessonQuizSteps, ws.lessonCodingSteps, ws.lessonAssignmentSteps, ws.lessonMiniSteps, ws.chapterQuizSteps, ws.chapterCodingSteps, ws.progress)
         : null;
       const finishesChapter = countsBefore !== null && countsBefore.total > 0 && countsBefore.done + 1 === countsBefore.total;
 

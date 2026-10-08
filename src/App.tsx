@@ -62,7 +62,6 @@ const LiveClassesPage = lazy(() => import('./pages/student/LiveClassesPage'));
 const LiveSessionDetailPage = lazy(() => import('./pages/student/LiveSessionDetailPage'));
 const CourseWorkspace = lazy(() => import('./pages/student/workspace/CourseWorkspace'));
 const JobsPage = lazy(() => import('./pages/student/JobsPage'));
-const StudentOfflineExamsPage = lazy(() => import('./pages/student/StudentOfflineExamsPage'));
 
 // Lazy-loaded faculty pages
 const FacultyDashboard = lazy(() => import('./pages/faculty/FacultyDashboard'));
@@ -77,7 +76,6 @@ const FacultySessionAttendancePage = lazy(() => import('./pages/faculty/FacultyS
 const FacultyStudentsPage = lazy(() => import('./pages/faculty/FacultyStudentsPage'));
 const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStudentDetailPage'));
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
-const FacultyOfflineExamsPage = lazy(() => import('./pages/faculty/FacultyOfflineExamsPage'));
 const FacultySupportRecordsPage = lazy(() => import('./pages/faculty/FacultySupportRecordsPage'));
 const FacultyEnrollmentRequestsPage = lazy(() => import('./pages/faculty/FacultyEnrollmentRequestsPage'));
 const CourseBuilderPage = lazy(() => import('./pages/faculty/CourseBuilderPage'));
@@ -90,6 +88,7 @@ const FacultyProjectsPage = lazy(() => import('./pages/faculty/FacultyProjectsPa
 const FacultyProjectBuilderPage = lazy(() => import('./pages/faculty/FacultyProjectBuilderPage'));
 const FacultyLessonsPage = lazy(() => import('./pages/faculty/FacultyLessonsPage'));
 const FacultyBatchesPage = lazy(() => import('./pages/faculty/FacultyBatchesPage'));
+const FacultyTimetablePage = lazy(() => import('./pages/faculty/FacultyTimetablePage'));
 const FacultyCalendarPage = lazy(() => import('./pages/faculty/FacultyCalendarPage'));
 const FacultyNotificationsPage = lazy(() => import('./pages/faculty/FacultyNotificationsPage'));
 const FacultyProfilePage = lazy(() => import('./pages/faculty/FacultyProfilePage'));
@@ -118,7 +117,6 @@ const AdminEnrollmentPage = lazy(() => import('./pages/admin/AdminEnrollmentPage
 const AdminEnrollmentRequestsPage = lazy(() => import('./pages/admin/AdminEnrollmentRequestsPage'));
 const AdminWorkshopsPage = lazy(() => import('./pages/admin/AdminWorkshopsPage'));
 const AdminStudentDetailPage = lazy(() => import('./pages/admin/AdminStudentDetailPage'));
-const AdminOfflineExamsPage = lazy(() => import('./pages/admin/AdminOfflineExamsPage'));
 const AdminLessonsPage = lazy(() => import('./pages/admin/AdminLessonsPage'));
 const AdminAssignmentsPage = lazy(() => import('./pages/admin/AdminAssignmentsPage'));
 const AdminQuizzesPage = lazy(() => import('./pages/admin/AdminQuizzesPage'));
@@ -272,7 +270,6 @@ export default function App() {
                     <Route path="leaderboard" element={<LeaderboardPage />} />
                     <Route path="certificates" element={<CertificatesPage />} />
                     <Route path="downloads" element={<DownloadsPage />} />
-                    <Route path="offline-exams" element={<StudentOfflineExamsPage />} />
                     <Route path="calendar" element={<CalendarPage />} />
                     <Route path="notes" element={<NotesPage />} />
                     <Route path="notifications" element={<NotificationsPage />} />
@@ -295,6 +292,7 @@ export default function App() {
                     <Route path="live-classes/:sessionId/edit" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/attendance" element={<FacultySessionAttendancePage />} />
                     <Route path="batches" element={<FacultyBatchesPage />} />
+                    <Route path="timetable" element={<FacultyTimetablePage />} />
                     <Route path="students" element={<FacultyStudentsPage />} />
                     <Route path="students/:studentId" element={<FacultyStudentDetailPage />} />
                     <Route path="support-records" element={<FacultySupportRecordsPage />} />
@@ -316,7 +314,6 @@ export default function App() {
                     <Route path="projects/:projectId/builder" element={<FacultyProjectBuilderPage />} />
                     <Route path="mini-projects" element={<MiniProjectManagerPage />} />
                     <Route path="practice/assignments/:assignmentId" element={<AssignmentsPage />} />
-                    <Route path="offline-exams" element={<FacultyOfflineExamsPage />} />
                     <Route path="practice/quizzes" element={<QuizzesPage />} />
                     <Route path="practice/projects" element={<ProjectsPage />} />
                     <Route path="announcements" element={<AnnouncementsPage />} />
@@ -344,7 +341,6 @@ export default function App() {
                     <Route path="enrollments" element={<AdminEnrollmentPage />} />
                     <Route path="enrollments/requests" element={<AdminEnrollmentRequestsPage />} />
                     <Route path="workshops" element={<AdminWorkshopsPage />} />
-                    <Route path="offline-exams" element={<AdminOfflineExamsPage />} />
                     <Route path="payroll" element={<AdminPayrollPage />} />
                     <Route path="performance-reviews" element={<AdminPerformanceReviewsPage />} />
                     <Route path="users" element={<UsersPage />} />

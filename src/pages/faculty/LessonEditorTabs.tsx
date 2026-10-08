@@ -3,7 +3,7 @@ import {
   FileText, ListTree, BookOpen, Code2, HelpCircle, ClipboardList,
   Video, Film, Settings, Plus, Trash2, Edit2, Eye, EyeOff, ArrowUp, ArrowDown,
   ChevronDown, ChevronRight, Check, X, ExternalLink, Lock, Unlock, AlertCircle, Clock,
-  Monitor, Mic,
+  Monitor, Mic, Puzzle,
 } from 'lucide-react';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,7 +22,7 @@ import type { Course, Lesson, LessonTopic, LessonSubtopic, LessonResource, Lesso
 import { FileUpload } from '../../components/ui/FileUpload';
 import { uploadLessonFile, ACCEPTED_FILE_TYPES } from '../../services/fileUpload';
 
-type TabKey = 'overview' | 'notes' | 'topics' | 'materials' | 'delivery' | 'code' | 'practice' | 'quiz' | 'assignment' | 'settings';
+type TabKey = 'overview' | 'notes' | 'topics' | 'materials' | 'delivery' | 'code' | 'practice' | 'quiz' | 'assignment' | 'mini' | 'settings';
 
 interface Props {
   lesson: Lesson;
@@ -52,6 +52,7 @@ function getTabs(mode: string): { key: TabKey; label: string; icon: any }[] {
     { key: 'practice', label: 'Coding Practice', icon: Code2 },
     { key: 'quiz', label: 'Quiz', icon: HelpCircle },
     { key: 'assignment', label: 'Assignment', icon: ClipboardList },
+    { key: 'mini', label: 'Mini Projects', icon: Puzzle },
     { key: 'settings', label: 'Settings', icon: Settings },
   );
   return base;
@@ -133,6 +134,7 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
         {activeTab === 'practice' && <LessonPracticeTab lesson={lesson} course={course} onRefresh={onRefresh} />}
         {activeTab === 'quiz' && <QuizTab lesson={lesson} course={course} />}
         {activeTab === 'assignment' && <AssignmentTab lesson={lesson} course={course} />}
+        {activeTab === 'mini' && <MiniProjectsTab lesson={lesson} course={course} onRefresh={onRefresh} />}
         {activeTab === 'settings' && <SettingsTab lesson={lesson} course={course} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -1389,6 +1391,162 @@ function SettingsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Co
         </div>
       </div>
       {saving && <p className="text-xs text-slate-400">Saving...</p>}
+    </div>
+  );
+}
+
+// ============================================================
+// Mini Projects Tab — lesson-attached mini projects. Same attach
+// pattern as coding questions: the assignment keeps living in the
+// Mini Projects library (batch releases unchanged); attaching here
+// just also slots it into this lesson's student flow, after the
+// lesson's quiz / coding practice / assignment steps.
+// ============================================================
+function MiniProjectsTab({ lesson, course, onRefresh }: { lesson: Lesson; course: Course; onRefresh: () => void }) {
+  const { success, error: toastError } = useToast();
+  const [items, setItems] = useState<{ id: string; title: string; marks: number; is_published: boolean; topic: string; lesson_order_index: number | null }[]>([]);
+  const [library, setLibrary] = useState<{ id: string; title: string; marks: number; topic: string; is_published: boolean }[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [attachedRes, libraryRes] = await Promise.all([
+        supabase
+          .from('coding_vscode_assignments')
+          .select('id, title, marks, is_published, topic, lesson_order_index')
+          .eq('lesson_id', lesson.id)
+          .order('lesson_order_index', { ascending: true, nullsFirst: false }),
+        supabase
+          .from('coding_vscode_assignments')
+          .select('id, title, marks, topic, is_published')
+          .or(`lesson_id.is.null,lesson_id.neq.${lesson.id}`)
+          .order('created_at', { ascending: false })
+          .limit(200),
+      ]);
+      if (attachedRes.error) throw attachedRes.error;
+      if (libraryRes.error) throw libraryRes.error;
+      setItems((attachedRes.data ?? []) as any);
+      setLibrary((libraryRes.data ?? []) as any);
+    } catch (e: any) { toastError('Error', e.message); }
+    setLoading(false);
+  }, [lesson.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+
+  const addToLesson = async (miniId: string) => {
+    setBusy(true);
+    try {
+      const nextOrder = items.length ? Math.max(...items.map(i => i.lesson_order_index ?? 0)) + 1 : 0;
+      const { error } = await supabase.from('coding_vscode_assignments')
+        .update({ lesson_id: lesson.id, lesson_order_index: nextOrder }).eq('id', miniId);
+      if (error) throw error;
+      success('Added to lesson');
+      await load(); onRefresh();
+    } catch (e: any) { toastError('Error', e.message); }
+    setBusy(false);
+  };
+
+  const move = async (item: { id: string; lesson_order_index: number | null }, dir: 'up' | 'down') => {
+    const sorted = [...items].sort((a, b) => (a.lesson_order_index ?? 0) - (b.lesson_order_index ?? 0));
+    const idx = sorted.findIndex(i => i.id === item.id);
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swap = sorted[swapIdx];
+    setBusy(true);
+    try {
+      await supabase.from('coding_vscode_assignments').update({ lesson_order_index: item.lesson_order_index ?? idx }).eq('id', swap.id);
+      await supabase.from('coding_vscode_assignments').update({ lesson_order_index: swap.lesson_order_index ?? swapIdx }).eq('id', item.id);
+      await load();
+    } catch (e: any) { toastError('Error', e.message); }
+    setBusy(false);
+  };
+
+  const togglePublish = async (m: { id: string; is_published: boolean }) => {
+    try {
+      const { error } = await supabase.from('coding_vscode_assignments').update({ is_published: !m.is_published, updated_at: new Date().toISOString() }).eq('id', m.id);
+      if (error) throw error;
+      await load(); onRefresh();
+    } catch (e: any) { toastError('Error', e.message); }
+  };
+
+  const removeFromLesson = async (miniId: string) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('coding_vscode_assignments')
+        .update({ lesson_id: null, lesson_order_index: null }).eq('id', miniId);
+      if (error) throw error;
+      success('Removed from lesson (kept in the Mini Projects library)');
+      await load(); onRefresh();
+    } catch (e: any) { toastError('Error', e.message); }
+    setBusy(false);
+  };
+
+  const filteredLibrary = library.filter(q => !search.trim() || q.title.toLowerCase().includes(search.trim().toLowerCase()) || q.topic.toLowerCase().includes(search.trim().toLowerCase()));
+  const returnParams = `lesson=${lesson.id}&course=${course.id}&returnBuilder=${course.id}`;
+
+  return (
+    <div className="p-6 max-w-3xl space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-slate-900 dark:text-white">Mini projects for this lesson</h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-md">Students see these as steps <b>after</b> this lesson's quiz, coding practice and assignment, and before the next lesson. Batch releases in the Mini Projects library are unaffected.</p>
+        </div>
+        <a href={`/faculty/content-import?tab=mini-ai&${returnParams}`} className="btn-primary text-xs flex items-center gap-1 flex-shrink-0"><Plus size={12} /> New Mini Project</a>
+      </div>
+
+      <section className="card p-4">
+        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">This lesson's mini projects ({items.length})</h4>
+        {loading ? (
+          <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No mini projects yet. Add one from the library below or create a new one.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <button onClick={() => move(item, 'up')} disabled={busy || idx === 0} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowUp size={12} /></button>
+                  <button onClick={() => move(item, 'down')} disabled={busy || idx === items.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20"><ArrowDown size={12} /></button>
+                </div>
+                <span className="text-xs text-slate-400 font-mono flex-shrink-0">{idx + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+                  <p className="text-xs text-slate-400">{item.marks} marks · {item.topic} {item.is_published ? '' : '· DRAFT (hidden from students)'}</p>
+                </div>
+                <button onClick={() => togglePublish(item)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title={item.is_published ? 'Unpublish' : 'Publish'}>
+                  {item.is_published ? <Eye size={13} /> : <EyeOff size={13} />}
+                </button>
+                <a href={`/faculty/mini-projects?focus=${item.id}`} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit in Mini Projects manager"><Edit2 size={13} /></a>
+                <button onClick={() => removeFromLesson(item.id)} disabled={busy} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove from lesson"><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Mini Projects library — pick to add</h4>
+          <input className="input text-xs max-w-52" placeholder="Search mini projects…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        {filteredLibrary.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">No library mini projects match. Create a new one with the button above.</p>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {filteredLibrary.map(m => (
+              <div key={m.id} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{m.title}</p>
+                  <p className="text-xs text-slate-400">{m.marks} marks · {m.topic} {m.is_published ? '' : '· draft'}</p>
+                </div>
+                <button onClick={() => addToLesson(m.id)} disabled={busy} className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 flex-shrink-0"><Plus size={12} /> Add</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
