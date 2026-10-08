@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink, Puzzle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink, Puzzle, ClipboardList } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getSecureJudgeLanguages, securelyRunCustom } from '../../services/secureGrading';
 import { getCourseChapters, getChapterLessonsAll } from '../../services/faculty';
@@ -24,7 +24,7 @@ import {
   type ValidatedQuestion,
 } from '../../lib/contentImport';
 
-type Tab = 'slides' | 'questions' | 'quizzes' | 'lessons' | 'ai' | 'mini-ai';
+type Tab = 'slides' | 'questions' | 'quizzes' | 'lessons' | 'ai' | 'mini-ai' | 'assignments';
 
 const TABS: { id: Tab; label: string; icon: typeof FileText; description: string }[] = [
   { id: 'slides', label: 'Slides → Practice', icon: Wand2, description: 'Paste a lesson\'s slide content — every "Practice time" block becomes a validated coding question, plus an optional MCQ quiz, all attached to the lesson as drafts.' },
@@ -33,6 +33,7 @@ const TABS: { id: Tab; label: string; icon: typeof FileText; description: string
   { id: 'lessons', label: 'Lessons + Slides', icon: Presentation, description: 'One CSV = chapters, lessons, and slide/video materials. Canva links are resolved and embedded automatically.' },
   { id: 'ai', label: 'AI Drafts', icon: Sparkles, description: 'Describe a topic — the AI drafts questions with solutions and tests. Drafts go through the same validation before import; nothing publishes itself.' },
   { id: 'mini-ai', label: 'AI Mini Projects', icon: Puzzle, description: 'Describe a mini project in one line — the AI drafts it with a reference solution and tests, the judge verifies it, and it saves as a draft in Mini Projects for you to review.' },
+  { id: 'assignments', label: 'AI Assignments', icon: ClipboardList, description: 'List your topics — the AI drafts one full coding assignment per topic with solutions and tests, validates every question by executing it, and saves each as a draft for review.' },
 ];
 
 function downloadTemplate(content: string, filename: string) {
@@ -62,6 +63,7 @@ function IssueList({ issues }: { issues: ImportIssue[] }) {
 }
 
 export default function ContentImportPage() {
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('slides');
   const [csv, setCsv] = useState('');
   const [courseId, setCourseId] = useState('');
@@ -95,7 +97,13 @@ export default function ContentImportPage() {
   const [miniBusy, setMiniBusy] = useState(false);
   const [miniVerify, setMiniVerify] = useState<{ done: boolean; pass: number; total: number; results: { input: string; expected: string; actual: string; passed: boolean; status: string }[] } | null>(null);
   const [miniSaving, setMiniSaving] = useState(false);
-  const [miniDone, setMiniDone] = useState<{ id: string; title: string; published: boolean; linkedBatches: number } | null>(null);
+  const [miniDone, setMiniDone] = useState<{ id: string; title: string; published: boolean; linkedBatches: number; lessonAttached: boolean } | null>(null);
+
+  // --- AI Assignments tab state (one topic = one draft assignment) ---
+  const [assignTopics, setAssignTopics] = useState('');
+  const [assignPerTopic, setAssignPerTopic] = useState(3);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [assignDone, setAssignDone] = useState<{ topics: number; assignments: number; questions: number; failedTopics: string[] } | null>(null);
 
   // Slides → Practice state
   const [slidesStage, setSlidesStage] = useState<'pick' | 'generated'>('pick');
@@ -122,6 +130,26 @@ export default function ContentImportPage() {
     });
   }, []);
 
+  // Deep links from the Lesson Builder (e.g. ?tab=mini-ai&course=<id>&lesson=<id>)
+  // preselect the tab, course and lesson so the faculty member lands ready to
+  // generate. The chapter/lesson can't be set directly — the picker effects
+  // below reset them while loading — so the desired values ride in a ref and
+  // are applied after each picker cascade finishes. Runs once on mount.
+  const deepLinkRef = useRef<{ chapterId?: string; lessonId?: string } | null>(null);
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as Tab | null;
+    if (tabParam && TABS.some(t => t.id === tabParam)) setTab(tabParam);
+    const courseParam = searchParams.get('course');
+    const lessonParam = searchParams.get('lesson');
+    if (courseParam) setCourseId(courseParam);
+    if (lessonParam) {
+      // Resolve the lesson's chapter so the chapter picker displays it too.
+      supabase.from('lessons').select('chapter_id').eq('id', lessonParam).maybeSingle()
+        .then(({ data }) => { deepLinkRef.current = { chapterId: data?.chapter_id ?? undefined, lessonId: lessonParam }; });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     supabase
       .from('courses')
@@ -137,7 +165,11 @@ export default function ContentImportPage() {
     if (!courseId) return;
     let cancelled = false;
     getCourseChapters(courseId)
-      .then(chs => { if (!cancelled) setChapters(chs.map(c => ({ id: c.id, title: c.title }))); })
+      .then(chs => {
+        if (cancelled) return;
+        setChapters(chs.map(c => ({ id: c.id, title: c.title })));
+        if (deepLinkRef.current?.chapterId) setChapterId(deepLinkRef.current.chapterId);
+      })
       .catch(() => { if (!cancelled) setChapters([]); });
     return () => { cancelled = true; };
   }, [courseId]);
@@ -147,7 +179,14 @@ export default function ContentImportPage() {
     if (!chapterId) return;
     let cancelled = false;
     getChapterLessonsAll(chapterId)
-      .then(ls => { if (!cancelled) setLessons(ls.map(l => ({ id: l.id, title: l.title, chapter_id: l.chapter_id }))); })
+      .then(ls => {
+        if (cancelled) return;
+        setLessons(ls.map(l => ({ id: l.id, title: l.title, chapter_id: l.chapter_id })));
+        if (deepLinkRef.current?.lessonId) {
+          setLessonId(deepLinkRef.current.lessonId);
+          deepLinkRef.current = null;
+        }
+      })
       .catch(() => { if (!cancelled) setLessons([]); });
     return () => { cancelled = true; };
   }, [chapterId]);
@@ -158,6 +197,7 @@ export default function ContentImportPage() {
     setFatal('');
     setProgressLabel('');
     setSlidesSummary(null);
+    setAssignDone(null);
   }, []);
 
   const isStaff = profile?.role === 'admin' || profile?.role === 'faculty' || profile?.role === 'super_admin';
@@ -487,6 +527,18 @@ export default function ContentImportPage() {
     try {
       const key = miniDraft.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'mini-project';
       const concepts = miniConcepts.split(',').map(c => c.trim()).filter(Boolean).slice(0, 8);
+      // Lesson attach: the order continues after the minis already on this lesson.
+      let lessonOrderId: number | null = null;
+      if (lessonId) {
+        const { data: existing, error: orderError } = await supabase
+          .from('coding_vscode_assignments')
+          .select('lesson_order_index')
+          .eq('lesson_id', lessonId)
+          .order('lesson_order_index', { ascending: false })
+          .limit(1);
+        if (orderError) throw orderError;
+        lessonOrderId = ((existing?.[0]?.lesson_order_index as number | null) ?? 0) + 1;
+      }
       const { data: inserted, error } = await supabase
         .from('coding_vscode_assignments')
         .insert({
@@ -502,6 +554,8 @@ export default function ContentImportPage() {
           prerequisite_mode: miniGate,
           is_published: publish,
           created_by: profile.id,
+          lesson_id: lessonId || null,
+          lesson_order_index: lessonOrderId,
         })
         .select('id')
         .single();
@@ -510,10 +564,10 @@ export default function ContentImportPage() {
         miniDraft.tests.map((t, i) => ({ assignment_id: inserted!.id, input_text: t.input_text, expected_output: t.expected_output, is_hidden: t.is_hidden, position: i + 1 })),
       );
       if (testsError) throw testsError;
-      // Course-link: release to every batch of the chosen course so the project
-      // shows up in that course's sidebar (same rule the manager's bulk link uses).
+      // Course-link via batches only when not lesson-attached — a lesson-attached
+      // mini shows through the lesson flow, and double-linking would render it twice.
       let linkedBatches = 0;
-      if (courseId) {
+      if (courseId && !lessonId) {
         const { data: courseBatches, error: batchError } = await supabase
           .from('batches')
           .select('id')
@@ -528,18 +582,125 @@ export default function ContentImportPage() {
           linkedBatches = links.length;
         }
       }
-      setMiniDone({ id: inserted!.id, title: miniDraft.title, published: publish, linkedBatches });
+      setMiniDone({ id: inserted!.id, title: miniDraft.title, published: publish, linkedBatches, lessonAttached: !!lessonId });
       setMiniDraft(null);
       setMiniVerify(null);
       setMiniPrompt('');
       setMiniConcepts('');
       setMiniGate('none');
+      setLessonId('');
     } catch (e) {
       setFatal(e instanceof Error ? e.message : 'Save failed.');
     } finally {
       setMiniSaving(false);
     }
-  }, [miniDraft, profile, miniConcepts, miniGate, courseId]);
+  }, [miniDraft, profile, miniConcepts, miniGate, courseId, lessonId]);
+
+  // AI Assignments: one topic → one draft assignment with execution-validated questions.
+  const generateAssignments = useCallback(async () => {
+    const topics = assignTopics.split(/[\n,]+/).map(t => t.trim()).filter(Boolean).slice(0, 12);
+    if (!courseId) {
+      setFatal('Pick a course first.');
+      return;
+    }
+    if (topics.length === 0 || !profile) return;
+    setAssignBusy(true);
+    setFatal('');
+    setAssignDone(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Session expired — please sign in again.');
+      const languages = await getSecureJudgeLanguages();
+      const python = languages.find(l => /^Python/i.test(l.name));
+      if (!python) throw new Error('No Python runtime available on the grading runner.');
+
+      let assignments = 0;
+      let questions = 0;
+      const failedTopics: string[] = [];
+
+      for (let i = 0; i < topics.length; i++) {
+        const topic = topics[i];
+        setProgressLabel(`Drafting "${topic}" (${i + 1}/${topics.length})…`);
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ topic, count: assignPerTopic, difficulty: aiDifficulty }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body?.csv) { failedTopics.push(topic); continue; }
+
+        const { rows } = parseQuestionRows(body.csv);
+        if (rows.length === 0) { failedTopics.push(topic); continue; }
+        const validated = await validateQuestionRows(rows, python.id);
+        const okRows = validated.filter(v => v.ok);
+        if (okRows.length === 0) { failedTopics.push(topic); continue; }
+
+        const maxMarks = okRows.reduce((sum, v) => sum + v.row.defaultMarks, 0);
+        const { data: created, error } = await supabase
+          .from('assignments')
+          .insert({
+            course_id: courseId,
+            chapter_id: lessonId ? null : chapterId || null,
+            lesson_id: lessonId || null,
+            title: topic,
+            description: `AI-drafted coding assignment on ${topic} — ${okRows.length} execution-validated question${okRows.length === 1 ? '' : 's'}.`,
+            assignment_type: 'coding',
+            status: 'draft',
+            is_published: false,
+            order_index: 0,
+            max_marks: maxMarks,
+            difficulty: aiDifficulty,
+            created_by: profile.id,
+          })
+          .select('id')
+          .single();
+        if (error || !created) { failedTopics.push(topic); continue; }
+        assignments += 1;
+
+        for (let q = 0; q < okRows.length; q++) {
+          const row = okRows[q].row;
+          const { data: qRow, error: qError } = await supabase
+            .from('assignment_questions')
+            .insert({
+              assignment_id: created.id,
+              title: row.title,
+              problem_statement: row.problemStatement,
+              input_format: row.inputFormat || null,
+              output_format: row.outputFormat || null,
+              starter_code: row.starterCode || null,
+              hints: row.hints,
+              question_type: 'coding',
+              difficulty: row.difficulty,
+              marks: row.defaultMarks,
+              order_index: q + 1,
+            })
+            .select('id')
+            .single();
+          if (qError || !qRow) { failedTopics.push(topic); continue; }
+          questions += 1;
+          const { error: tError } = await supabase.from('assignment_test_cases').insert(
+            row.tests.map((t, ti) => ({
+              assignment_id: created.id,
+              question_id: qRow.id,
+              input_data: t.input || null,
+              expected_output: t.expected,
+              is_hidden: t.hidden,
+              weight: t.weight,
+              order_index: ti + 1,
+            })),
+          );
+          if (tError && !failedTopics.includes(topic)) failedTopics.push(topic);
+        }
+      }
+      setAssignDone({ topics: topics.length, assignments, questions, failedTopics: [...new Set(failedTopics)] });
+      setProgressLabel('');
+    } catch (e) {
+      setFatal(e instanceof Error ? e.message : 'Generation failed.');
+    } finally {
+      setAssignBusy(false);
+    }
+  }, [assignTopics, assignPerTopic, aiDifficulty, courseId, chapterId, lessonId, profile]);
 
   const activeTab = useMemo(() => TABS.find(t => t.id === tab)!, [tab]);
 
@@ -649,6 +810,84 @@ export default function ContentImportPage() {
         </div>
       )}
 
+      {/* AI Assignments panel */}
+      {tab === 'assignments' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/40">
+          <p className="font-semibold text-emerald-900 dark:text-emerald-200">Draft one assignment per topic with AI</p>
+          <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+            List the topics your lesson or chapter covers — one per line or comma separated. The AI drafts a coding
+            assignment for each topic (questions with reference solutions and tests), then every question is
+            <strong> executed and validated</strong> on the secure judge before anything saves. Each topic becomes one
+            draft assignment you review and publish.
+          </p>
+          <textarea
+            value={assignTopics}
+            onChange={e => setAssignTopics(e.target.value)}
+            rows={4}
+            spellCheck={false}
+            placeholder={'e.g.\nfor loops and range()\nfunctions and return values\nlists and slicing'}
+            className="mt-3 w-full rounded-lg border border-emerald-300 bg-white p-3 font-mono text-xs text-slate-900 dark:border-emerald-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+          {courseId && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-emerald-800 dark:text-emerald-300">Chapter (optional)</label>
+                <select value={chapterId} onChange={e => setChapterId(e.target.value)} className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-emerald-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark]">
+                  <option value="">— none (course-level) —</option>
+                  {chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-emerald-800 dark:text-emerald-300">Lesson (optional)</label>
+                <select value={lessonId} onChange={e => setLessonId(e.target.value)} disabled={!chapterId} className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-emerald-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] disabled:opacity-50">
+                  <option value="">— none —</option>
+                  {lessons.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+                </select>
+                <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">Picking a lesson attaches the assignment to that lesson's flow in the student sidebar.</p>
+              </div>
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-emerald-800 dark:text-emerald-300">Questions per topic</label>
+              <select value={assignPerTopic} onChange={e => setAssignPerTopic(Number(e.target.value))} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm dark:border-emerald-700">
+                {[2, 3, 5, 8].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-emerald-800 dark:text-emerald-300">Difficulty</label>
+              <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value as typeof aiDifficulty)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm dark:border-emerald-700">
+                <option value="mixed">Mixed</option>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+            <button
+              onClick={generateAssignments}
+              disabled={assignBusy || !assignTopics.trim() || !courseId}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {assignBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {assignBusy ? 'Drafting…' : 'Draft assignments'}
+            </button>
+            {assignBusy && progressLabel && <span className="text-sm text-emerald-700">{progressLabel}</span>}
+          </div>
+          {!courseId && <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">Pick a course above first.</p>}
+          {assignDone && (
+            <div className={`mt-3 rounded-lg border p-3 text-sm ${assignDone.failedTopics.length === 0 ? 'border-emerald-300 bg-white text-emerald-800 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-200' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}`}>
+              <p className="font-semibold">
+                Created {assignDone.assignments} draft assignment{assignDone.assignments === 1 ? '' : 's'} with {assignDone.questions} validated question{assignDone.questions === 1 ? '' : 's'}
+                {assignDone.failedTopics.length > 0 && <> · failed topics: {assignDone.failedTopics.join(', ')}</>}
+              </p>
+              <p className="mt-1 text-xs">
+                {lessonId ? 'Attached to the chosen lesson.' : chapterId ? 'Attached to the chosen chapter.' : 'Course-level.'} Nothing is published yet — review and publish from the assignments manager.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI Mini Projects panel */}
       {tab === 'mini-ai' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
@@ -675,6 +914,26 @@ export default function ContentImportPage() {
               {miniBusy ? 'Drafting...' : 'Generate draft'}
             </button>
           </div>
+
+          {courseId && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">Chapter (optional)</label>
+                <select value={chapterId} onChange={e => setChapterId(e.target.value)} className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-amber-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark]">
+                  <option value="">— none (batch release only) —</option>
+                  {chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-800 dark:text-amber-300">Lesson (optional)</label>
+                <select value={lessonId} onChange={e => setLessonId(e.target.value)} disabled={!chapterId} className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-amber-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] disabled:opacity-50">
+                  <option value="">— none —</option>
+                  {lessons.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+                </select>
+                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">Picking a lesson attaches the mini to that lesson's flow in the student sidebar.</p>
+              </div>
+            </div>
+          )}
 
           {miniDraft && (
             <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-white p-3 dark:border-amber-800 dark:bg-slate-900">
@@ -788,9 +1047,11 @@ export default function ContentImportPage() {
           {miniDone && (
             <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
               Saved <strong>{miniDone.title}</strong> as a {miniDone.published ? 'published mini project' : 'draft'}.
-              {miniDone.linkedBatches > 0
-                ? ` Released to ${miniDone.linkedBatches} batch${miniDone.linkedBatches === 1 ? '' : 'es'} of the chosen course — it now appears in that course's sidebar.`
-                : ' Link it to a course from the Mini Projects page to show it in a course sidebar.'}
+              {miniDone.lessonAttached
+                ? ' Attached to the chosen lesson — it appears in that lesson\u2019s flow in the student sidebar.'
+                : miniDone.linkedBatches > 0
+                  ? ` Released to ${miniDone.linkedBatches} batch${miniDone.linkedBatches === 1 ? '' : 'es'} of the chosen course — it now appears in that course's sidebar.`
+                  : ' Link it to a course from the Mini Projects page to show it in a course sidebar.'}
               {' '}Manage it (edit tests, course-link, publish) in the <strong>Mini Projects</strong> page.
             </div>
           )}

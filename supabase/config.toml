@@ -392,11 +392,6 @@ deno_version = 2
 [functions.integrations-workshop]
 verify_jwt = false
 
-# integrations-question-paper is the same server-to-server pattern: HMAC only,
-# no JWT gateway.
-[functions.integrations-question-paper]
-verify_jwt = false
-
 # marketing-lead-ingest is a server-to-server webhook endpoint. The edge
 # runtime JWT gateway is disabled for it; its only authentication is the
 # HMAC-SHA256 signature verified inside the function against the shared
