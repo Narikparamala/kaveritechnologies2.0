@@ -79,7 +79,13 @@ export async function getRosterWithAttendance(sessionId: string, batchId: string
 
 export type AttendanceStatus = 'attended' | 'absent' | 'excused' | 'registered';
 
-/** Upsert one student's attendance. Staff-only (RLS enforces it). */
+/**
+ * Upsert one student's attendance. Staff-only (RLS enforces it).
+ * IMPORTANT: never set joined_at here — it marks a REAL student join
+ * (written only by join_live_session) and gates the lesson
+ * auto-release trigger. Manual marking intentionally leaves it alone;
+ * use releaseToAbsentees() to grant the lesson to non-joiners.
+ */
 export async function markAttendance(sessionId: string, studentId: string, status: AttendanceStatus, markedBy: string): Promise<void> {
   const { error } = await supabase.from('session_attendance').upsert(
     {
@@ -93,7 +99,12 @@ export async function markAttendance(sessionId: string, studentId: string, statu
   if (error) throw error;
 }
 
-/** Bulk "mark all present" for a batch roster — one round trip. */
+/**
+ * Bulk "mark all present" for a batch roster — one round trip.
+ * Does NOT set joined_at, so it does not trigger lesson release
+ * (only real student joins do; absentees get the lesson via
+ * releaseToAbsentees()).
+ */
 export async function markAllPresent(sessionId: string, batchId: string, markedBy: string): Promise<number> {
   const { data: roster, error: rosterError } = await supabase
     .from('batch_students')
