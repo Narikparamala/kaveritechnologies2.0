@@ -159,15 +159,28 @@ export async function getNextSlotOccurrence(
   return null;
 }
 
-/** Batches the faculty teaches (for pickers). */
-export async function getFacultyBatches(facultyId: string): Promise<{ id: string; name: string; course_id: string | null }[]> {
+/**
+ * All active batches, for pickers. Staff RLS grants faculty read access to
+ * every batch (same scope the My Batches & Work page and admin pickers use),
+ * so we read `batches` directly — filtering through `batch_faculty` with an
+ * inner join can silently drop rows and render an empty picker.
+ */
+export async function getFacultyBatches(): Promise<{ id: string; name: string; course_id: string | null; course_title: string | null }[]> {
   const { data, error } = await supabase
-    .from('batch_faculty')
-    .select('batch:batches!inner(id, name, course_id)')
-    .eq('faculty_id', facultyId);
+    .from('batches')
+    .select('id, name, course_id, course:courses(title)')
+    .eq('status', 'active')
+    .order('name');
   if (error) throw error;
-  // PostgREST may type the embedded batch loosely — go through unknown.
-  return ((data ?? []) as unknown as Array<{ batch: { id: string; name: string; course_id: string | null } }>).map(r => r.batch);
+  // PostgREST may type the embedded course loosely — go through unknown.
+  return ((data ?? []) as unknown as Array<{
+    id: string; name: string; course_id: string | null; course: { title: string } | { title: string }[] | null;
+  }>).map(r => ({
+    id: r.id,
+    name: r.name,
+    course_id: r.course_id,
+    course_title: (Array.isArray(r.course) ? r.course[0]?.title : r.course?.title) ?? null,
+  }));
 }
 
 /** Slot length in minutes, used to prefill the session duration. */

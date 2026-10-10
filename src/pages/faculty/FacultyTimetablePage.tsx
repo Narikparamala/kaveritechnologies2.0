@@ -31,8 +31,6 @@ function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-type ScheduleBatch = { id: string; name: string; course_id: string | null };
-
 export default function FacultyTimetablePage() {
   const { profile } = useAuth();
   const { success, error: showError } = useToast();
@@ -42,7 +40,7 @@ export default function FacultyTimetablePage() {
 
   // Schedule-class modal state
   const [showSchedule, setShowSchedule] = useState(false);
-  const [batches, setBatches] = useState<ScheduleBatch[]>([]);
+  const [batches, setBatches] = useState<Array<{ id: string; name: string; course_id: string | null; course_title: string | null }>>([]);
   const [lessons, setLessons] = useState<{ id: string; title: string }[]>([]);
   const [scheduleForm, setScheduleForm] = useState({ batch_id: '', lesson_id: '', date: todayIso(), time: '10:00', duration: 60, unlocks_lesson: true, google_meet_url: '' });
   const [slotHint, setSlotHint] = useState<string>('');
@@ -69,13 +67,12 @@ export default function FacultyTimetablePage() {
   useEffect(() => { void loadDay(); }, [loadDay]);
 
   const loadBatches = useCallback(async () => {
-    if (!profile) return;
     try {
-      setBatches(await getFacultyBatches(profile.id));
+      setBatches(await getFacultyBatches());
     } catch {
       /* empty picker on failure; the modal still opens */
     }
-  }, [profile]);
+  }, []);
 
   const openScheduleModal = () => {
     setScheduleForm(f => ({ ...f, date: day, batch_id: '', lesson_id: '' }));
@@ -285,7 +282,7 @@ export default function FacultyTimetablePage() {
             <label className="label">Batch *</label>
             <select className="input" value={scheduleForm.batch_id} onChange={e => void pickBatch(e.target.value)}>
               <option value="">Select a batch…</option>
-              {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {batches.map(b => <option key={b.id} value={b.id}>{b.name}{b.course_title ? ` · ${b.course_title}` : ''}</option>)}
             </select>
             {slotHint && <p className="text-xs text-slate-400 mt-1">{slotHint}</p>}
           </div>
