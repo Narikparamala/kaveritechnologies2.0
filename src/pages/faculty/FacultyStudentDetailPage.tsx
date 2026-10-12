@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, BookOpen, Award, CheckCircle, Clock, AlertTriangle, Plus, MessageSquare, Lock, Unlock, Loader2 } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, BookOpen, Award, CheckCircle, Clock, AlertTriangle, Plus, MessageSquare, Lock, Unlock, Loader2, Globe, Linkedin, Github, FileText, ExternalLink } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Badge } from '../../components/ui/Badge';
@@ -143,10 +143,14 @@ export default function FacultyStudentDetailPage() {
 
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-            <span className="text-2xl font-bold text-primary-600">
-              {(profile.full_name || profile.email)[0].toUpperCase()}
-            </span>
+          <div className="w-16 h-16 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt={profile.full_name ?? 'Student'} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-2xl font-bold text-primary-600">
+                {(profile.full_name || profile.email)[0].toUpperCase()}
+              </span>
+            )}
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{profile.full_name}</h1>
@@ -289,6 +293,61 @@ export default function FacultyStudentDetailPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Student Profile (bio, links, visibility) */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-slate-900 dark:text-white">Student Profile</h2>
+              {profile.profile_public ? (
+                <a
+                  href={profile.profile_slug ? `/u/${profile.profile_slug}` : undefined}
+                  target={profile.profile_slug ? '_blank' : undefined}
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full hover:underline"
+                  title={profile.profile_slug ? `Open public profile: ${window.location.origin}/u/${profile.profile_slug}` : 'Public profile not set up yet'}
+                >
+                  <Globe size={11} /> Public profile
+                  {profile.profile_slug && <ExternalLink size={10} />}
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                  <Lock size={11} /> Private profile
+                </span>
+              )}
+            </div>
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Bio</p>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                  {profile.bio || <span className="text-slate-400">No bio added yet — student can add one from their Profile page.</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Links</p>
+                {profile.linkedin_url || profile.github_url || profile.resume_url ? (
+                  <div className="flex flex-wrap gap-2">
+                    {profile.linkedin_url && (
+                      <a href={profile.linkedin_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <Linkedin size={12} /> LinkedIn
+                      </a>
+                    )}
+                    {profile.github_url && (
+                      <a href={profile.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <Github size={12} /> GitHub
+                      </a>
+                    )}
+                    {profile.resume_url && (
+                      <a href={profile.resume_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+                        <FileText size={12} /> Resume
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-slate-400">No links added yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Contact */}
           <div className="card p-6">
             <h2 className="font-bold text-slate-900 dark:text-white mb-4">Contact</h2>
