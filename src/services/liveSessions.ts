@@ -317,6 +317,8 @@ export async function getSessionAttendance(sessionId: string): Promise<SessionAt
 }
 
 // Faculty: Mark student attendance
+// NOTE: never fabricate joined_at here — it is reserved for real student
+// joins (join_live_session) and gates the lesson auto-release trigger.
 export async function markAttendance(
   sessionId: string,
   studentId: string,
@@ -327,8 +329,7 @@ export async function markAttendance(
     .from('session_attendance')
     .update({
       attendance_status: status,
-      marked_by: markedBy,
-      joined_at: status === 'attended' ? new Date().toISOString() : null
+      marked_by: markedBy
     })
     .eq('session_id', sessionId)
     .eq('student_id', studentId)
