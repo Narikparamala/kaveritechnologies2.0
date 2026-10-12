@@ -46,6 +46,7 @@ export type RosterEntry = {
   student_id: string;
   full_name: string | null;
   email: string;
+  avatar_url: string | null;
   attendance_status: string | null; // null = not marked yet
 };
 
@@ -53,7 +54,7 @@ export async function getRosterWithAttendance(sessionId: string, batchId: string
   const [rosterRes, attendanceRes] = await Promise.all([
     supabase
       .from('batch_students')
-      .select('student_id, status, student:profiles!inner(id, full_name, email)')
+      .select('student_id, status, student:profiles!inner(id, full_name, email, avatar_url)')
       .eq('batch_id', batchId)
       .eq('status', 'active'),
     supabase.from('session_attendance').select('student_id, attendance_status').eq('session_id', sessionId),
@@ -68,11 +69,12 @@ export async function getRosterWithAttendance(sessionId: string, batchId: string
   return ((rosterRes.data ?? []) as unknown as Array<{
     student_id: string;
     status: string;
-    student: { full_name: string | null; email: string } | null;
+    student: { full_name: string | null; email: string; avatar_url: string | null } | null;
   }>).map(r => ({
     student_id: r.student_id,
     full_name: r.student?.full_name ?? null,
     email: r.student?.email ?? '',
+    avatar_url: r.student?.avatar_url ?? null,
     attendance_status: attended.get(r.student_id) ?? null,
   }));
 }

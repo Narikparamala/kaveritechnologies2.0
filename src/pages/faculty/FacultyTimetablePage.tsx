@@ -374,6 +374,13 @@ export default function FacultyTimetablePage() {
               <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
                 {roster.map(r => (
                   <div key={r.student_id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-sm overflow-hidden flex-shrink-0">
+                      {r.avatar_url ? (
+                        <img src={r.avatar_url} alt={r.full_name ?? ''} className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{(r.full_name || r.email).charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{r.full_name || r.email}</p>
                       {r.full_name && <p className="text-xs text-slate-400 truncate">{r.email}</p>}
