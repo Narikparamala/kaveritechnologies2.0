@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Code2,
   Download,
+  Globe,
   RefreshCw,
   Search,
   Users,
@@ -48,6 +49,9 @@ type EnrollmentRow = {
     full_name: string | null;
     email: string;
     avatar_url: string | null;
+    bio: string | null;
+    profile_public: boolean | null;
+    profile_slug: string | null;
     last_active_date: string | null;
     is_active: boolean;
   } | null;
@@ -93,6 +97,9 @@ type StudentMetric = {
   name: string;
   email: string;
   avatarUrl: string | null;
+  bio: string | null;
+  profilePublic: boolean;
+  profileSlug: string | null;
   courseId: string;
   courseTitle: string;
   progress: number;
@@ -197,7 +204,7 @@ export default function StudentProgressPage() {
           progress_percentage,
           access_status,
           course:courses(id, title),
-          student:profiles!course_enrollments_student_id_fkey(id, full_name, email, avatar_url, last_active_date, is_active)
+          student:profiles!course_enrollments_student_id_fkey(id, full_name, email, avatar_url, bio, profile_public, profile_slug, last_active_date, is_active)
         `)
         .in('course_id', courseIds)
         .neq('access_status', 'revoked')
@@ -321,6 +328,9 @@ export default function StudentProgressPage() {
             name: enrollment.student?.full_name || 'Student',
             email: enrollment.student?.email || '',
             avatarUrl: enrollment.student?.avatar_url || null,
+            bio: enrollment.student?.bio?.trim() || null,
+            profilePublic: Boolean(enrollment.student?.profile_public),
+            profileSlug: enrollment.student?.profile_slug || null,
             courseId: enrollment.course_id,
             courseTitle: enrollment.course?.title || 'Course',
             progress,
@@ -553,10 +563,28 @@ export default function StudentProgressPage() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <Link to={`/faculty/students/${metric.studentId}`} className="font-semibold text-slate-900 dark:text-white hover:text-primary-600 block truncate">
-                            {metric.name}
-                          </Link>
+                          <div className="flex items-center gap-1.5">
+                            <Link to={`/faculty/students/${metric.studentId}`} className="font-semibold text-slate-900 dark:text-white hover:text-primary-600 block truncate">
+                              {metric.name}
+                            </Link>
+                            {metric.profilePublic && metric.profileSlug && (
+                              <a
+                                href={`/u/${metric.profileSlug}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Public profile — open share page"
+                                className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 rounded-full hover:underline flex-shrink-0"
+                              >
+                                <Globe size={9} /> Public
+                              </a>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-400 truncate">{metric.email}</p>
+                          {metric.bio && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" title={metric.bio}>
+                              {metric.bio}
+                            </p>
+                          )}
                           <p className="text-xs text-primary-600 dark:text-primary-400 truncate mt-0.5">{metric.courseTitle}</p>
                         </div>
                       </div>
