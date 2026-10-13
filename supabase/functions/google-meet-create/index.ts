@@ -103,7 +103,25 @@ Deno.serve(async (req: Request) => {
         .from("faculty_google_connections")
         .update({ access_token: accessToken, token_expiry: newExpiry, updated_at: new Date().toISOString() })
         .eq("faculty_id", faculty_id);
+    } else {
+      // Refresh failed (revoked/expired refresh token). Failing silently would send a dead
+      // access token to Google and surface a cryptic 401. Tell the faculty to reconnect.
+      await supabase
+        .from("faculty_google_connections")
+        .delete()
+        .eq("faculty_id", faculty_id);
+      return jsonResponse({
+        error: "GOOGLE_AUTH_EXPIRED: Your Google connection has expired. Disconnect and reconnect your Google account, then try again.",
+        code: "GOOGLE_AUTH_EXPIRED",
+      }, 401);
     }
+  }
+
+  if (!accessToken) {
+    return jsonResponse({
+      error: "GOOGLE_AUTH_EXPIRED: No valid Google token. Disconnect and reconnect your Google account.",
+      code: "GOOGLE_AUTH_EXPIRED",
+    }, 401);
   }
 
   // Calculate end time
@@ -138,6 +156,16 @@ Deno.serve(async (req: Request) => {
 
   if (!calRes.ok) {
     const err = await calRes.text();
+    if (calRes.status === 401 || calRes.status === 403) {
+      await supabase
+        .from("faculty_google_connections")
+        .delete()
+        .eq("faculty_id", faculty_id);
+      return jsonResponse({
+        error: "GOOGLE_AUTH_EXPIRED: Google rejected the session token. Disconnect and reconnect your Google account, then try again.",
+        code: "GOOGLE_AUTH_EXPIRED",
+      }, 401);
+    }
     return jsonResponse({ error: `Google Calendar API error: ${err}` }, 500);
   }
 
