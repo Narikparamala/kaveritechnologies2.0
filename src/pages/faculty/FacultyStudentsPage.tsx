@@ -198,11 +198,19 @@ export default function FacultyStudentsPage() {
           {filteredStudents.map(student => (
             <div key={student.id} className="card p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
-                  <span className="text-primary-600 dark:text-primary-400 font-bold text-lg">
-                    {(student.full_name || student.email)[0].toUpperCase()}
-                  </span>
-                </div>
+                {student.avatar_url ? (
+                  <img
+                    src={student.avatar_url}
+                    alt={student.full_name || 'Student'}
+                    className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                    <span className="text-primary-600 dark:text-primary-400 font-bold text-lg">
+                      {(student.full_name || student.email)[0].toUpperCase()}
+                    </span>
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <h3 className="font-semibold text-slate-900 dark:text-white">{student.full_name || 'Unnamed'}</h3>
