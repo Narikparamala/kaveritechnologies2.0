@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight, ChevronLeft, CheckCircle, BookOpen, Video, FileText, Code,
   ExternalLink, ChevronDown, Lightbulb, Play, Clock, Zap,
   Bookmark, BookmarkCheck, Loader2, Award, ClipboardList,
-  PanelLeftOpen, PanelRightOpen, Copy, Terminal, Lock,
+  PanelLeftOpen, PanelRightOpen, Copy, Terminal, Lock, PartyPopper, Sparkles,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -34,9 +34,37 @@ export function LessonContent() {
   const [celebrate, setCelebrate] = useState<{ title: string; message: string } | null>(null);
   const celebrateTimer = useRef<number | null>(null);
 
+  // Deep-link unlock celebration: when the student arrives with ?lesson=
+  // (dashboard Live Now card etc.) on a released lesson, show a one-off
+  // "your materials are unlocked" popup for this visit.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fromLessonParam = searchParams.get('lesson');
+  const [showUnlockPopup, setShowUnlockPopup] = useState(false);
+  const unlockPopupShownRef = useRef(false);
+  const unlockPopupTimer = useRef<number | null>(null);
+
   useEffect(() => () => {
     if (celebrateTimer.current) window.clearTimeout(celebrateTimer.current);
+    if (unlockPopupTimer.current) window.clearTimeout(unlockPopupTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (!fromLessonParam || unlockPopupShownRef.current) return;
+    if (currentLesson?.id !== fromLessonParam) return;
+    if (lessonLoading) return;
+    const isReleased = accessMap.get(currentLesson.id)?.isReleased;
+    const hasContent = resources.length > 0 || lessonQuizzes.length > 0 || lessonCodingSteps.size > 0 || topics.length > 0;
+    if (!isReleased && !hasContent) return;
+    unlockPopupShownRef.current = true;
+    setShowUnlockPopup(true);
+    unlockPopupTimer.current = window.setTimeout(() => {
+      setShowUnlockPopup(false);
+      // Clean the ?lesson= param so a later reload doesn't replay the popup.
+      const next = new URLSearchParams(searchParams);
+      next.delete('lesson');
+      setSearchParams(next, { replace: true });
+    }, 6000);
+  }, [fromLessonParam, currentLesson?.id, lessonLoading, accessMap, resources.length, lessonQuizzes.length, lessonCodingSteps.size, topics.length, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (currentLesson) {
@@ -456,6 +484,38 @@ export function LessonContent() {
               <p className="text-sm font-semibold text-slate-900 dark:text-white">{celebrate.title}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">{celebrate.message}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unlock celebration popup — shown once when arriving via the
+          Live Now lesson link on a released/unlocked lesson. */}
+      {showUnlockPopup && (
+        <div className="fixed inset-x-0 top-20 z-50 flex justify-center px-4" role="alertdialog" aria-label="Lesson unlocked">
+          <div className="relative flex items-start gap-3 rounded-2xl border border-primary-200 bg-gradient-to-br from-white via-primary-50/60 to-teal-50/60 px-5 py-4 shadow-2xl dark:border-primary-800 dark:from-slate-900 dark:via-primary-950/40 dark:to-teal-950/30">
+            <CelebrationBurst show />
+            <div className="w-10 h-10 rounded-xl gradient-bg flex items-center justify-center flex-shrink-0 shadow-glow-blue">
+              <PartyPopper size={20} className="text-white" />
+            </div>
+            <div className="max-w-xs">
+              <p className="text-sm font-bold text-slate-900 dark:text-white">Good — you're all set! 🎉</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                Your slides, coding questions and notes for <span className="font-semibold">{currentLesson?.title}</span> are unlocked below.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                if (unlockPopupTimer.current) window.clearTimeout(unlockPopupTimer.current);
+                setShowUnlockPopup(false);
+                const next = new URLSearchParams(searchParams);
+                next.delete('lesson');
+                setSearchParams(next, { replace: true });
+              }}
+              className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              aria-label="Dismiss"
+            >
+              <Sparkles size={14} />
+            </button>
           </div>
         </div>
       )}

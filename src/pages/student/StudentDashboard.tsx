@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal, Sparkles } from 'lucide-react';
+import { BookOpen, Video, CheckCircle, Zap, Flame, Trophy, ArrowRight, Play, Clock, Target, Hourglass, CalendarCheck2, Terminal, Sparkles, Users } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StatCard } from '../../components/ui/StatCard';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
@@ -28,6 +29,7 @@ export default function StudentDashboard() {
   const [weeklyData, setWeeklyData] = useState<{ day: string; lessons: number }[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<SessionWithDetails[]>([]);
   const [liveSessions, setLiveSessions] = useState<SessionWithDetails[]>([]);
+  const [myBatches, setMyBatches] = useState<{ id: string; name: string; status: string; course_title: string | null }[]>([]);
   const [nextLesson, setNextLesson] = useState<{ courseId: string; courseTitle: string; lessonTitle: string } | null>(null);
   const [nextGate, setNextGate] = useState<{
     courseId: string; courseTitle: string; activityType: string;
@@ -121,6 +123,22 @@ export default function StudentDashboard() {
         setUpcomingSessions(sessions.filter(s => s.status === 'scheduled').slice(0, 3));
       } catch (e) {
         console.error('Failed to load sessions:', e);
+      }
+
+      // Load the student's batches (same data the batch live-class pages use)
+      try {
+        const { data: batchRows } = await supabase
+          .from('batch_students')
+          .select('status, batch:batches!inner(id, name, course:courses(title))')
+          .eq('student_id', profile.id)
+          .order('enrolled_at', { ascending: false });
+        setMyBatches(
+          ((batchRows ?? []) as unknown as Array<{ status: string; batch: { id: string; name: string; course: { title: string } | null } }>)
+            .filter(b => b.batch)
+            .map(b => ({ id: b.batch.id, name: b.batch.name, status: b.status, course_title: b.batch.course?.title ?? null }))
+        );
+      } catch (e) {
+        console.error('Failed to load batches:', e);
       }
 
       // Optional "new technologies" feed — controlled by Admin → Platform
@@ -454,23 +472,59 @@ export default function StudentDashboard() {
                 <span className="text-sm font-bold text-red-700 dark:text-red-300">Live Now</span>
               </div>
               {liveSessions.map(session => (
-                <div key={session.id} className="flex items-center justify-between">
-                  <div>
+                <div key={session.id} className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <p className="font-semibold text-slate-900 dark:text-white text-sm">{session.title}</p>
                     <p className="text-xs text-slate-500">{session.course?.title}</p>
+                    {session.lesson_id && session.course_id && (
+                      <Link
+                        to={`/student/course/${session.course_id}?lesson=${session.lesson_id}`}
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                      >
+                        <BookOpen size={11} /> Open lesson
+                      </Link>
+                    )}
                   </div>
                   {session.google_meet_url && isSessionJoinable(session) && (
                     <a
                       href={session.google_meet_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn-primary text-xs flex items-center gap-1.5"
+                      className="btn-primary text-xs flex items-center gap-1.5 flex-shrink-0"
                     >
                       <Video size={12} /> Join
                     </a>
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* My Batches */}
+          {myBatches.length > 0 && (
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold text-slate-900 dark:text-white">My Batches</h2>
+                <span className="text-xs text-slate-400">{myBatches.length} batch{myBatches.length !== 1 ? 'es' : ''}</span>
+              </div>
+              <div className="space-y-2">
+                {myBatches.map(batch => (
+                  <div key={batch.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                    <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                      <Users size={15} className="text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{batch.name}</p>
+                      {batch.course_title && (
+                        <p className="text-xs text-slate-500 truncate">{batch.course_title}</p>
+                      )}
+                    </div>
+                    <Badge variant={batch.status === 'active' ? 'success' : 'default'}>
+                      {batch.status === 'active' ? 'Active' : batch.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

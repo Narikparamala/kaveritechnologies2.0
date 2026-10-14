@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BookOpen, Code, BarChart3, PanelLeftOpen, PanelRightOpen, Loader2, Menu, X,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { NextClassBanner } from './NextClassBanner';
 export default function CourseWorkspace() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   if (!courseId) {
     navigate('/student/courses');
@@ -19,7 +20,7 @@ export default function CourseWorkspace() {
   }
 
   return (
-    <WorkspaceProvider courseId={courseId}>
+    <WorkspaceProvider courseId={courseId} initialLessonId={searchParams.get('lesson')}>
       <WorkspaceShell />
     </WorkspaceProvider>
   );

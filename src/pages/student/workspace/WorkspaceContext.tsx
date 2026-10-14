@@ -157,7 +157,7 @@ export function useWorkspace() {
   return ctx;
 }
 
-export function WorkspaceProvider({ courseId, children }: { courseId: string; children: ReactNode }) {
+export function WorkspaceProvider({ courseId, initialLessonId, children }: { courseId: string; initialLessonId?: string | null; children: ReactNode }) {
   const { profile, refreshProfile } = useAuth();
 
   const [course, setCourse] = useState<Course | null>(null);
@@ -199,7 +199,7 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
   useEffect(() => {
     if (!profile) return;
     loadCourse();
-  }, [courseId, profile]);
+  }, [courseId, profile, initialLessonId]);
 
   async function loadCourse() {
     if (!profile) return;
@@ -387,9 +387,14 @@ export function WorkspaceProvider({ courseId, children }: { courseId: string; ch
       // top of the course mid-session.
       const flat = chaptersWithLessons.flatMap(c => c.lessons);
       if (!currentLesson || !flat.some(l => l.id === currentLesson.id)) {
+        // A ?lesson= deep-link (e.g. from the dashboard's Live Now card) wins
+        // when it is unlocked; otherwise auto-select the usual first item.
+        const deepLinked = initialLessonId && initialLessonId !== currentLesson?.id
+          ? flat.find(l => l.id === initialLessonId && accessMap.get(l.id)?.access !== 'locked')
+          : undefined;
         const firstAvailableIncomplete = flat.find(l => accessMap.get(l.id)?.access === 'available' && !progressMap.has(l.id));
         const firstUnlocked = flat.find(l => accessMap.get(l.id)?.access !== 'locked');
-        const target = firstAvailableIncomplete ?? firstUnlocked ?? flat[0];
+        const target = deepLinked ?? firstAvailableIncomplete ?? firstUnlocked ?? flat[0];
         if (target) {
           setCurrentLesson(target);
           setCurrentChapter(chaps.find(c => c.id === target.chapter_id) ?? null);
