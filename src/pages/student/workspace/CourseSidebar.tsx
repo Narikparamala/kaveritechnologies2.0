@@ -92,10 +92,21 @@ export function CourseSidebar() {
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{chapter.title}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">{chCompleted}/{chTotal} items</p>
                 </div>
-                {chTotal > 0 && chCompleted === chTotal && (
-                  <PopIn className="flex-shrink-0">
-                    <CheckCircle size={14} className="text-emerald-500" />
-                  </PopIn>
+                {chTotal > 0 && (
+                  chCompleted === chTotal ? (
+                    <PopIn className="flex-shrink-0">
+                      <CheckCircle size={14} className="text-emerald-500" />
+                    </PopIn>
+                  ) : (
+                    // In-progress chapters show how far along they are instead
+                    // of nothing — complements the green tick for done ones.
+                    <span
+                      title={`${chCompleted}/${chTotal} items done`}
+                      className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold tabular-nums bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                    >
+                      {Math.round((chCompleted / chTotal) * 100)}%
+                    </span>
+                  )
                 )}
               </button>
 
