@@ -24,16 +24,20 @@ export default function AdminDashboard() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [recentUsers, setRecentUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
+      setLoading(true);
+      setLoadError(null);
       const [
-        { data: students },
-        { data: faculty },
-        { data: cData },
-        { data: certs },
-        { data: users },
-        { data: enrollments },
+        { data: students, error: errStudents },
+        { data: faculty, error: errFaculty },
+        { data: cData, error: errCourses },
+        { data: certs, error: errCerts },
+        { data: users, error: errUsers },
+        { data: enrollments, error: errEnrollments },
       ] = await Promise.all([
         supabase.from('profiles').select('id').eq('role', 'student'),
         supabase.from('profiles').select('id').eq('role', 'faculty'),
@@ -42,6 +46,14 @@ export default function AdminDashboard() {
         supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(8),
         supabase.from('course_enrollments').select('id'),
       ]);
+      if (cancelled) return;
+      const firstError = errStudents ?? errFaculty ?? errCourses ?? errCerts ?? errUsers ?? errEnrollments;
+      if (firstError) {
+        console.error('Admin dashboard query failed:', firstError);
+        setLoadError(firstError.message);
+        setLoading(false);
+        return;
+      }
       setCounts({
         students: students?.length ?? 0,
         faculty: faculty?.length ?? 0,
@@ -54,6 +66,7 @@ export default function AdminDashboard() {
       setLoading(false);
     };
     load();
+    return () => { cancelled = true; };
   }, []);
 
   const difficultyData = [
@@ -70,6 +83,17 @@ export default function AdminDashboard() {
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
       <PageHeader title="Platform Overview" subtitle="Super Admin Dashboard — Complete Platform Control" icon={BarChart2} />
+
+      {/* Distinguish loading / error / data. A failed load must never render
+          as "No users yet" — those are different states. */}
+      {loadError && (
+        <div className="card p-4 mb-8 border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/40 flex items-center justify-between gap-4">
+          <p className="text-sm text-red-700 dark:text-red-400">
+            Some dashboard data could not be loaded ({loadError}).
+          </p>
+          <button onClick={() => window.location.reload()} className="btn-secondary text-xs flex-shrink-0">Retry</button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -131,7 +155,7 @@ export default function AdminDashboard() {
         <div className="card p-6">
           <h2 className="section-title">Recent Sign-Ups</h2>
           {recentUsers.length === 0 ? (
-            <EmptyState icon={Users} title="No users yet" />
+            <EmptyState icon={Users} title={loadError ? "Couldn't load users" : 'No users yet'} description={loadError ? 'Fix the loading error above, then retry.' : undefined} />
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-700">
               {recentUsers.map(u => (

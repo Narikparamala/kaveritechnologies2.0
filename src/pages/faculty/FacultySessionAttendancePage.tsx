@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCircle, ChevronLeft, Download, Loader2, UserCheck, Users, XCircle } from 'lucide-react';
+import { AlertCircle, BarChart3, ChevronLeft, Download, Loader2, UserCheck, Users, XCircle } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
@@ -15,7 +15,6 @@ interface SessionSummary {
   course_id: string;
   title: string;
 }
-
 interface AttendanceRow {
   id: string;
   session_id: string;
@@ -51,7 +50,7 @@ export default function FacultySessionAttendancePage() {
     try {
       const { data: sessionData, error: sessionError } = await supabase
         .from('live_sessions')
-        .select('id, course_id, title')
+        .select('id, course_id, batch_id, title')
         .eq('id', sessionId)
         .maybeSingle();
 
@@ -64,23 +63,28 @@ export default function FacultySessionAttendancePage() {
 
       setSession(sessionData as SessionSummary);
 
-      const [attendanceResult, enrollmentResult] = await Promise.all([
+      // Roster source depends on the session scope: a batch-scoped class is
+      // for ITS batch members only (not everyone enrolled in the course),
+      // while a course-wide class covers all active enrollments. This mirrors
+      // join_live_session's membership check so who can join is who is listed.
+      const batchId = (sessionData as { batch_id?: string | null }).batch_id ?? null;
+      const rosterResult = batchId
+        ? await supabase.from('batch_students').select('student_id').eq('batch_id', batchId).eq('status', 'active')
+        : await supabase.from('course_enrollments').select('student_id').eq('course_id', sessionData.course_id);
+
+      const [attendanceResult] = await Promise.all([
         supabase
           .from('session_attendance')
           .select('id, session_id, student_id, attendance_status, joined_at')
           .eq('session_id', sessionId),
-        supabase
-          .from('course_enrollments')
-          .select('student_id')
-          .eq('course_id', sessionData.course_id),
       ]);
 
       if (attendanceResult.error) throw attendanceResult.error;
-      if (enrollmentResult.error) throw enrollmentResult.error;
+      if (rosterResult.error) throw rosterResult.error;
 
       const savedRows = attendanceResult.data ?? [];
       const studentIds = Array.from(new Set([
-        ...(enrollmentResult.data ?? []).map(row => row.student_id),
+        ...(rosterResult.data ?? []).map(row => row.student_id),
         ...savedRows.map(row => row.student_id),
       ])).filter(Boolean);
 
@@ -210,9 +214,14 @@ export default function FacultySessionAttendancePage() {
 
   return (
     <div className="mx-auto max-w-5xl animate-fade-in p-6 lg:p-8">
-      <Link to="/faculty/live-classes" className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-primary-600 dark:text-slate-400">
-        <ChevronLeft size={16} /> Back to Live Classes
-      </Link>
+      <div className="mb-4 flex items-center justify-between">
+        <Link to="/faculty/live-classes" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-primary-600 dark:text-slate-400">
+          <ChevronLeft size={16} /> Back to Live Classes
+        </Link>
+        <Link to="/faculty/live-classes/attendance-history" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-primary-600 dark:text-slate-400">
+          Attendance History <BarChart3 size={14} />
+        </Link>
+      </div>
 
       <PageHeader
         title="Attendance"

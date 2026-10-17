@@ -114,6 +114,14 @@
     @apply block text-sm font-bold tracking-wide text-slate-700 dark:text-slate-300 mb-1.5;
   }
 
+  /* Form-field alias used by most form screens (admin/faculty/student).
+     It was referenced but never defined, so in dark mode fields fell back
+     to the browser's white native styling. Same treatment as `.input`,
+     plus a dark color-scheme so native date/time pickers match the theme. */
+  .input-field {
+    @apply w-full px-4 py-3 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 focus:shadow-glow-blue transition-all duration-200 dark:[color-scheme:dark];
+  }
+
   .badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium;
   }

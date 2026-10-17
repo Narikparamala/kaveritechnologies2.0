@@ -25,18 +25,18 @@ export const COMPANY = {
     {
       name: 'Tirupati Office',
       lines: [
-        'Flat No. 203, IInd Floor,',
-        'Balaji Colony,',
-        'Opp. Music College,',
+        'Flat No. 203, IInd Floor',
+        'Balaji Colony',
+        'Opp. Music College',
         'Tirupati - 517 501, Andhra Pradesh',
       ],
     },
     {
       name: 'Madanapalle Office',
       lines: [
-        'D.No: 4/2-20-14-4,',
-        'Back Side Sidharth Theatre,',
-        'Krishna Nagar,',
+        'D.No: 4/2-20-14-4',
+        'Back Side Sidharth Theatre',
+        'Krishna Nagar',
         'Madanapalle - 517325, Andhra Pradesh',
       ],
     },
@@ -47,5 +47,5 @@ export const COMPANY = {
 } as const;
 
 export const OFFICE_STRING = COMPANY.offices
-  .map(o => `${o.name}: ${o.lines.join(' ')}`)
+  .map(o => `${o.name}: ${o.lines.join(', ')}`)
   .join(' | ');

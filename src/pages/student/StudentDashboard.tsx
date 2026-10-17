@@ -51,7 +51,10 @@ export default function StudentDashboard() {
       ] = await Promise.all([
         supabase.from('course_enrollments').select('*, course:courses(*)').eq('student_id', profile.id).order('enrolled_at', { ascending: false }).limit(5),
         supabase.from('announcements').select('*').eq('is_global', true).order('created_at', { ascending: false }).limit(3),
-        supabase.from('notifications').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(5),
+        // Staff-only notification types (enrollment request alerts etc.) are
+        // never shown in the student portal, even when staff preview the
+        // student role — they belong to the staff inbox only.
+        supabase.from('notifications').select('*').eq('user_id', profile.id).not('type', 'in', '("enrollment","system")').order('created_at', { ascending: false }).limit(5),
         supabase.from('lesson_progress').select('id, completed_at').eq('student_id', profile.id).eq('completed', true),
         supabase.from('enrollment_requests').select('*, course:courses(id,title,slug)').eq('student_id', profile.id).order('requested_at', { ascending: false }).limit(5),
         supabase.from('workshop_registrations').select('id, workshop:workshops(id,name,slug,venue,mode,starts_at)').eq('user_id', profile.id).order('registered_at', { ascending: false }).limit(3),

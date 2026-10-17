@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle, CalendarClock
+  MessageSquare, FolderKanban, Megaphone, BarChart2, BarChart3, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle, CalendarClock
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { label: 'My Courses', icon: BookOpen, to: '/courses' },
   { label: 'Live Classes', icon: Video, to: '/live-classes' },
+  { label: 'Attendance History', icon: BarChart3, to: '/live-classes/attendance-history' },
   { label: 'My Timetable', icon: CalendarClock, to: '/timetable' },
 
   { label: 'Lessons', icon: FileText, to: '/lessons' },

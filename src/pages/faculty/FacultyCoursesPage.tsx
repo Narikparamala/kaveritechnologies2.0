@@ -57,16 +57,24 @@ export default function FacultyCoursesPage() {
 
   const loadCourses = useCallback(async () => {
     if (!profile) return;
-    const { data: cfData } = await supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
+    // Use live enrollment counts (same query shape as the faculty dashboard
+    // stat card) so the course card and dashboard never disagree.
+    const { data: cfData, error: cfError } = await supabase.from('course_faculty').select('course_id').eq('faculty_id', profile.id);
+    if (cfError) { toastError('Could not load courses', cfError.message); setCourses([]); setLoading(false); return; }
     const ids = (cfData ?? []).map((c: any) => c.course_id);
     if (ids.length) {
-      const { data } = await supabase.from('courses').select('*').in('id', ids).order('created_at', { ascending: false });
-      setCourses((data ?? []) as Course[]);
+      const [{ data }, enrollments] = await Promise.all([
+        supabase.from('courses').select('*').in('id', ids).order('created_at', { ascending: false }),
+        supabase.from('course_enrollments').select('course_id').in('course_id', ids).eq('access_status', 'active'),
+      ]);
+      const counts: Record<string, number> = {};
+      for (const row of enrollments.data ?? []) counts[row.course_id] = (counts[row.course_id] ?? 0) + 1;
+      setCourses(((data ?? []) as Course[]).map(c => ({ ...c, enrollment_count: counts[c.id] ?? 0 })));
     } else {
       setCourses([]);
     }
     setLoading(false);
-  }, [profile]);
+  }, [profile, toastError]);
 
   useEffect(() => { loadCourses(); }, [loadCourses]);
 
@@ -182,9 +190,9 @@ export default function FacultyCoursesPage() {
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
                   <span className="flex items-center gap-1.5">
                     <Users size={13} />
-                    {c.enrollment_count ?? 0} students
+                    {c.enrollment_count ?? 0} active student{(c.enrollment_count ?? 0) === 1 ? '' : 's'}
                   </span>
-                  <span>{c.duration_hours ?? 0}h</span>
+                  <span>{c.duration_hours ?? 0} hours</span>
                   <span className="capitalize">{c.category || 'Uncategorized'}</span>
                 </div>
 

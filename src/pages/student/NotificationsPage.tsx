@@ -20,6 +20,11 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
   exam: { icon: FileSpreadsheet, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30' },
 };
 
+// Staff-only notification types (enrollment request alerts, internal system
+// events) are never rendered in the student portal, even when staff preview
+// the student role — they belong to the staff inbox only.
+const STAFF_ONLY_TYPES = new Set(['enrollment', 'system']);
+
 export default function NotificationsPage() {
   const { profile } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -28,7 +33,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!profile) return;
     getUserNotifications(profile.id).then(data => {
-      setNotifications(data);
+      setNotifications(data.filter(n => !STAFF_ONLY_TYPES.has(n.type)));
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [profile]);

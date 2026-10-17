@@ -35,11 +35,13 @@ export default function FacultyLiveSessionFormPage() {
   const [googleLoading, setGoogleLoading] = useState(true);
   const [meetGenerating, setMeetGenerating] = useState(false);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<Array<{ id: string; name: string }>>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
 
   const [form, setForm] = useState({
     course_id: '',
+    batch_id: '',
     chapter_id: '',
     lesson_id: '',
     title: '',
@@ -179,6 +181,19 @@ export default function FacultyLiveSessionFormPage() {
     }
   };
 
+  // Batches of the selected course — a batch-scoped class is visible to (and
+  // joinable by / attendance-tracked for) only that batch's active students.
+  const loadBatches = async (courseId: string) => {
+    if (!courseId) { setBatches([]); return; }
+    const { data } = await supabase
+      .from('batches')
+      .select('id, name')
+      .eq('course_id', courseId)
+      .eq('status', 'active')
+      .order('name');
+    setBatches(data ?? []);
+  };
+
   const loadChapters = async (courseId: string) => {
     if (!courseId) { setChapters([]); setLessons([]); return; }
     const { data } = await supabase.from('chapters').select('*').eq('course_id', courseId).order('order_index');
@@ -208,7 +223,7 @@ export default function FacultyLiveSessionFormPage() {
 
       const courseId = requestedLesson?.course_id || requestedCourseId || '';
       const chapterId = requestedLesson?.chapter_id || '';
-      if (courseId) await loadChapters(courseId);
+      if (courseId) { await loadChapters(courseId); await loadBatches(courseId); }
       if (chapterId) await loadLessons(chapterId);
 
       setForm(current => ({
@@ -238,6 +253,7 @@ export default function FacultyLiveSessionFormPage() {
         const sessionDate = new Date(session.session_date);
         setForm({
           course_id: session.course_id,
+          batch_id: (session as unknown as { batch_id?: string | null }).batch_id ?? '',
           chapter_id: session.chapter_id ?? '',
           lesson_id: session.lesson_id ?? '',
           title: session.title,
@@ -248,7 +264,7 @@ export default function FacultyLiveSessionFormPage() {
           google_meet_url: session.google_meet_url || '',
           preparation_notes: session.preparation_notes || '',
         });
-        if (session.course_id) await loadChapters(session.course_id);
+        if (session.course_id) { await loadChapters(session.course_id); await loadBatches(session.course_id); }
         if (session.chapter_id) await loadLessons(session.chapter_id);
       }
     } catch (err) {
@@ -354,6 +370,7 @@ export default function FacultyLiveSessionFormPage() {
       const sessionDateTime = new Date(`${form.session_date}T${form.session_time}`);
       const input: CreateSessionInput = {
         course_id: form.course_id,
+        batch_id: form.batch_id || null,
         chapter_id: form.chapter_id || undefined,
         lesson_id: form.lesson_id || undefined,
         title: form.title.trim(),
@@ -477,8 +494,9 @@ export default function FacultyLiveSessionFormPage() {
                 value={form.course_id}
                 onChange={e => {
                   const id = e.target.value;
-                  setForm(f => ({ ...f, course_id: id, chapter_id: '', lesson_id: '' }));
+                  setForm(f => ({ ...f, course_id: id, batch_id: '', chapter_id: '', lesson_id: '' }));
                   loadChapters(id);
+                  void loadBatches(id);
                 }}
                 disabled={isEdit}
               >
@@ -487,6 +505,23 @@ export default function FacultyLiveSessionFormPage() {
               </select>
               {errors.course_id && <p className="text-xs text-red-500 mt-1">{errors.course_id}</p>}
             </div>
+
+            {batches.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  Batch (optional)
+                </label>
+                <select
+                  className="input-field"
+                  value={form.batch_id}
+                  onChange={e => setForm(f => ({ ...f, batch_id: e.target.value }))}
+                >
+                  <option value="">— All enrolled students (course-wide) —</option>
+                  {batches.map(b => <option key={b.id} value={b.id}>{b.name} — batch students only</option>)}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Pick a batch to restrict this class, its attendance roster and its Join button to that batch's active students.</p>
+              </div>
+            )}
 
             {chapters.length > 0 && (
               <div>

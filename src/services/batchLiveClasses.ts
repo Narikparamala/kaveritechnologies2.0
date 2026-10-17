@@ -128,6 +128,193 @@ export async function markAllPresent(sessionId: string, batchId: string, markedB
   return rows.length;
 }
 
+// ------------------------------------------------------------------
+// Attendance history (per-batch trends across sessions)
+// ------------------------------------------------------------------
+
+export type BatchHistorySession = {
+  session_id: string;
+  title: string;
+  session_date: string;
+  duration_minutes: number;
+  status: string;
+  unlocks_lesson: boolean;
+  attended_count: number;
+  absent_count: number;
+  excused_count: number;
+  unmarked_count: number;
+};
+
+export type BatchAttendanceHistory = {
+  batch_id: string;
+  batch_name: string;
+  course_id: string | null;
+  course_title: string | null;
+  active_students: number;
+  sessions: BatchHistorySession[];
+  studentTrends: StudentTrend[];
+  cohortRate: number | null;
+};
+
+export type StudentTrend = {
+  student_id: string;
+  full_name: string | null;
+  email: string;
+  avatar_url: string | null;
+  attended: number;
+  absent: number;
+  excused: number;
+  unmarked: number;
+};
+
+/**
+ * Full attendance history for ONE batch: every live session of that batch
+ * (plus course-wide sessions the batch's course owns if the batch belongs
+ * to that course) with per-session counts, plus per-student totals for
+ * trend analysis. Reads denormalized counts directly from live_sessions
+ * counters when available, else from session_attendance rows.
+ *
+ * RLS allows faculty of the batch's course to read both live_sessions and
+ * session_attendance rows, so no extra RPC is needed.
+ */
+export async function getBatchAttendanceHistory(batchId: string): Promise<BatchAttendanceHistory & { studentTrends: StudentTrend[] }> {
+  // 1. Batch record + course title + active-student count.
+  const { data: batchRow, error: batchError } = await supabase
+    .from('batches')
+    .select('id, name, course_id, course:courses(title)')
+    .eq('id', batchId)
+    .maybeSingle();
+  if (batchError) throw batchError;
+  if (!batchRow) throw new Error('Batch not found.');
+
+  const batchRowUntyped = batchRow as unknown as {
+    id: string; name: string; course_id: string | null; course: { title: string } | { title: string }[] | null;
+  };
+  const courseId = batchRowUntyped.course_id;
+  const courseTitle = (Array.isArray(batchRowUntyped.course) ? batchRowUntyped.course[0]?.title : batchRowUntyped.course?.title) ?? null;
+
+  // 2. Sessions for this batch (batch-scoped ones, or course-wide when the
+  //    batch belongs to the same course, since batch students attend those too).
+  let query = supabase
+    .from('live_sessions')
+    .select('id, title, session_date, duration_minutes, status, unlocks_lesson, batch_id, course_id')
+    .neq('status', 'cancelled')
+    .order('session_date', { ascending: false });
+  if (courseId) {
+    query = query.or(`batch_id.eq.${batchId},and(batch_id.is.null,course_id.eq.${courseId})`);
+  } else {
+    query = query.eq('batch_id', batchId);
+  }
+  const { data: sessions, error: sessionsError } = await query;
+  if (sessionsError) throw sessionsError;
+
+  const sessionRows = ((sessions ?? []) as unknown as Array<{
+    id: string; title: string; session_date: string; duration_minutes: number;
+    status: string; unlocks_lesson: boolean; batch_id: string | null; course_id: string;
+  }>);
+
+  // 3. Active batch members — the roster these sessions apply to.
+  const { data: roster, error: rosterError } = await supabase
+    .from('batch_students')
+    .select('student_id')
+    .eq('batch_id', batchId)
+    .eq('status', 'active');
+  if (rosterError) throw rosterError;
+  const rosterIds = new Set((roster ?? []).map(r => r.student_id));
+  const activeStudents = rosterIds.size;
+
+  // 4. Attendance rows for all fetched sessions, filtered to batch members.
+  const sessionIds = sessionRows.map(s => s.id);
+  const attendanceByKey = new Map<string, { attended: number; absent: number; excused: number; unmarked: number }>();
+  const studentByKey = new Map<string, { attended: number; absent: number; excused: number; unmarked: number }>();
+
+  if (sessionIds.length > 0) {
+    const { data: attRows, error: attError } = await supabase
+      .from('session_attendance')
+      .select('session_id, student_id, attendance_status')
+      .in('session_id', sessionIds);
+    if (attError) throw attError;
+    for (const row of attRows ?? []) {
+      if (!rosterIds.has(row.student_id)) continue; // ignore non-batch rows
+      const perSession = attendanceByKey.get(row.session_id) ?? { attended: 0, absent: 0, excused: 0, unmarked: 0 };
+      const perStudent = studentByKey.get(row.student_id) ?? { attended: 0, absent: 0, excused: 0, unmarked: 0 };
+      const status = row.attendance_status as AttendanceStatus | null;
+      if (status === 'attended') { perSession.attended++; perStudent.attended++; }
+      else if (status === 'absent') { perSession.absent++; perStudent.absent++; }
+      else if (status === 'excused') { perSession.excused++; perStudent.excused++; }
+      else { perSession.unmarked++; perStudent.unmarked++; }
+      attendanceByKey.set(row.session_id, perSession);
+      studentByKey.set(row.student_id, perStudent);
+    }
+  }
+
+  // 5. Names/avatars for the per-student trend table.
+  let profiles: Array<{ id: string; full_name: string | null; email: string | null; avatar_url: string | null }> = [];
+  if (studentByKey.size > 0) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, avatar_url')
+      .in('id', [...studentByKey.keys()]);
+    if (error) throw error;
+    profiles = data ?? [];
+  }
+  const profileById = new Map(profiles.map(p => [p.id, p]));
+
+  // Ensure every session shows up even with zero attendance rows.
+  const sessionItems: BatchHistorySession[] = sessionRows.map(s => {
+    const counts = attendanceByKey.get(s.id) ?? { attended: 0, absent: 0, excused: 0, unmarked: 0 };
+    return {
+      session_id: s.id,
+      title: s.title,
+      session_date: s.session_date,
+      duration_minutes: s.duration_minutes,
+      status: s.status,
+      unlocks_lesson: s.unlocks_lesson,
+      attended_count: counts.attended,
+      absent_count: counts.absent,
+      excused_count: counts.excused,
+      unmarked_count: counts.unmarked,
+    };
+  });
+
+  // Bonus: cohort-level attendance rate across ALL batch sessions.
+  const totalMarked = sessionItems.reduce(
+    (sum, s) => sum + s.attended_count + s.absent_count + s.excused_count,
+    0,
+  );
+  const totalAttended = sessionItems.reduce((sum, s) => sum + s.attended_count, 0);
+  const cohortRate = totalMarked > 0 ? Math.round((totalAttended / totalMarked) * 100) : null;
+
+  const studentTrends: StudentTrend[] = (roster ?? []).map(r => {
+    const counts = studentByKey.get(r.student_id) ?? { attended: 0, absent: 0, excused: 0, unmarked: 0 };
+    const profile = profileById.get(r.student_id);
+    return {
+      student_id: r.student_id,
+      full_name: profile?.full_name ?? null,
+      email: profile?.email ?? '',
+      avatar_url: profile?.avatar_url ?? null,
+      attended: counts.attended,
+      absent: counts.absent,
+      excused: counts.excused,
+      unmarked: counts.unmarked,
+    };
+  });
+
+  return {
+    batch_id: batchRowUntyped.id,
+    batch_name: batchRowUntyped.name,
+    course_id: courseId,
+    course_title: courseTitle,
+    active_students: activeStudents,
+    sessions: sessionItems,
+    cohortRate,
+    studentTrends,
+  };
+}
+
+// NOTE: getFacultyBatches is defined below in this file — the history page
+// imports it directly; no re-export needed here.
+
 /** Local-calendar ISO date (YYYY-MM-DD) — never use toISOString() for this: it shifts local midnights back a day on UTC+ timezones. */
 export function toLocalIso(d: Date): string {
   const y = d.getFullYear();

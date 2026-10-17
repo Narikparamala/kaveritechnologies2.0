@@ -73,6 +73,7 @@ const StudentProgressPage = lazy(() => import('./pages/faculty/StudentProgressPa
 const FacultyLiveClassesPage = lazy(() => import('./pages/faculty/FacultyLiveClassesPage'));
 const FacultyLiveSessionFormPage = lazy(() => import('./pages/faculty/FacultyLiveSessionFormPage'));
 const FacultySessionAttendancePage = lazy(() => import('./pages/faculty/FacultySessionAttendancePage'));
+const FacultyAttendanceHistoryPage = lazy(() => import('./pages/faculty/FacultyAttendanceHistoryPage'));
 const FacultyStudentsPage = lazy(() => import('./pages/faculty/FacultyStudentsPage'));
 const FacultyStudentDetailPage = lazy(() => import('./pages/faculty/FacultyStudentDetailPage'));
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
@@ -291,6 +292,7 @@ export default function App() {
                     <Route path="live-classes/create" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/edit" element={<FacultyLiveSessionFormPage />} />
                     <Route path="live-classes/:sessionId/attendance" element={<FacultySessionAttendancePage />} />
+                    <Route path="live-classes/attendance-history" element={<FacultyAttendanceHistoryPage />} />
                     <Route path="batches" element={<FacultyBatchesPage />} />
                     <Route path="timetable" element={<FacultyTimetablePage />} />
                     <Route path="students" element={<FacultyStudentsPage />} />

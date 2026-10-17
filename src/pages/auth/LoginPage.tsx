@@ -27,23 +27,27 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
-    const { error: err } = await signIn(email.trim(), password);
-    if (err) {
-      setError(err);
-      setLoading(false);
-      return;
-    }
-
-    // signIn now waits for profile to be fetched before returning
-    // Use window.location to get the freshly updated profile from context
-    // We need to read profile after signIn resolves
-    // Use a small delay to let React re-render with updated profile
-    setTimeout(() => {
-      // Read fresh profile from Supabase directly to avoid stale closure
-      setLoading(false);
-      // Navigate — RoleGuard will handle the redirect based on loaded profile
+    try {
+      // Race a stalled auth request: if Supabase never resolves (network
+      // black-hole), fail visibly after 15s instead of spinning forever.
+      const result = await Promise.race([
+        signIn(email.trim(), password),
+        new Promise<{ error: string }>(resolve =>
+          window.setTimeout(() => resolve({ error: 'Sign-in is taking too long. Check your connection and try again.' }), 15000),
+        ),
+      ]);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      // Signed in — go straight to the role dashboard (or the page the user
+      // originally asked for). RoleGuard refines the destination per role.
       navigate(from ?? '/auth/redirect', { replace: true });
-    }, 100);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
