@@ -285,11 +285,13 @@ export function WorkspaceProvider({ courseId, initialLessonId, children }: { cou
         slug: p.slug,
         teaching_mode: p.teaching_mode,
         enable_coding_playground: p.enable_coding_playground,
+        // Real recording URL from the plan RPC — feigning null here used to
+        // kill the video player for "recording below" recorded lessons.
+        video_url: (p as unknown as { video_url?: string | null }).video_url ?? null,
         duration_minutes: p.duration_minutes,
         xp_reward: p.xp_reward,
         order_index: p.order_index,
         is_free_preview: p.is_free_preview,
-        video_url: null,
         notes_markdown: null,
         code_example: null,
         explanation: null,

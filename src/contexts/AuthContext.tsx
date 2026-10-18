@@ -190,7 +190,18 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    const applySession = async (nextSession: Session | null) => {
+  // The streak column is recomputed server-side on every lesson completion
+  // (trigger trg_streak_on_lesson_complete). Also nudge it whenever a session
+  // resolves so the dashboard never shows a stale 0 right after sign-in.
+  const nudgeLearningStreak = async (userId: string) => {
+    try {
+      await supabase.rpc('update_learning_streak', { p_student: userId });
+    } catch {
+      // Streak is cosmetic here; never block sign-in over it.
+    }
+  };
+
+  const applySession = async (nextSession: Session | null) => {
       if (!active) return;
 
       setSession(nextSession);
@@ -202,6 +213,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      void nudgeLearningStreak(nextSession.user.id);
       const nextProfile = await fetchProfileById(nextSession.user.id);
       if (!active) return;
       setProfile(nextProfile);

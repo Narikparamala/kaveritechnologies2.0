@@ -172,6 +172,8 @@ export interface LessonPlanItem {
   requires_activity_id: string | null;
   requires_activity_title: string | null;
   activities: LessonActivity[];
+  /** Recording URL for the lesson (surfaced by get_student_course_plan since 20261018120000). */
+  video_url: string | null;
 }
 
 export type LessonResourceType = 'slides' | 'notes' | 'code_example' | 'practice_sheet' | 'external_resource' | 'recorded_video';

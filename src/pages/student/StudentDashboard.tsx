@@ -9,7 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
+import { CODING_DASHBOARD_URL, openCodingDashboard } from '../../lib/externalLinks';
 import { getStudentSessions, getTimeUntilSession, isSessionJoinable } from '../../services/liveSessions';
 import { getStudentCoursePlan } from '../../services/lessons';
 import { getTechNews, type TechNewsItem } from '../../services/platformSettings';
@@ -160,6 +160,14 @@ export default function StudentDashboard() {
   if (!profile) return null;
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  // Real average progress across the student's active courses — the same
+  // progress_percentage values the per-course list below renders, so the
+  // summary can never contradict them (Bug: ring said 90% while all courses
+  // showed 0%).
+  const avgProgress = enrollments.length
+    ? Math.round(enrollments.reduce((sum, e) => sum + (e.progress_percentage ?? 0), 0) / enrollments.length)
+    : 0;
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
@@ -557,17 +565,21 @@ export default function StudentDashboard() {
             </div>
           )}
 
-          {/* Level progress */}
+          {/* Level progress — XP bar rendered honestly (XP, not % progress) */}
           <div className="card p-6">
-            <h2 className="font-bold text-slate-900 dark:text-white mb-4">Your Progress</h2>
+            <h2 className="font-bold text-slate-900 dark:text-white mb-4">Your Level</h2>
             <div className="text-center mb-4">
               <div className="w-16 h-16 rounded-2xl gradient-bg flex items-center justify-center mx-auto mb-2 shadow-glow-blue">
                 <span className="text-white font-extrabold text-xl">{profile.level}</span>
               </div>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Level {profile.level}</p>
             </div>
-            <ProgressBar value={profile.xp_points % 500} max={500} showLabel color="teal" />
+            <ProgressBar value={Math.max(profile.xp_points, 0) % 500} max={500} showLabel color="teal" />
             <p className="text-xs text-slate-400 text-center mt-2">{profile.xp_points.toLocaleString()} total XP</p>
+            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Average course progress</p>
+              <ProgressBar value={avgProgress} showLabel color="blue" />
+            </div>
           </div>
 
           {/* Quick actions */}
@@ -591,6 +603,7 @@ export default function StudentDashboard() {
               ))}
               <a
                 href={CODING_DASHBOARD_URL}
+                onClick={openCodingDashboard}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"

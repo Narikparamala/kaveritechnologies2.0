@@ -19,7 +19,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { CODING_DASHBOARD_URL } from '../../lib/externalLinks';
+import { CODING_DASHBOARD_URL, openCodingDashboard } from '../../lib/externalLinks';
 import { formatRelativeTime, getStatusColor } from '../../lib/utils';
 import type { AssignmentSubmission, Course } from '../../types/database';
 
@@ -196,6 +196,7 @@ export default function FacultyDashboard() {
             </Link>
             <a
               href={CODING_DASHBOARD_URL}
+              onClick={openCodingDashboard}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary flex items-center justify-center gap-2 px-4 py-2 text-sm"
