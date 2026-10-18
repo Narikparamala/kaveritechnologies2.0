@@ -261,7 +261,6 @@ begin
     b.xp_reward,
     b.order_index,
     b.is_free_preview,
-    b.video_url,
     b.chapter_title,
     b.chapter_order_index,
     b.access,
@@ -283,7 +282,13 @@ begin
         from jsonb_array_elements(b.activities) el
       ), '[]'::jsonb)
       else b.activities
-    end as activities
+    end as activities,
+    -- video_url MUST be emitted LAST here: plpgsql binds OUT/RETURNS TABLE
+    -- columns by position, and the declaration lists it as the final column.
+    -- Emitting it mid-list (after is_free_preview) shifted chapter_title (text)
+    -- into slot 13 → 42804 "returned type text does not match expected type
+    -- integer in column 13" on every signed-in call.
+    b.video_url
   from base b
   order by b.chapter_order_index, b.order_index;
 end;

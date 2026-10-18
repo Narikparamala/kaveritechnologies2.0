@@ -51,6 +51,22 @@ export function DeliveryBanner({ lesson, sessions }: DeliveryBannerProps) {
   }
 
   if (state === 'recorded') {
+    // The banner previously promised "the recording below" even when the lesson
+    // had no video_url at all (faculty haven't uploaded it yet) — students
+    // scrolled and found nothing. Two honest variants.
+    if (!hasRecording) {
+      return (
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-900/20">
+          <Hourglass size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Recording coming soon</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+              This is a recorded lesson — the video hasn't been uploaded yet. Slides, notes and quizzes below are already available.
+            </p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-start gap-3 p-4 rounded-xl border border-teal-200 dark:border-teal-800/50 bg-teal-50/70 dark:bg-teal-900/20">
         <Film size={18} className="text-teal-600 dark:text-teal-400 flex-shrink-0 mt-0.5" />
