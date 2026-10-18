@@ -64,6 +64,12 @@ export interface LessonMiniStep {
   state: string;
 }
 
+/** Why the course shell failed to load data. */
+export type CourseError =
+  | 'not_enrolled'   // plan RPC 42501 — no active enrollment (or not yet approved)
+  | 'not_found'      // course row itself failed to resolve
+  | 'load_failed';   // any other data error
+
 /**
  * Chapter completion counts lessons AND every attached step (lesson quizzes,
  * lesson coding practice, lesson assignments, chapter quizzes, chapter coding
@@ -128,6 +134,7 @@ interface WorkspaceState {
   lessonAssignments: Assignment[];
   lessonSessions: LiveSession[];
   loading: boolean;
+  courseError: CourseError | null;
   lessonLoading: boolean;
   sidebarCollapsed: boolean;
   rightPanelCollapsed: boolean;
@@ -187,6 +194,12 @@ export function WorkspaceProvider({ courseId, initialLessonId, children }: { cou
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
+  // Why the course shell is empty for the student. `null` = no failure yet; the
+  // very common real-world failure is the plan RPC's 42501 ("Not authorized to
+  // view this course plan" = not enrolled / enrollment not yet approved), which
+  // used to render as a misleading "Course not found".
+  const [courseError, setCourseError] = useState<CourseError | null>(null);
+
   // The courseId whose data is currently loaded. Lets loadCourse tell the
   // initial mount apart from a background refetch of the same course.
   const lastLoadedCourseIdRef = useRef<string | null>(null);
@@ -216,6 +229,7 @@ export function WorkspaceProvider({ courseId, initialLessonId, children }: { cou
       setLoading(true);
     }
     try {
+      setCourseError(null);
       const [courseRes, chaptersRes, lessonsRes, enrollmentRes, planRes] = await Promise.all([
         supabase.from('courses').select('*').eq('id', courseId).maybeSingle(),
         supabase.from('chapters').select('*').eq('course_id', courseId).eq('is_published', true).order('order_index'),
@@ -405,6 +419,14 @@ export function WorkspaceProvider({ courseId, initialLessonId, children }: { cou
       }
     } catch (err) {
       console.error('Failed to load course:', err);
+      const code = (err as { code?: string }).code ?? '';
+      // Plan RPC's enrollment gate: message 42501 happens to carry specific copy.
+      const msg = (err as { message?: string }).message ?? '';
+      if (code === '42501' && msg.includes("Not authorized to view this course plan")) {
+        setCourseError('not_enrolled');
+      } else {
+        setCourseError('load_failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -534,7 +556,7 @@ export function WorkspaceProvider({ courseId, initialLessonId, children }: { cou
     accessMap, progress, courseProgress, lessonProgress, lessonNote,
     isBookmarked, resources, topics, practiceQuestions,
     lessonQuizzes, lessonAssignments, lessonSessions,
-    loading, lessonLoading, sidebarCollapsed, rightPanelCollapsed,
+    loading, courseError, lessonLoading, sidebarCollapsed, rightPanelCollapsed,
     selectLesson, goToNextLesson, goToPrevLesson, markComplete,
     saveStudentNote, toggleStudentBookmark,
     toggleSidebar: () => setSidebarCollapsed(p => !p),

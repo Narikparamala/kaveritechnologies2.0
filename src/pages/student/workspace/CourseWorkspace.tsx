@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BookOpen, Code, BarChart3, PanelLeftOpen, PanelRightOpen, Loader2, Menu, X,
+  ShieldAlert, SearchX, CloudOff,
 } from 'lucide-react';
-import { WorkspaceProvider, useWorkspace } from './WorkspaceContext';
+import { WorkspaceProvider, useWorkspace, type CourseError } from './WorkspaceContext';
 import { CourseSidebar } from './CourseSidebar';
 import { LessonContent } from './LessonContent';
 import { RightPanel } from './RightPanel';
@@ -38,6 +39,7 @@ type MobileTab = typeof MOBILE_TABS[number]['key'];
 function WorkspaceShell() {
   const navigate = useNavigate();
   const { course, loading, sidebarCollapsed, rightPanelCollapsed, toggleSidebar, toggleRightPanel } = useWorkspace();
+  const courseError = useWorkspace().courseError;
   const [mobileTab, setMobileTab] = useState<MobileTab>('lesson');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -56,12 +58,42 @@ function WorkspaceShell() {
   }
 
   if (!course) {
+    const messages: Record<CourseError, { icon: typeof SearchX; title: string; body: string; cta: string }> = {
+      not_enrolled: {
+        icon: ShieldAlert,
+        title: 'You are not enrolled in this course yet',
+        body: 'Access opens once Kaveri confirms your enrolment. If you just submitted an enrolment request, hold tight — the course will appear on your dashboard after approval.',
+        cta: 'View My Courses',
+      },
+      not_found: {
+        icon: SearchX,
+        title: 'Course not found',
+        body: 'This course may have been removed, or the link is no longer valid.',
+        cta: 'Back to Courses',
+      },
+      load_failed: {
+        icon: CloudOff,
+        title: 'Could not load this course',
+        body: 'Something went wrong while loading the course. Check your connection and try again.',
+        cta: 'Retry',
+      },
+    };
+    const info = messages[courseError ?? 'not_found'];
+    const Icon = info.icon;
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <div className="text-center">
-          <p className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Course not found</p>
-          <button onClick={() => navigate('/student/courses')} className="btn-primary text-sm">
-            Back to Courses
+        <div className="text-center max-w-md px-6">
+          <Icon className="mx-auto mb-4 text-slate-400" size={40} />
+          <p className="text-lg font-semibold text-slate-900 dark:text-white mb-2">{info.title}</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{info.body}</p>
+          <button
+            onClick={() => {
+              if (courseError === 'load_failed') window.location.reload();
+              else navigate('/student/courses');
+            }}
+            className="btn-primary text-sm"
+          >
+            {info.cta}
           </button>
         </div>
       </div>
