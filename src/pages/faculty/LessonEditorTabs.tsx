@@ -1108,6 +1108,14 @@ function RecordingTab({ lesson, course }: { lesson: Lesson; course: Course }) {
 
   if (loading) return <div className="text-sm text-slate-400">Loading...</div>;
 
+  // The lesson video (lessons.video_url) is mirrored server-side from the
+  // FIRST unlocked, published recording of this lesson — show which one that
+  // is so “why does the student see the wrong video / no video” is answerable
+  // from this tab alone (migration 20261020120000).
+  const primaryRecordingId = materials
+    .filter(m => m.is_published && !m.is_locked)
+    .sort((a, b) => a.order_index - b.order_index)[0]?.id ?? null;
+
   return (
     <div className="max-w-2xl space-y-3">
       <div className="flex items-center justify-between mb-2">
@@ -1126,10 +1134,13 @@ function RecordingTab({ lesson, course }: { lesson: Lesson; course: Course }) {
       ) : (
         <div className="space-y-2">
           {materials.map(m => (
-            <div key={m.id} className="card p-4 flex items-center gap-3">
+            <div key={m.id} className={`card p-4 flex items-center gap-3 ${primaryRecordingId === m.id ? 'ring-1 ring-teal-400' : ''}`}>
               <Film size={18} className="text-primary-600 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">{m.title}</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">
+                  {m.title}
+                  {primaryRecordingId === m.id && <span className="ml-2 text-[10px] font-semibold text-teal-600 dark:text-teal-400 uppercase tracking-wide">· shown to students</span>}
+                </p>
                 <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                   {m.file_url && <a href={m.file_url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline flex items-center gap-0.5"><FileText size={9} /> File</a>}
                   {m.external_url && <a href={m.external_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-0.5"><ExternalLink size={9} /> {m.external_url.length > 40 ? m.external_url.slice(0, 40) + '...' : m.external_url}</a>}

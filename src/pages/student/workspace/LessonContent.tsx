@@ -124,7 +124,12 @@ export function LessonContent() {
   const notes = resources.filter(r => r.resource_type === 'notes');
   const codeExamples = resources.filter(r => r.resource_type === 'code_example');
   const recordings = resources.filter(r => r.resource_type === 'recorded_video');
-  const videoUrl = currentLesson.video_url || recordings[0]?.external_url || recordings[0]?.file_url;
+  // Locked recordings must not feed the player — “Locked” means the student
+  // cannot view it until faculty unlock it. video_url (mirrored server-side by
+  // 20261020120000 from the primary UNLOCKED recording) wins; the resource
+  // fallback only considers unlocked recordings now.
+  const unlockedRecordings = recordings.filter(r => !r.is_locked);
+  const videoUrl = currentLesson.video_url || unlockedRecordings[0]?.external_url || unlockedRecordings[0]?.file_url;
 
   async function handleMarkComplete() {
     setMarkingComplete(true);
@@ -156,6 +161,9 @@ export function LessonContent() {
     videoUrl && 'video',
     lessonSessions.length > 0 && 'live',
     slides.length > 0 && 'slides',
+    // Unlocked recordings render a card; locked ones are hidden (faculty can
+    // still attach them and unlock later). notes resources are still listed.
+    unlockedRecordings.length > 0 && 'recordings',
     currentLesson.notes_markdown && 'notes',
     notes.length > 0 && 'materials',
     (currentLesson.code_example || codeExamples.length > 0) && 'code',
@@ -300,6 +308,13 @@ export function LessonContent() {
                   ) : null}
                 </div>
               ))}
+            </Section>
+          )}
+
+          {/* Unlocked lesson recordings as cards (besides the inline player) */}
+          {unlockedRecordings.length > 0 && (
+            <Section id="recordings" title="Lesson Recordings" icon={Video}>
+              {unlockedRecordings.map(r => <SecureResourceCard key={r.id} resource={r} />)}
             </Section>
           )}
 
