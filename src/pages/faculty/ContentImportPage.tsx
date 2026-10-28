@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink, Puzzle, ClipboardList } from 'lucide-react';
+import { Upload, FileText, ListChecks, Presentation, Download, CheckCircle2, XCircle, Loader2, Sparkles, Wand2, ArrowLeft, ExternalLink, Puzzle, ClipboardList, Bot } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getSecureJudgeLanguages, securelyRunCustom } from '../../services/secureGrading';
 import { getCourseChapters, getChapterLessonsAll } from '../../services/faculty';
+import { fetchAiConnections, type AiConnection } from '../../services/aiConnections';
 import {
   QUESTIONS_CSV_TEMPLATE,
   QUIZZES_CSV_TEMPLATE,
@@ -62,6 +63,52 @@ function IssueList({ issues }: { issues: ImportIssue[] }) {
   );
 }
 
+/** Shared "AI Model" selector backed by the faculty's saved connections. */
+function ModelSelector({
+  connections,
+  fallbackAllowed,
+  value,
+  onChange,
+}: {
+  connections: AiConnection[];
+  fallbackAllowed: boolean;
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const hasConnections = connections.length > 0;
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <label className="mb-1 block text-xs font-medium opacity-80">AI Model</label>
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="w-full min-w-56 rounded-lg border px-3 py-2 text-sm"
+        >
+          {hasConnections ? (
+            <option value="default">My default connection{fallbackAllowed ? ' (platform key fallback)' : ''}</option>
+          ) : (
+            <option value="default">Platform key (Gemini){fallbackAllowed ? '' : ' — unavailable, connect your own'}</option>
+          )}
+          {connections.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.is_default ? '★ ' : ''}{c.provider_label} · {c.model}{c.label ? ` (${c.label})` : ''}
+            </option>
+          ))}
+          {fallbackAllowed && hasConnections && (
+            <option value="platform">Platform key (Gemini)</option>
+          )}
+        </select>
+      </div>
+      <Link
+        to="/faculty/settings/ai-connections"
+        className="inline-flex items-center gap-1 pb-2 text-xs underline opacity-80 hover:opacity-100"
+      >
+        <Bot className="h-3.5 w-3.5" /> Manage AI connections
+      </Link>
+    </div>
+  );}
+
 export default function ContentImportPage() {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('slides');
@@ -78,6 +125,12 @@ export default function ContentImportPage() {
   const [aiCount, setAiCount] = useState(5);
   const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'medium' | 'hard' | 'mixed'>('mixed');
   const [aiBusy, setAiBusy] = useState(false);
+
+  // --- BYO AI connections (model selector shared by all three AI tabs) ---
+  const [aiConnections, setAiConnections] = useState<AiConnection[]>([]);
+  const [aiFallbackAllowed, setAiFallbackAllowed] = useState(true);
+  const [aiConnectionId, setAiConnectionId] = useState('default');
+  const [lastGenMeta, setLastGenMeta] = useState('');
 
   // --- AI Mini Projects tab state ---
   type MiniDraft = {
@@ -158,6 +211,20 @@ export default function ContentImportPage() {
       .limit(200)
       .then(({ data }) => setCourses(data ?? []));
   }, []);
+
+  // Load this faculty's saved AI connections for the model selector.
+  useEffect(() => {
+    if (!profile || !['admin', 'faculty', 'super_admin'].includes(profile.role)) return;
+    fetchAiConnections()
+      .then(res => {
+        setAiConnections(res.connections);
+        setAiFallbackAllowed(res.platform_fallback_allowed);
+      })
+      .catch(() => {
+        setAiConnections([]);
+        setAiFallbackAllowed(false);
+      });
+  }, [profile]);
 
   // Slide pickers: chapters follow the course, lessons follow the chapter.
   useEffect(() => {
@@ -438,10 +505,16 @@ export default function ContentImportPage() {
           Authorization: `Bearer ${token}`,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ topic: aiTopic, count: aiCount, difficulty: aiDifficulty }),
+        body: JSON.stringify({
+          topic: aiTopic,
+          count: aiCount,
+          difficulty: aiDifficulty,
+          connection_id: aiConnectionId === 'default' ? null : aiConnectionId === 'platform' ? 'platform' : aiConnectionId,
+        }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.error ?? `Generation failed (${res.status})`);
+      setLastGenMeta(body?.meta?.model ? `Generated with ${body.meta.model}${body.meta.tool_rounds ? ` · ${body.meta.tool_rounds} context round${body.meta.tool_rounds === 1 ? '' : 's'}` : ''}` : '');
       setCsv(body.csv ?? '');
       setTab('questions');
       setSummary(null);
@@ -451,7 +524,7 @@ export default function ContentImportPage() {
     } finally {
       setAiBusy(false);
     }
-  }, [aiTopic, aiCount, aiDifficulty]);
+  }, [aiTopic, aiCount, aiDifficulty, aiConnectionId]);
 
   const generateMini = useCallback(async () => {
     if (miniPrompt.trim().length < 5) return;
@@ -466,12 +539,18 @@ export default function ContentImportPage() {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-mini-project`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({ prompt: miniPrompt }),
+          body: JSON.stringify({
+            prompt: miniPrompt,
+            connection_id: aiConnectionId === 'platform' ? 'platform' : aiConnectionId === 'default' ? null : aiConnectionId,
+            course_id: courseId || null,
+            lesson_id: lessonId || null,
+          }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.error ?? `Generation failed (${res.status})`);
       const draft = body?.draft ?? null;
       if (!draft) throw new Error('The AI returned no draft. Try again.');
+      setLastGenMeta(body?.meta?.model ? `Generated with ${body.meta.model}${body.meta.tool_rounds ? ` · ${body.meta.tool_rounds} context round${body.meta.tool_rounds === 1 ? '' : 's'}` : ''}` : '');
       setMiniDraft(draft);
       setMiniConcepts(Array.isArray(draft.concepts) ? draft.concepts.join(', ') : '');
       setMiniGate('none');
@@ -480,7 +559,7 @@ export default function ContentImportPage() {
     } finally {
       setMiniBusy(false);
     }
-  }, [miniPrompt]);
+  }, [miniPrompt, aiConnectionId, courseId, lessonId]);
 
   // Auto-verify: run the reference solution against every test through the
   // secure judge (same execution path student submissions use).
@@ -625,7 +704,14 @@ export default function ContentImportPage() {
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-questions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-          body: JSON.stringify({ topic, count: assignPerTopic, difficulty: aiDifficulty }),
+          body: JSON.stringify({
+            topic,
+            count: assignPerTopic,
+            difficulty: aiDifficulty,
+            connection_id: aiConnectionId === 'platform' ? 'platform' : aiConnectionId === 'default' ? null : aiConnectionId,
+            course_id: courseId,
+            lesson_id: lessonId || null,
+          }),
         });
         const body = await res.json().catch(() => null);
         if (!res.ok || !body?.csv) { failedTopics.push(topic); continue; }
@@ -700,7 +786,7 @@ export default function ContentImportPage() {
     } finally {
       setAssignBusy(false);
     }
-  }, [assignTopics, assignPerTopic, aiDifficulty, courseId, chapterId, lessonId, profile]);
+  }, [assignTopics, assignPerTopic, aiDifficulty, courseId, chapterId, lessonId, aiConnectionId, profile]);
 
   const activeTab = useMemo(() => TABS.find(t => t.id === tab)!, [tab]);
 
@@ -774,6 +860,9 @@ export default function ContentImportPage() {
             The AI drafts questions with reference solutions and test cases. Every draft is then
             <strong> executed and validated</strong> before you can import it — the AI never publishes anything.
           </p>
+          <div className="mt-3 grid items-end gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <ModelSelector connections={aiConnections} fallbackAllowed={aiFallbackAllowed} value={aiConnectionId} onChange={setAiConnectionId} />
+          </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
             <input
               value={aiTopic}
@@ -806,6 +895,7 @@ export default function ContentImportPage() {
             {aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {aiBusy ? 'Drafting…' : 'Generate drafts'}
           </button>
+          {lastGenMeta && <span className="ml-2 text-xs text-teal-700 dark:text-teal-300">{lastGenMeta}</span>}
           <p className="mt-2 text-xs text-teal-600">Drafts land in the Coding Questions tab — review, validate, then import.</p>
         </div>
       )}
@@ -863,6 +953,10 @@ export default function ContentImportPage() {
                 <option value="hard">Hard</option>
               </select>
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-emerald-800 dark:text-emerald-300">AI Model</label>
+              <ModelSelector connections={aiConnections} fallbackAllowed={aiFallbackAllowed} value={aiConnectionId} onChange={setAiConnectionId} />
+            </div>
             <button
               onClick={generateAssignments}
               disabled={assignBusy || !assignTopics.trim() || !courseId}
@@ -872,6 +966,7 @@ export default function ContentImportPage() {
               {assignBusy ? 'Drafting…' : 'Draft assignments'}
             </button>
             {assignBusy && progressLabel && <span className="text-sm text-emerald-700">{progressLabel}</span>}
+          {!assignBusy && lastGenMeta && <span className="text-sm text-emerald-700 dark:text-emerald-300">{lastGenMeta}</span>}
           </div>
           {!courseId && <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">Pick a course above first.</p>}
           {assignDone && (
@@ -897,7 +992,8 @@ export default function ContentImportPage() {
             solution and tests. <strong>Verify</strong> executes the solution on the secure judge, you edit anything you
             disagree with, then save it as a draft in Mini Projects.
           </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <div className="mt-3"><ModelSelector connections={aiConnections} fallbackAllowed={aiFallbackAllowed} value={aiConnectionId} onChange={setAiConnectionId} /></div>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
             <input
               value={miniPrompt}
               onChange={e => setMiniPrompt(e.target.value)}

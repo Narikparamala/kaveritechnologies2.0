@@ -1,4 +1,7 @@
 import { useState, Suspense, useEffect, useRef, useCallback } from 'react';
+// BUG-PG-001: Run Code reads the editor payload from this ref, not from a
+// stale render-time copy of the `code` state, so a click on Run can never
+// execute an older cached string than what is currently in the editor.
 import {
   Terminal, Play, Square, RotateCcw, Copy, Save, Trash2, BookOpen,
   CheckCircle, Loader2, AlertCircle, Maximize2, Minimize2, Sun, Moon,
@@ -134,6 +137,13 @@ export default function PlaygroundPage() {
 
   const [language, setLanguage] = useState<Language>('python');
   const [code, setCode] = useState(LANGUAGES.python.template);
+  const codeRef = useRef(LANGUAGES.python.template);
+
+  /** Single place to update the editor payload: keeps state and run ref in lockstep. */
+  function applyCode(next: string) {
+    codeRef.current = next;
+    setCode(next);
+  }
   const [isDark, setIsDark] = useState(true);
   const [fontSize, setFontSize] = useState(14);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -192,7 +202,7 @@ export default function PlaygroundPage() {
 
   function switchLanguage(lang: Language) {
     setLanguage(lang);
-    setCode(LANGUAGES[lang].template);
+    applyCode(LANGUAGES[lang].template);
     setOutput([]);
     setShowLangMenu(false);
     setRunning(false);
@@ -214,7 +224,7 @@ export default function PlaygroundPage() {
     setOutput(prev => [...prev, { text: `$ run ${cfg.label.toLowerCase()}`, kind: 'meta' }]);
 
     if (language === 'python') {
-      const result = await runPython(code, () => setShowTimeout(true));
+      const result = await runPython(codeRef.current, () => setShowTimeout(true));
       setShowTimeout(false);
       const lines: OutputLine[] = [];
       if (result.output) {
@@ -238,7 +248,7 @@ export default function PlaygroundPage() {
         console.warn = (...args) => logs.push({ text: args.map(String).join(' '), kind: 'stdout' });
         const start = performance.now();
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-        await new AsyncFunction(code)();
+        await new AsyncFunction(codeRef.current)();
         const elapsed = Math.round(performance.now() - start);
         console.log = origLog;
         console.error = origError;
@@ -272,23 +282,23 @@ export default function PlaygroundPage() {
   }
 
   function handleCopy() {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(codeRef.current);
     success('Copied to clipboard!');
   }
 
   function handleReset() {
-    setCode(LANGUAGES[language].template);
+    applyCode(LANGUAGES[language].template);
     setOutput([]);
     setShowTimeout(false);
   }
 
   async function handleSave() {
     if (!user) { info('Sign in to save snippets'); return; }
-    if (!code.trim()) return;
+    if (!codeRef.current.trim()) return;
     const title = snippetTitle.trim() || `Untitled ${LANGUAGES[language].label}`;
     const { data } = await supabase
       .from('saved_code_snippets')
-      .insert({ user_id: user.id, title, code, language })
+      .insert({ user_id: user.id, title, code: codeRef.current, language })
       .select()
       .maybeSingle();
     if (data) {
@@ -308,7 +318,7 @@ export default function PlaygroundPage() {
     if (lang in LANGUAGES) {
       setLanguage(lang);
     }
-    setCode(snippet.code);
+    applyCode(snippet.code);
     setShowSnippets(false);
     setOutput([]);
   }
@@ -465,7 +475,7 @@ export default function PlaygroundPage() {
               height="100%"
               language={cfg.monaco}
               value={code}
-              onChange={v => setCode(v ?? '')}
+              onChange={v => applyCode(v ?? '')}
               theme={isDark ? 'vs-dark' : 'light'}
               options={{
                 minimap: { enabled: false },

@@ -29,6 +29,7 @@ import {
   getGoogleOAuthUrl,
 } from '../../services/liveSessions';
 import { PushNotificationCard } from '../../components/settings/PushNotificationCard';
+import { Bot } from 'lucide-react';
 
 type NotificationPreferences = {
   submissions: boolean;
@@ -318,6 +319,23 @@ export default function FacultySettingsPage() {
               <p className="text-xs text-slate-500 dark:text-slate-400">Low-light workspace</p>
             </button>
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div className="mb-5 flex items-start gap-3">
+            <div className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+              <Bot size={21} />
+            </div>
+            <div>
+              <h2 className="font-semibold text-slate-900 dark:text-white">Your AI keys</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Connect OpenRouter, Gemini, OpenAI, Claude and more so AI drafts run on your own key.
+              </p>
+            </div>
+          </div>
+          <Link to="/faculty/settings/ai-connections" className="btn-secondary inline-flex items-center gap-2">
+            <Bot size={16} /> Manage AI connections
+          </Link>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">

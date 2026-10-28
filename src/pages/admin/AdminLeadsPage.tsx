@@ -71,8 +71,13 @@ export default function AdminLeadsPage() {
       setLeads(listResult.leads);
       setTotal(listResult.total);
       setSummary(counts);
-      const fuMap = await getOpenFollowUps(listResult.leads.map(l => l.id));
-      setNextFu(fuMap);
+      // Follow-up ring data failing must not mark the whole page as failed —
+      // the lead list itself is fine and already rendered.
+      try {
+        setNextFu(await getOpenFollowUps(listResult.leads.map(l => l.id)));
+      } catch {
+        setNextFu(new Map());
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch leads');
     } finally {

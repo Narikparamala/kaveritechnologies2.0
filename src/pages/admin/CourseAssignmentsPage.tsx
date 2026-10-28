@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
+import { plural } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { logActivity } from '../../services/faculty';
 import type { Course, Profile } from '../../types/database';
@@ -160,7 +161,7 @@ export default function CourseAssignmentsPage() {
                         <p className="text-xs text-slate-400 capitalize">{course.difficulty} · {course.category}</p>
                       </div>
                       <span className={`badge text-xs ${courseAssignments.length > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'}`}>
-                        {courseAssignments.length} faculty
+                        {plural(courseAssignments.length, 'faculty', '')}
                       </span>
                     </div>
                     {courseAssignments.length > 0 ? (
@@ -215,7 +216,7 @@ export default function CourseAssignmentsPage() {
                         <p className="text-xs text-slate-400">{fac.email}</p>
                       </div>
                       <span className={`badge text-xs ${facAssignments.length > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-400'}`}>
-                        {facAssignments.length} courses
+                        {plural(facAssignments.length, 'course')}
                       </span>
                     </div>
                     {facAssignments.length > 0 ? (

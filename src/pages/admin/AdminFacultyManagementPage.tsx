@@ -232,11 +232,11 @@ export default function AdminFacultyManagementPage() {
                   <div className="flex items-center gap-6 mt-3 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <BookOpen size={12} />
-                      {f.courses?.length || 0} courses
+                      {f.courses?.length || 0} course{(f.courses?.length || 0) === 1 ? '' : 's'}
                     </span>
                     <span className="flex items-center gap-1">
                       <Users size={12} />
-                      {f.stats?.studentCount || 0} students
+                      {f.stats?.studentCount || 0} student{(f.stats?.studentCount || 0) === 1 ? '' : 's'}
                     </span>
                     <span className="flex items-center gap-1">
                       <AlertCircle size={12} />
@@ -244,7 +244,7 @@ export default function AdminFacultyManagementPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Calendar size={12} />
-                      {f.stats?.upcomingSessions || 0} sessions
+                      {f.stats?.upcomingSessions || 0} session{(f.stats?.upcomingSessions || 0) === 1 ? '' : 's'}
                     </span>
                   </div>
 

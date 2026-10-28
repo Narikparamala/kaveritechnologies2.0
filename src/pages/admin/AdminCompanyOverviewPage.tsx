@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Users, GraduationCap, BookOpen, Video, Clock, CheckCircle, AlertTriangle, TrendingUp, DollarSign, Calendar } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
+import { SkeletonStats, SkeletonList, Skeleton } from '../../components/ui/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -88,6 +89,9 @@ export default function AdminCompanyOverviewPage() {
         subtitle="Real-time insights across your academy"
       />
 
+      {loading ? (
+        <SkeletonStats count={4} cols="grid-cols-2 lg:grid-cols-4" className="mb-8" />
+      ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           title="Active Faculty"
@@ -118,6 +122,7 @@ export default function AdminCompanyOverviewPage() {
           iconColor="text-amber-600 dark:text-amber-400"
         />
       </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -159,6 +164,9 @@ export default function AdminCompanyOverviewPage() {
           {/* Pending Tasks */}
           <div className="card p-6">
             <h2 className="font-bold text-slate-900 dark:text-white mb-4">Needs Attention</h2>
+            {loading ? (
+              <SkeletonList rows={2} />
+            ) : (
             <div className="space-y-3">
               {stats.pendingGrading > 0 && (
                 <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20">
@@ -189,6 +197,7 @@ export default function AdminCompanyOverviewPage() {
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
 
@@ -196,9 +205,13 @@ export default function AdminCompanyOverviewPage() {
           {/* Payroll Summary */}
           <div className="card p-6">
             <h2 className="font-bold text-slate-900 dark:text-white mb-4">Monthly Payroll</h2>
+            {loading ? (
+              <Skeleton className="h-8 w-28" />
+            ) : (
             <p className="text-3xl font-bold text-slate-900 dark:text-white">
               {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(stats.monthlyPayroll)}
             </p>
+            )}
             <p className="text-xs text-slate-500 mt-1">For {stats.activeFaculty} active faculty</p>
             <Link to="/admin/payroll" className="text-xs text-primary-600 dark:text-primary-400 hover:underline mt-2 block">
               View payroll details

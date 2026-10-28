@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { SkeletonStats } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -171,6 +172,9 @@ export default function AdminBatchesPage() {
       />
 
       {/* Stats */}
+      {loading ? (
+        <SkeletonStats count={4} cols="grid-cols-2 md:grid-cols-4" className="mb-6" />
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {(['upcoming', 'active', 'completed', 'archived'] as BatchStatus[]).map(status => {
           const count = batches.filter(b => b.status === status).length;
@@ -183,6 +187,7 @@ export default function AdminBatchesPage() {
           );
         })}
       </div>
+      )}
 
       {/* Filters */}
       <div className="card p-4 mb-6 flex flex-wrap gap-3 items-center">
@@ -325,7 +330,7 @@ function BatchCard({ batch, openMenu, onToggleMenu, onView, onEdit, onDelete }: 
           <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
             <span className="flex items-center gap-1">
               <GraduationCap size={12} />
-              {batch.student_count}/{batch.max_students} students
+              {batch.student_count}/{batch.max_students} student{(batch.student_count ?? 0) === 1 ? '' : 's'}
             </span>
             <span className="flex items-center gap-1">
               <UserPlus size={12} />

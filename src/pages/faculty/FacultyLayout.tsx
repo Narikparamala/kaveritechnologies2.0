@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Video, FileText, ClipboardList, HelpCircle,
-  MessageSquare, FolderKanban, Megaphone, BarChart2, BarChart3, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle, CalendarClock
+  MessageSquare, FolderKanban, Megaphone, BarChart2, BarChart3, Calendar, Bell, User, Settings, Users, AlertTriangle, UserPlus, Code2, Upload, Puzzle, CalendarClock, Bot
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { label: 'Notifications', icon: Bell, to: '/notifications' },
   { label: 'Profile', icon: User, to: '/profile' },
   { label: 'Settings', icon: Settings, to: '/settings' },
+  { label: 'AI Connections', icon: Bot, to: '/settings/ai-connections' },
 ];
 
 export default function FacultyLayout() {

@@ -277,9 +277,13 @@ export async function getBatchAttendanceHistory(batchId: string): Promise<BatchA
     };
   });
 
-  // Bonus: cohort-level attendance rate across ALL batch sessions.
+  // Cohort-level attendance rate across ALL batch sessions. Denominator is
+  // every student registered for those sessions (attended + absent + excused
+  // + unmarked) — matching the admin session page's attended ÷ registered.
+  // Excluding unmarked rows here inflated the rate: 10 attended among
+  // 67 registered showed "100%" because the 57 unmarked weren't counted.
   const totalMarked = sessionItems.reduce(
-    (sum, s) => sum + s.attended_count + s.absent_count + s.excused_count,
+    (sum, s) => sum + s.attended_count + s.absent_count + s.excused_count + s.unmarked_count,
     0,
   );
   const totalAttended = sessionItems.reduce((sum, s) => sum + s.attended_count, 0);

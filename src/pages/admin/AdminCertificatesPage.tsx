@@ -49,7 +49,7 @@ export default function AdminCertificatesPage() {
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
         title="Certificates"
-        subtitle={`${certs.length} certificates issued`}
+        subtitle={loading ? 'Loading…' : `${certs.length} certificate${certs.length === 1 ? '' : 's'} issued`}
         icon={Award}
         action={<button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2"><Plus size={16} /> Issue Certificate</button>}
       />

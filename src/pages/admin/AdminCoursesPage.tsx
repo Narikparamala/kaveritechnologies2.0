@@ -70,7 +70,7 @@ export default function AdminCoursesPage() {
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
       <PageHeader
         title="Courses"
-        subtitle={`${courses.length} total courses`}
+        subtitle={loading ? 'Loading…' : `${courses.length} total course${courses.length === 1 ? '' : 's'}`}
         icon={BookOpen}
         action={<button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2"><Plus size={16} /> New Course</button>}
       />
@@ -92,7 +92,7 @@ export default function AdminCoursesPage() {
                   <p className="font-medium text-slate-900 dark:text-white truncate">{c.title}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className={`badge capitalize text-xs ${getDifficultyColor(c.difficulty)}`}>{c.difficulty}</span>
-                    <span className="text-xs text-slate-400">{c.enrollment_count} students · {c.duration_hours}h</span>
+                    <span className="text-xs text-slate-400">{c.enrollment_count} student{(c.enrollment_count ?? 0) === 1 ? '' : 's'} · {c.duration_hours}h</span>
                     <span className="text-xs text-slate-400">
                       · Created by {(c as any).creator?.full_name || (c as any).creator?.email || 'Unknown'}
                     </span>

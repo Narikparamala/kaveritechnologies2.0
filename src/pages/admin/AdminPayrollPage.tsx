@@ -17,6 +17,7 @@ interface PayrollEntry {
 
 export default function AdminPayrollPage() {
   const [payroll, setPayroll] = useState<PayrollEntry[]>([]);
+  const [activeFacultyCount, setActiveFacultyCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -30,6 +31,16 @@ export default function AdminPayrollPage() {
   const loadPayroll = async () => {
     setLoading(true);
     try {
+      // The "Active Faculty" stat must match the Company Overview definition
+      // (active faculty profiles), not payroll-table size — faculty without an
+      // employment/salary row are still countable faculty.
+      const { count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'faculty')
+        .eq('is_active', true);
+      setActiveFacultyCount(count ?? 0);
+
       const employmentData = await getAllFacultyEmployment();
       const activeFaculty = employmentData.filter(e => e.employment_status === 'active' && e.faculty);
 
@@ -106,7 +117,8 @@ export default function AdminPayrollPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="card p-4">
           <p className="text-xs text-slate-500 mb-1">Active Faculty</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white">{payroll.length}</p>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white">{activeFacultyCount}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{payroll.length} with salary data</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-slate-500 mb-1">Total Base Salary</p>

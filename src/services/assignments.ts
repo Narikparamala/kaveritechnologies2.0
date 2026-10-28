@@ -14,9 +14,11 @@ export async function getFacultyAssignments(facultyId: string): Promise<(Assignm
   const courseIds = (cf ?? []).map((c: any) => c.course_id);
   if (!courseIds.length) return [];
 
+  // lesson (and its chapter) embedded so the faculty list shows where each
+  // assignment lives in the course tree, not just the course.
   const { data, error } = await supabase
     .from('assignments')
-    .select('*, course:courses(*)')
+    .select('*, course:courses(*), lesson:lessons(id, title, chapter:chapters(id, title)), chapter:chapters(id, title)')
     .in('course_id', courseIds)
     .order('created_at', { ascending: false });
   if (error) throw error;

@@ -201,6 +201,42 @@ export const QUESTIONS_CSV_TEMPLATE = [
   'Sum of Two Numbers,Python Basics,Input and Output,easy,10,yes,"Given two integers A and B, print their sum.","Line 1: integer A","Line 2: integer B",a = int(input())# your code,a = int(input())b = int(input())print(a + b),Straightforward addition exercise,Use int() to convert,2,3,no,1,-5,10,yes,2,100,200,no,1',
 ].join('\n');
 
+/**
+ * CSV producers (LLMs especially) often write the two-character sequence
+ * backslash-n instead of a real newline inside quoted CSV fields. A single-line
+ * field whose only breaks are those escapes is - for Python code and tests -
+ * meant to contain real line breaks (otherwise the code would be syntactically
+ * broken). When the field already contains real line breaks, "backslash-n" is
+ * treated as a genuine code escape and preserved untouched.
+ */
+export function unescapeCodeText(value: string): string {
+  if (!value.includes('\\') || value.includes('\n') || value.includes('\r')) return value;
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '\\') {
+      const next = value[i + 1];
+      if (next === 'n' || next === 'r') {
+        out += '\n';
+        i += 1;
+        continue;
+      }
+      if (next === 't') {
+        out += '\t';
+        i += 1;
+        continue;
+      }
+      if (next === '\\') {
+        out += '\\';
+        i += 1;
+        continue;
+      }
+    }
+    out += ch;
+  }
+  return out;
+}
+
 export function parseQuestionRows(csv: string): { rows: QuestionRow[]; issues: ImportIssue[] } {
   const objects = parseCsvObjects(csv);
   const issues: ImportIssue[] = [];
@@ -210,7 +246,9 @@ export function parseQuestionRows(csv: string): { rows: QuestionRow[]; issues: I
     const rowNumber = idx + 2; // +1 header, +1 for 1-based display
     const title = (obj['title'] ?? '').trim();
     const problemStatement = (obj['problem_statement'] ?? '').trim();
-    const referenceSolution = (obj['reference_solution'] ?? '').replace(/\r\n/g, '\n').trim();
+    const referenceSolution = unescapeCodeText(obj['reference_solution'] ?? '')
+      .replace(/\r\n/g, '\n')
+      .trim();
 
     if (!title) {
       issues.push({ row: rowNumber, title: '(untitled)', message: 'Missing title' });
@@ -234,8 +272,8 @@ export function parseQuestionRows(csv: string): { rows: QuestionRow[]; issues: I
 
     const tests: QuestionRow['tests'] = [];
     for (let t = 1; t <= 10; t++) {
-      const input = (obj[`test_input_${t}`] ?? '').replace(/\r\n/g, '\n').trim();
-      const expected = (obj[`test_expected_${t}`] ?? '').replace(/\r\n/g, '\n').trim();
+      const input = unescapeCodeText(obj[`test_input_${t}`] ?? '').replace(/\r\n/g, '\n').trim();
+      const expected = unescapeCodeText(obj[`test_expected_${t}`] ?? '').replace(/\r\n/g, '\n').trim();
       if (!input && !expected) continue;
       if (!expected) {
         issues.push({ row: rowNumber, title, message: `test_expected_${t} is empty while test_input_${t} is set` });
@@ -264,7 +302,7 @@ export function parseQuestionRows(csv: string): { rows: QuestionRow[]; issues: I
       problemStatement,
       inputFormat: (obj['input_format'] ?? '').trim(),
       outputFormat: (obj['output_format'] ?? '').trim(),
-      starterCode: (obj['starter_code'] ?? '').replace(/\r\n/g, '\n').trim(),
+      starterCode: unescapeCodeText(obj['starter_code'] ?? '').replace(/\r\n/g, '\n').trim(),
       referenceSolution,
       explanation: (obj['explanation'] ?? '').trim(),
       hints,

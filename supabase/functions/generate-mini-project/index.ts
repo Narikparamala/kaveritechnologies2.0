@@ -1,19 +1,26 @@
 // AI mini-project draft generator (staff-only).
 //
-// Faculty give a free-form prompt ("a Python quiz score calculator"); Gemini
-// returns ONE complete browser mini-project draft as structured JSON: problem
-// statement, starter code, reference solution, and 3-5 stdin/stdout test
-// cases. The draft is returned to the browser for review — the Content Import
+// Faculty give a free-form prompt ("a Python quiz score calculator"); their OWN
+// AI connection (or the platform Gemini fallback) returns ONE complete browser
+// mini-project draft as structured JSON: problem statement, starter code,
+// reference solution, and 3-5 stdin/stdout test cases. The generation is
+// course-aware: connection resolve → key decrypt → context pack → internal
+// kaveri-context MCP tools → provider chat loop, then the draft is validated.
+//
+// The draft is returned to the browser for review — the Content Import
 // "AI Mini Projects" tab runs the reference solution through the secure judge
 // BEFORE anything can be saved. The AI never publishes anything directly.
 //
-// Secrets (supabase secrets set):
-//   GEMINI_API_KEY   - Google AI Studio key (same one generate-questions uses)
+// Secrets:
+//   GEMINI_API_KEY           — optional platform fallback (legacy behavior)
+//   AI_KEY_ENCRYPTION_SECRET — decryption of stored faculty keys
 //
-// Request:  { prompt: string }
-// Response: { draft: MiniProjectDraft }
+// Request:  { prompt, connection_id?, course_id?, lesson_id? }
+// Response: { draft: MiniProjectDraft, meta: { connection, model, tool_rounds } }
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { jsonResponse } from '../_shared/ai/errors.ts';
+import { HttpError, initStaffRequest } from '../_shared/ai/connections.ts';
+import { runGeneration, stripCodeFences } from '../_shared/ai/generation.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -28,35 +35,26 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Some models write "\\n" (literal backslash-n) instead of real newlines in code
+// fields. A single-line field whose only breaks are those escapes is meant to
+// contain real line breaks; when real breaks exist, backslash-n is kept as code.
+function normalizeCodeText(value: string): string {
+  if (!value.includes('\\') || value.includes('\n') || value.includes('\r')) return value;
+  return value.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return json({}, 200);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401);
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const geminiKey = Deno.env.get('GEMINI_API_KEY');
-  if (!supabaseUrl || !anonKey) return json({ error: 'Server configuration error' }, 500);
-  if (!geminiKey) return json({ error: 'AI generation is not configured (GEMINI_API_KEY missing)' }, 501);
-
-  const supabase = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData?.user) return json({ error: 'Invalid or expired session' }, 401);
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', userData.user.id)
-    .maybeSingle();
-  if (!profile || !['admin', 'faculty', 'super_admin'].includes(profile.role)) {
-    return json({ error: 'Staff only' }, 403);
+  let ctx;
+  try {
+    ctx = await initStaffRequest(req.headers.get('Authorization') ?? '');
+  } catch (e) {
+    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    return json({ error: 'Request failed' }, 500);
   }
 
-  let payload: { prompt?: string };
+  let payload: { prompt?: string; connection_id?: string; course_id?: string; lesson_id?: string };
   try {
     payload = await req.json();
   } catch {
@@ -82,93 +80,112 @@ Return ONLY a JSON object with EXACTLY these keys:
 }
 Rules:
 - concepts: name the Python concepts a student must already know to solve this (title case, 1-3 words each, no duplicates).
-- expected_output must be EXACTLY what print() produces (use \n between lines, no trailing spaces/newline).
+- expected_output must be EXACTLY what print() produces (use \\n between lines, no trailing spaces/newline).
 - At least 1 visible (is_hidden=false) and at least 2 hidden (is_hidden=true) tests.
 - Cover edge cases in hidden tests.
 - reference_solution must pass ALL tests - trace each one mentally before answering.
+- Stay consistent with the course context when provided: match its topic naming and do not duplicate existing mini projects listed there.
 - Output raw JSON only. No markdown fences, no commentary.`;
 
-  const user = `Design the mini project: ${prompt}`;
-
-  const genBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: 'user', parts: [{ text: user }] }],
-    generationConfig: { temperature: 0.6, maxOutputTokens: 4096, responseMimeType: 'application/json' },
-  });
-  const modelUrls = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent',
-  ];
-
-  // Retry transient upstream failures (Gemini occasionally 503s under load),
-  // falling back to the lighter model if the primary stays overloaded.
-  let genRes: Response | null = null;
-  let detail = '';
-  for (let modelIdx = 0; modelIdx < modelUrls.length && (!genRes || !genRes.ok); modelIdx += 1) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
-      genRes = await fetch(modelUrls[modelIdx], {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'X-goog-api-key': geminiKey },
-        body: genBody,
-      });
-      if (genRes.ok) break;
-      detail = await genRes.text().catch(() => '');
-      if (genRes.status !== 503 && genRes.status !== 429) break; // only retry overload/rate-limit
+  // Weaker models sometimes emit mangled JSON (doubled escapes, stray quotes).
+  // A cheap escape-repair pass handles a subset; otherwise ask the model once
+  // more with a strict-validity nudge before giving up.
+  const parseLenient = (text: string): unknown | undefined => {
+    const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+    const candidates = [stripCodeFences(text), fenceMatch ? fenceMatch[1].trim() : ''];
+    for (const stripped of candidates) {
+      if (!stripped) continue;
+      try {
+        return JSON.parse(stripped);
+      } catch {
+        try {
+          // Double up backslash-escapes that JSON does not define (\d, \ , ...).
+          return JSON.parse(stripped.replace(/\\(?![\\/"bfnrtu])/g, '\\\\'));
+        } catch {
+          // try next candidate
+        }
+      }
     }
-  }
-
-  if (!genRes || !genRes.ok) {
-    return json({ error: `Gemini request failed (${genRes?.status ?? 'network'}). ${detail.slice(0, 200)}` }, 502);
-  }
-
-  const gen = await genRes.json();
-  const text: string =
-    gen?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
-  if (!text.trim()) return json({ error: 'The AI returned an empty draft. Try again.' }, 502);
-
-  let draft: unknown;
-  try {
-    draft = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-  } catch {
-    return json({ error: 'The AI returned malformed JSON. Try again.' }, 502);
-  }
-
-  const d = draft as {
-    title?: unknown; topic?: unknown; concepts?: unknown; problem_statement?: unknown;
-    starter_code?: unknown; reference_solution?: unknown; tests?: unknown;
+    return undefined;
   };
-  const concepts = Array.isArray(d.concepts)
-    ? Array.from(new Set(
-        (d.concepts as unknown[])
-          .map(c => String(c ?? '').trim())
-          .filter(c => c.length > 0 && c.length <= 40),
-      )).slice(0, 8)
-    : [];
-  const tests = Array.isArray(d.tests)
-    ? (d.tests as any[])
-        .map((t, i) => ({
-          input_text: String(t?.input_text ?? '').replace(/\r\n/g, '\n'),
-          expected_output: String(t?.expected_output ?? '').replace(/\r\n/g, '\n').trimEnd(),
-          is_hidden: t?.is_hidden === true,
-          position: i + 1,
-        }))
-        .filter(t => t.expected_output !== '')
-    : [];
 
-  if (!d.title || !d.problem_statement || !d.reference_solution || tests.length < 2) {
-    return json({ error: 'The AI draft is incomplete (needs title, problem, solution and 2+ tests). Try again.' }, 502);
+  try {
+    let draft: unknown | undefined;
+    let finalText = '';
+    let metaResult = { connectionId: null as string | null, model: null as string | null, toolRounds: 0 };
+    for (let attempt = 1; attempt <= 3 && !draft; attempt++) {
+      const result = await runGeneration({
+        ctx,
+        kind: 'mini_project',
+        scope: {
+          connectionId: payload.connection_id ?? null,
+          courseId: payload.course_id ?? null,
+          lessonId: payload.lesson_id ?? null,
+          topic: prompt,
+        },
+        compose: () => ({
+          system,
+          user: attempt === 1
+            ? `Design the mini project: ${prompt}`
+            : attempt === 2
+              ? `Design the mini project: ${prompt}\n\n(The previous answer could not be parsed.) Output ONE valid JSON object only — plain JSON, nothing else. Do not double-escape quotes or backslashes.`
+              : `Design the mini project: ${prompt}\n\nOutput ONLY a fenced code block: \`\`\`json\n{ ...one complete valid JSON object... }\n\`\`\`\nInside the block, use real newlines (actual line breaks) and standard JSON escaping only.`,
+          jsonMode: attempt === 1,
+          temperature: attempt === 1 ? 0.6 : 0.2,
+          maxOutputTokens: 8192,
+        }),
+      });
+      finalText = result.text;
+      metaResult = { connectionId: result.connectionId, model: result.model, toolRounds: result.toolRounds };
+      const parsed = parseLenient(finalText);
+      if (parsed) draft = parsed;
+    }
+
+    if (!draft) {
+      const msg = `The AI could not produce a valid JSON draft [${(finalText || '').slice(0, 120)}…]`;
+      return json({ error: msg }, 502);
+    }
+
+    const d = draft as {
+      title?: unknown; topic?: unknown; concepts?: unknown; problem_statement?: unknown;
+      starter_code?: unknown; reference_solution?: unknown; tests?: unknown;
+    };
+    const concepts = Array.isArray(d.concepts)
+      ? Array.from(new Set(
+          (d.concepts as unknown[])
+            .map(c => String(c ?? '').trim())
+            .filter(c => c.length > 0 && c.length <= 40),
+        )).slice(0, 8)
+      : [];
+    const tests = Array.isArray(d.tests)
+      ? (d.tests as any[])
+          .map((t, i) => ({
+            input_text: normalizeCodeText(String(t?.input_text ?? '')).replace(/\r\n/g, '\n'),
+            expected_output: normalizeCodeText(String(t?.expected_output ?? '')).replace(/\r\n/g, '\n').trimEnd(),
+            is_hidden: t?.is_hidden === true,
+            position: i + 1,
+          }))
+          .filter(t => t.expected_output !== '')
+      : [];
+
+    if (!d.title || !d.problem_statement || !d.reference_solution || tests.length < 2) {
+      return json({ error: 'The AI draft is incomplete (needs title, problem, solution and 2+ tests). Try again.' }, 502);
+    }
+
+    return json({
+      draft: {
+        title: String(d.title).slice(0, 120),
+        topic: String(d.topic ?? 'Mini Projects').slice(0, 60) || 'Mini Projects',
+        concepts,
+        problem_statement: String(d.problem_statement).replace(/\r\n/g, '\n'),
+        starter_code: normalizeCodeText(String(d.starter_code ?? '')).replace(/\r\n/g, '\n'),
+        reference_solution: normalizeCodeText(String(d.reference_solution)).replace(/\r\n/g, '\n'),
+        tests,
+      },
+      meta: { connection: metaResult.connectionId, model: metaResult.model, tool_rounds: metaResult.toolRounds },
+    });
+  } catch (e) {
+    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    return json({ error: e instanceof Error ? e.message : 'Generation failed.' }, 502);
   }
-
-  return json({
-    draft: {
-      title: String(d.title).slice(0, 120),
-      topic: String(d.topic ?? 'Mini Projects').slice(0, 60) || 'Mini Projects',
-      concepts,
-      problem_statement: String(d.problem_statement).replace(/\r\n/g, '\n'),
-      starter_code: String(d.starter_code ?? '').replace(/\r\n/g, '\n'),
-      reference_solution: String(d.reference_solution).replace(/\r\n/g, '\n'),
-      tests,
-    },
-  });
 });

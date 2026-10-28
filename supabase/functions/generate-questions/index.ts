@@ -1,20 +1,26 @@
 // AI question draft generator (staff-only).
 //
-// Faculty give a topic + count; Gemini drafts coding questions WITH a
-// reference solution and test cases. Drafts are returned to the browser as a
-// CSV row set — they land in the Content Import page's validate-and-review
-// flow, where the reference solution is executed against the tests through the
-// secure runner BEFORE anything can be imported. The AI never publishes
-// anything directly.
+// Faculty give a topic + count; their OWN AI connection (or the platform
+// Gemini fallback) drafts coding questions WITH a reference solution and test
+// cases. The generation is course-aware: the edge function resolves the
+// faculty's faculty_ai_connections row, decrypts the key in the edge runtime,
+// builds a trimmed course context pack, exposes the internal kaveri-context
+// MCP tools, then runs the provider chat loop.
 //
-// Secrets (supabase secrets set):
-//   GEMINI_API_KEY   — Google AI Studio key (free tier is fine)
+// Drafts land in the Content Import page's validate-and-review flow, where the
+// reference solution is executed against the tests through the secure runner
+// BEFORE anything can be imported. The AI never publishes anything directly.
 //
-// Request:  { topic: string, count: 1-20, difficulty?: 'easy'|'medium'|'hard' }
-// Response: { csv: string } — QUESTIONS_CSV_TEMPLATE format, ready to paste
-//           into Content Import (questions tab) for validation + import.
+// Secrets:
+//   GEMINI_API_KEY           — optional platform fallback (legacy behavior)
+//   AI_KEY_ENCRYPTION_SECRET — decryption of stored faculty keys
+//
+// Request:  { topic, count 1-20, difficulty?, connection_id?, course_id?, lesson_id? }
+// Response: { csv, meta: { connection, model, tool_rounds } }
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { jsonResponse } from '../_shared/ai/errors.ts';
+import { HttpError, initStaffRequest } from '../_shared/ai/connections.ts';
+import { runGeneration, stripCodeFences } from '../_shared/ai/generation.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,40 +35,21 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function csvEscape(s: string): string {
-  const v = String(s ?? '');
-  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return json({}, 200);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401);
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const geminiKey = Deno.env.get('GEMINI_API_KEY');
-  if (!supabaseUrl || !anonKey) return json({ error: 'Server configuration error' }, 500);
-  if (!geminiKey) return json({ error: 'AI generation is not configured (GEMINI_API_KEY missing)' }, 501);
-
-  const supabase = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData?.user) return json({ error: 'Invalid or expired session' }, 401);
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', userData.user.id)
-    .maybeSingle();
-  if (!profile || !['admin', 'faculty', 'super_admin'].includes(profile.role)) {
-    return json({ error: 'Staff only' }, 403);
+  let ctx;
+  try {
+    ctx = await initStaffRequest(req.headers.get('Authorization') ?? '');
+  } catch (e) {
+    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    return json({ error: 'Request failed' }, 500);
   }
 
-  let payload: { topic?: string; count?: number; difficulty?: string };
+  let payload: {
+    topic?: string; count?: number; difficulty?: string;
+    connection_id?: string; course_id?: string; lesson_id?: string;
+  };
   try {
     payload = await req.json();
   } catch {
@@ -85,41 +72,47 @@ Rules:
 - difficulty is easy, medium, or hard (mix them when asked for "mixed").
 - marks = 10.
 - publish = no (a human reviews every draft).
-- reference_solution is complete runnable Python 3 that reads from stdin and prints the answer. No prompts, no extra text.
+- The question must be solvable as a SCRIPT: it reads its input with input() or sys.stdin and prints the result with print().
+- reference_solution is a complete runnable straight-line Python 3 script.
+- CRITICAL: do NOT write solution-only function definitions. If you define any helper function you MUST call it at the bottom of the script (inside an if __name__ == '__main__' guard or directly). A def that is never called produces no output and fails every test.
+- Every solution MUST print at least one line. A run with empty stdout is a failure.
+- Do not print trailing spaces at the end of any line; do not print anything except the expected output.
 - Each question has EXACTLY 2 test cases: test 1 visible (test_hidden_1 = no), test 2 hidden (test_hidden_2 = yes).
-- expected output must be exactly what print() produces, with no trailing spaces.
+- expected output must be exactly what print() produces, with no trailing spaces. Trace each test mentally through your reference_solution before writing it: the solution's actual stdout for the given input MUST equal test_expected_X character for character.
+- Pattern/table/list outputs: print ONE result per line with one print() call per line inside the loop. Never join values on one line separated by spaces, and never print a whole list object like [0, 1, 1] unless the test literally expects that list string. Print separate values by calling print(value) repeatedly.
 - Wrap every field containing commas or newlines in double quotes; escape inner quotes as "".
 - One question per CSV line-pair is fine because quoted fields may span newlines.
+- Stay consistent with the course context when it is provided: match its topic naming and difficulty norms, and do not duplicate questions already present in it.
 - Output the raw CSV only. No markdown fences, no commentary.`;
 
   const user = `Generate ${count} Python coding question(s) about: ${topic}
 Difficulty: ${difficulty}.
 Vary the scenarios (not all the same story). Each question tests a different angle of the topic.`;
 
-  const modelUrl =
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`;
+  try {
+    const result = await runGeneration({
+      ctx,
+      kind: 'questions',
+      scope: {
+        connectionId: payload.connection_id ?? null,
+        courseId: payload.course_id ?? null,
+        lessonId: payload.lesson_id ?? null,
+        topic,
+      },
+      compose: () => ({ system, user, temperature: 0.7, maxOutputTokens: 8192 }),
+    });
 
-  const genRes = await fetch(modelUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'X-goog-api-key': geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
-    }),
-  });
-
-  if (!genRes.ok) {
-    const detail = await genRes.text().catch(() => '');
-    return json({ error: `Gemini request failed (${genRes.status}). ${detail.slice(0, 200)}` }, 502);
+    const csv = stripCodeFences(result.text);
+    if (!csv || !csv.toLowerCase().includes('title')) {
+      return json({ error: 'The AI returned an unusable draft. Try again or switch models.' }, 502);
+    }
+    return json({
+      csv,
+      meta: { connection: result.connectionId, model: result.model, tool_rounds: result.toolRounds },
+    });
+  } catch (e) {
+    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    // chat() throws already-mapped provider errors ("Invalid API key", etc.)
+    return json({ error: e instanceof Error ? e.message : 'Generation failed.' }, 502);
   }
-
-  const gen = await genRes.json();
-  const text: string =
-    gen?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
-  if (!text.trim()) return json({ error: 'The AI returned an empty draft. Try again.' }, 502);
-
-  // Strip markdown fences if the model added them despite instructions.
-  const csv = text.trim().replace(/^```(?:csv)?\s*/i, '').replace(/\s*```$/, '');
-  return json({ csv });
 });

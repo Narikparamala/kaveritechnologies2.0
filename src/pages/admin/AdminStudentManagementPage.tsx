@@ -216,7 +216,7 @@ export default function AdminStudentManagementPage() {
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <BookOpen size={12} />
-                      {student.enrollments?.length || 0} courses
+                      {student.enrollments?.length || 0} course{(student.enrollments?.length || 0) === 1 ? '' : 's'}
                     </span>
                     <span className="flex items-center gap-1">
                       <Award size={12} />

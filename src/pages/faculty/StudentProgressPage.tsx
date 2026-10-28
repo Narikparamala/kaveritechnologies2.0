@@ -522,7 +522,7 @@ export default function StudentProgressPage() {
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#94a3b8' }} />
                 <Tooltip
-                  formatter={(value, _name, item) => [`${Number(value ?? 0)}% (${item.payload.students} students)`, 'Average progress']}
+                  formatter={(value, _name, item) => { const n = Number(item.payload.students); return [`${Number(value ?? 0)}% (${n} student${n === 1 ? '' : 's'})`, 'Average progress']; }}
                   contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 18px rgba(0,0,0,.12)' }}
                 />
                 <Bar dataKey="progress" fill="#2563EB" radius={[7, 7, 0, 0]} />

@@ -37,6 +37,11 @@ export function truncate(text: string, maxLen = 100): string {
   return text.length <= maxLen ? text : text.slice(0, maxLen).trimEnd() + '\u2026';
 }
 
+/** "2 students" vs "1 student" — takes the count and the singular noun. */
+export function plural(count: number, singular: string, pluralSuffix = 's'): string {
+  return `${count} ${count === 1 ? singular : singular + pluralSuffix}`;
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()

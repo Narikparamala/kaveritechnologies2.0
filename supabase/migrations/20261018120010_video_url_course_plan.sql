@@ -1,5 +1,5 @@
 -- ============================================================================
--- 20261018120000 — Surface lesson.video_url in get_student_course_plan
+-- 20261018120010 — Surface lesson.video_url in get_student_course_plan
 -- ============================================================================
 -- BUG: recorded lessons ("Watch the recording below") rendered no video for
 -- students. The workspace builds plan items from get_student_course_plan and

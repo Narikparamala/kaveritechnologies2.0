@@ -65,6 +65,10 @@ export const STATUS_BADGE_VARIANT: Record<LeadStatus, 'default' | 'success' | 'w
 };
 
 const LEAD_EMBED = 'assigned:profiles!marketing_leads_assigned_counsellor_fkey(id,full_name,email)';
+// Parent columns + embed. (Selecting the embed alone makes PostgREST return
+// rows with lead fields blank — id null — which then poisons follow-up
+// queries with lead_id=in.(undefined) 400s.)
+const LEAD_DETAIL_SELECT = `*, ${LEAD_EMBED}`;
 // ============================================================
 // Queries
 // ============================================================
@@ -72,7 +76,7 @@ const LEAD_EMBED = 'assigned:profiles!marketing_leads_assigned_counsellor_fkey(i
 export async function listLeads(filters: LeadListFilters): Promise<{ leads: MarketingLead[]; total: number }> {
   let query = supabase
     .from('marketing_leads')
-    .select(LEAD_EMBED, { count: 'exact' })
+    .select(LEAD_DETAIL_SELECT, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range((filters.page - 1) * filters.pageSize, filters.page * filters.pageSize - 1);
 
@@ -135,12 +139,16 @@ export async function getStaffOptions(): Promise<{ id: string; full_name: string
 }
 
 export async function getLead(leadId: string): Promise<MarketingLead | null> {
-  const { data, error } = await supabase.from('marketing_leads').select(LEAD_EMBED).eq('id', leadId).maybeSingle();
+  const { data, error } = await supabase.from('marketing_leads').select(LEAD_DETAIL_SELECT).eq('id', leadId).maybeSingle();
   if (error) throw error;
   return data ? normalizeLead(data) : null;
 }
 
 export async function getLeadActivities(leadId: string): Promise<LeadActivity[]> {
+  // BUG-1: a missing/undefined lead id (deep link, stale route param) must not
+  // reach PostgREST as lead_id=eq.undefined — it answers 400 and the detail
+  // page reports a fetch failure. No id, no activities.
+  if (!leadId) return [];
   const { data, error } = await supabase.from('marketing_lead_activities')
     .select('*, performed:profiles!marketing_lead_activities_performed_by_fkey(id,full_name)')
     .eq('lead_id', leadId).order('created_at', { ascending: true }).order('id', { ascending: true });
@@ -192,8 +200,12 @@ export function computeOpenFollowUps(activities: LeadActivity[]): Map<string, Fo
 }
 
 export async function getOpenFollowUps(leadIds: string[]): Promise<Map<string, FollowUpItem>> {
-  if (!leadIds.length) return new Map();
-  const { data, error } = await supabase.from('marketing_lead_activities').select('*').in('lead_id', leadIds).in('activity_type', ['follow_up', 'follow_up_completed']);
+  // Route params / embed-only rows can yield undefined or null ids; a raw
+  // in.(undefined) makes PostgREST answer 400 and the page claim the whole
+  // lead list failed. Drop invalid ids instead.
+  const ids = leadIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (!ids.length) return new Map();
+  const { data, error } = await supabase.from('marketing_lead_activities').select('*').in('lead_id', ids).in('activity_type', ['follow_up', 'follow_up_completed']);
   if (error) throw error;
   return computeOpenFollowUps((data ?? []) as LeadActivity[]);
 }

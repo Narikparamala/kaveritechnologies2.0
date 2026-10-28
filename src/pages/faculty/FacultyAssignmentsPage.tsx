@@ -10,7 +10,21 @@ import { deleteAssignment, getFacultyAssignments } from '../../services/assignme
 import { formatDate } from '../../lib/utils';
 import type { Assignment, Course } from '../../types/database';
 
-type FacultyAssignment = Assignment & { course: Course };
+type FacultyAssignment = Assignment & {
+  course: Course;
+  lesson?: { id: string; title: string; chapter?: { id: string; title: string } | null } | null;
+  chapter?: { id: string; title: string } | null;
+};
+
+// Course › Chapter › Lesson breadcrumb where an assignment lives in the tree.
+function assignmentLocation(a: FacultyAssignment) {
+  const parts = [
+    a.course?.title || 'Course',
+    a.chapter?.title || a.lesson?.chapter?.title,
+    a.lesson?.title,
+  ].filter(Boolean) as string[];
+  return parts.join(' \u203a ');
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong';
@@ -112,8 +126,8 @@ export default function FacultyAssignmentsPage() {
                       <Badge variant={statusVariant}>{assignment.status}</Badge>
                       <Badge variant="info">Coding</Badge>
                     </div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {assignment.course?.title || 'Course'}
+                    <p className="text-sm text-slate-500 dark:text-slate-400" title={assignmentLocation(assignment)}>
+                      {assignmentLocation(assignment)}
                     </p>
                     {assignment.description && (
                       <p className="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">

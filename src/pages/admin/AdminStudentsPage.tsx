@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { GraduationCap, Search } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import { plural } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import type { Profile } from '../../types/database';
 
@@ -21,7 +22,7 @@ export default function AdminStudentsPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="Students" subtitle={`${students.length} registered students`} icon={GraduationCap} />
+      <PageHeader title="Students" subtitle={plural(students.length, 'registered student')} icon={GraduationCap} />
 
       <div className="relative mb-5">
         <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />

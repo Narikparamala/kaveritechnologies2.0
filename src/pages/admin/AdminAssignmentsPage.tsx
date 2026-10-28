@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ClipboardList, Search, Loader2, Eye, EyeOff, Calendar, Award, Users } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { SkeletonList } from '../../components/ui/Skeleton';
 import { supabase } from '../../lib/supabase';
 
 interface AssignmentRow {
@@ -15,7 +16,18 @@ interface AssignmentRow {
   allow_resubmit: boolean;
   created_at: string;
   course_title: string;
+  lesson: { title: string; chapter?: { title: string } | null } | null;
+  chapter: { title: string } | null;
   submission_count: number;
+}
+
+// "Chapter › Lesson" (falls back to wherever the assignment is anchored).
+function assignmentLocation(a: AssignmentRow) {
+  const parts = [
+    a.chapter?.title || a.lesson?.chapter?.title,
+    a.lesson?.title,
+  ].filter(Boolean) as string[];
+  return parts.length ? parts.join(' \u203a ') : null;
 }
 
 export default function AdminAssignmentsPage() {
@@ -30,7 +42,7 @@ export default function AdminAssignmentsPage() {
   async function loadData() {
     setLoading(true);
     const [assignRes, coursesRes, submissionsRes] = await Promise.all([
-      supabase.from('assignments').select('*').order('created_at', { ascending: false }),
+      supabase.from('assignments').select('*, lesson:lessons(title, chapter:chapters(title)), chapter:chapters(title)').order('created_at', { ascending: false }),
       supabase.from('courses').select('id, title'),
       supabase.from('assignment_submissions').select('assignment_id'),
     ]);
@@ -73,7 +85,7 @@ export default function AdminAssignmentsPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
-      <PageHeader title="Assignment Manager" subtitle={`${assignments.length} assignments across all courses`} icon={ClipboardList} />
+      <PageHeader title="Assignment Manager" subtitle={loading ? 'Loading…' : `${assignments.length} assignment${assignments.length === 1 ? '' : 's'} across all courses`} icon={ClipboardList} />
 
       <div className="flex flex-wrap gap-3 mb-6">
         <div className="relative flex-1 min-w-[200px]">
@@ -86,7 +98,9 @@ export default function AdminAssignmentsPage() {
         </select>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <SkeletonList rows={4} />
+      ) : filtered.length === 0 ? (
         <EmptyState icon={ClipboardList} title="No assignments found" description="Assignments are created by faculty through the course builder." />
       ) : (
         <div className="card overflow-hidden">
@@ -111,7 +125,14 @@ export default function AdminAssignmentsPage() {
                       <p className="text-sm font-medium text-slate-900 dark:text-white">{a.title}</p>
                       {a.allow_resubmit && <span className="text-xs text-blue-500">Resubmit allowed</span>}
                     </td>
-                    <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">{a.course_title}</td>
+                    <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">
+                      {a.course_title}
+                      {assignmentLocation(a) && (
+                        <span className="mt-0.5 block text-xs text-slate-400" title={assignmentLocation(a) ?? undefined}>
+                          {assignmentLocation(a)}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium capitalize ${difficultyColor[a.difficulty] ?? 'bg-slate-100 text-slate-500'}`}>
                         {a.difficulty}
