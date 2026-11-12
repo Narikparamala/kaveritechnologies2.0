@@ -908,6 +908,7 @@ export async function createCourse(input: {
   category?: string;
   language?: string;
   duration_hours?: number;
+  price?: number;
   created_by: string;
 }): Promise<Course> {
   const { data, error } = await supabase.rpc('create_faculty_course', {
@@ -921,6 +922,7 @@ export async function createCourse(input: {
       category: input.category ?? 'python',
       language: input.language ?? 'English',
       duration_hours: input.duration_hours ?? 0,
+      price: Math.max(0, Number(input.price) || 0),
       is_published: false,
     },
   });

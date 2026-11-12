@@ -93,7 +93,7 @@ export async function buildContextPack(supabase: any, req: ContextRequest): Prom
   const { facultyId, courseId, lessonId, topic } = req;
   const pack: { sections: string[]; used: number } = { sections: [], used: 0 };
   let scopedCourseId: string | null = courseId ?? null;
-  let scopedLessonId: string | null = lessonId ?? null;
+  const scopedLessonId: string | null = lessonId ?? null;
 
   // ------------------------------------------------------------------
   // Resolve lesson → course when only a lesson is given.

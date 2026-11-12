@@ -88,7 +88,7 @@ export default function CourseBuilderPage() {
     teaching_mode: 'live_class', enable_coding_playground: false,
     duration_minutes: 60, is_published: false,
   });
-  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', enrollment_mode: 'open', progression_mode: 'per_lesson', is_published: false, is_featured: false });
+  const [courseForm, setCourseForm] = useState({ title: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', enrollment_mode: 'open', progression_mode: 'per_lesson', price: 0, is_published: false, is_featured: false });
 
   const loadData = useCallback(async () => {
     if (!courseId || !profile) return;
@@ -266,6 +266,7 @@ export default function CourseBuilderPage() {
         language: courseForm.language,
         enrollment_mode: courseForm.enrollment_mode as any,
         progression_mode: (courseForm.progression_mode || 'per_lesson') as any,
+        price: Math.max(0, Number(courseForm.price) || 0),
         is_published: courseForm.is_published,
         is_featured: courseForm.is_featured,
       });
@@ -445,6 +446,7 @@ export default function CourseBuilderPage() {
       difficulty: course.difficulty, category: course.category ?? 'python',
       language: course.language ?? 'English', enrollment_mode: course.enrollment_mode ?? 'open',
       progression_mode: (course as any).progression_mode ?? 'per_lesson',
+      price: course.price ?? 0,
       is_published: course.is_published,
       is_featured: course.is_featured,
     });
@@ -788,6 +790,11 @@ export default function CourseBuilderPage() {
               <label className="label">Language</label>
               <input className="input" value={courseForm.language} onChange={e => setCourseForm(f => ({ ...f, language: e.target.value }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Course Price (INR)</label>
+            <input type="number" min={0} step={1} className="input" value={courseForm.price} onChange={e => setCourseForm(f => ({ ...f, price: Math.max(0, Number(e.target.value) || 0) }))} />
+            <p className="text-xs text-slate-400 mt-1">0 = free. A price only takes effect with “Approval required” enrolment — students then pay online at checkout and get access automatically.</p>
           </div>
           <div>
             <label className="label">Enrolment</label>
