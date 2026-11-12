@@ -107,7 +107,7 @@
   - `lms-stable` vs `main` branch model is still undocumented
   - Vercel API access still 403 for team
     `narikparamalas-projects` after reconnect (live site is fine)
-- **Branch / PR:** not pushed yet — awaiting user approval
+- **Branch / PR:** `docs/handover-pack`, PR #45 — https://github.com/Narikparamala/kaveritechnologies2.0/pull/45, commit 3a3be6f546fc8f4df7c386eb126f112313edea08
 
 ---
 
