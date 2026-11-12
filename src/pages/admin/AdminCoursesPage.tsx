@@ -14,7 +14,7 @@ export default function AdminCoursesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python', enrollment_mode: 'open' });
+  const [form, setForm] = useState({ title: '', short_description: '', difficulty: 'beginner', duration_hours: 20, category: 'python', enrollment_mode: 'open', price: 0 });
 
   useEffect(() => {
     // creator: courses.created_by -> profiles (FK embed; staff-only SELECT via RLS)
@@ -33,8 +33,9 @@ export default function AdminCoursesPage() {
     // course never appears in the Faculty portal (issue #43). The RPC
     // derives created_by from auth.uid() and always creates the
     // course_faculty join; is_published stays false for drafts.
-    // The RPC does not accept enrollment_mode, so apply the chosen mode
-    // afterwards (the column defaults to 'open').
+    // The RPC accepts price (20261112150000 redefined it to accept
+    // `price` in the payload), but not enrollment_mode, so apply the
+    // chosen mode afterwards (the column defaults to 'open').
     const { data: rpcData, error } = await supabase.rpc('create_faculty_course', {
       p_payload: {
         title: form.title,
@@ -43,6 +44,7 @@ export default function AdminCoursesPage() {
         difficulty: form.difficulty,
         category: form.category,
         duration_hours: form.duration_hours,
+        price: Math.max(0, Number(form.price) || 0),
         is_published: false,
       },
     });
@@ -179,6 +181,11 @@ export default function AdminCoursesPage() {
               <label className="label">Duration (hours)</label>
               <input type="number" className="input" value={form.duration_hours} onChange={e => setForm(f => ({ ...f, duration_hours: Number(e.target.value) }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Price (INR)</label>
+            <input type="number" min={0} step={1} className="input" value={form.price} onChange={e => setForm(f => ({ ...f, price: Math.max(0, Number(e.target.value) || 0) }))} />
+            <p className="text-xs text-slate-400 mt-1">0 = free. Paid courses use approval-required enrolment.</p>
           </div>
           <div>
             <label className="label">Enrolment</label>

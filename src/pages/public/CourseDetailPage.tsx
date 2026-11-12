@@ -8,6 +8,7 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatPrice, createPaymentOrder, startCashfreeCheckout } from '../../lib/payments';
 import type { Course, Chapter, Lesson, CourseEnrollment, EnrollmentRequest } from '../../types/database';
 import { COMPANY } from '../../lib/company';
 
@@ -25,11 +26,20 @@ export default function CourseDetailPage() {
   const [enrolling, setEnrolling] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [openChapters, setOpenChapters] = useState<Set<string>>(new Set());
   const [paymentRef, setPaymentRef] = useState('');
 
   useEffect(() => {
     const load = async () => {
+      // Returning from Cashfree checkout: the webhook (not this redirect)
+      // is what grants access, so this is only an informational note.
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment') === 'return') {
+        info('Payment submitted', 'Your access will unlock once the payment is confirmed.');
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+
       const { data: courseData } = await supabase
         .from('courses')
         .select('*')
@@ -75,7 +85,7 @@ export default function CourseDetailPage() {
       setLoading(false);
     };
     load();
-  }, [slug, user]);
+  }, [slug, user, info]);
 
   const handleEnroll = async () => {
     if (!user || !profile) { navigate('/login'); return; }
@@ -139,6 +149,21 @@ export default function CourseDetailPage() {
     }
     setRequest(data as EnrollmentRequest);
     success('Request sent!', 'Our team will review your request. You will get access once it is approved.');
+  };
+
+  const handlePayNow = async () => {
+    if (!user || !profile || !course) { navigate('/login'); return; }
+    if (enrollment) { navigate('/student/courses'); return; }
+    setPaying(true);
+    try {
+      // Price is read server-side from courses.price; the client only
+      // sends the course id. Checkout opens via the Cashfree JS SDK.
+      const order = await createPaymentOrder(course.id);
+      await startCashfreeCheckout(order);
+    } catch (e: unknown) {
+      toastError('Payment failed to start', e instanceof Error ? e.message : 'Please try again.');
+    }
+    setPaying(false);
   };
 
   const handleCancelRequest = async () => {
@@ -370,6 +395,24 @@ export default function CourseDetailPage() {
                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
                         This course requires approval before you get access. Send a request and our team will review it.
                       </p>
+                      {(course.price ?? 0) > 0 && (
+                        <>
+                          <p className="text-lg font-bold text-slate-900 dark:text-white mb-1">
+                            Course fee: {formatPrice(course.price)}
+                          </p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                            Pay securely online (UPI, cards, netbanking). Your access unlocks automatically once the payment is confirmed.
+                          </p>
+                          <button
+                            onClick={() => void handlePayNow()}
+                            disabled={paying}
+                            className="w-full py-3 rounded-xl font-semibold text-sm btn-primary mb-2"
+                          >
+                            {paying ? 'Starting checkout…' : `Pay ${formatPrice(course.price)}`}
+                          </button>
+                          <p className="text-center text-xs text-slate-400 mb-3">or pay offline and request access below</p>
+                        </>
+                      )}
                       <div className="mb-3">
                         <label className="label">PhonePe Transaction Reference <span className="text-slate-400">(optional)</span></label>
                         <input
