@@ -145,6 +145,39 @@ export default function LessonEditorTabs({ lesson, course, onRefresh, onEditLess
 // Overview Tab - shows teaching style summary
 // ============================================================
 function OverviewTab({ lesson }: { lesson: Lesson }) {
+  // Checklist state is loaded lazily and never blocks the tab: the
+  // checklist renders unchecked first, then updates when the queries
+  // resolve. Any query error falls back to unchecked (never a crash).
+  const [topicsDone, setTopicsDone] = useState(false);
+  const [recordingDone, setRecordingDone] = useState(false);
+  const [materialsDone, setMaterialsDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [topics, materials, sessions] = await Promise.all([
+          getLessonTopics(lesson.id),
+          getLessonMaterials(lesson.id),
+          getLessonLiveSessions(lesson.id),
+        ]);
+        if (cancelled) return;
+        setTopicsDone(topics.length > 0);
+        // Recorded lessons: a video URL; live lessons: a scheduled session.
+        setRecordingDone(
+          lesson.teaching_mode === 'live_class'
+            ? sessions.length > 0
+            : !!(lesson.video_url || sessions.length > 0),
+        );
+        setMaterialsDone(materials.some(m => m.is_published));
+      } catch {
+        // Leave the checklist unchecked; the dedicated tabs still show
+        // the real state and surface any error themselves.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lesson.id, lesson.teaching_mode, lesson.video_url]);
+
   return (
     <div className="max-w-2xl space-y-4">
       {/* Teaching Style Card */}
@@ -178,13 +211,13 @@ function OverviewTab({ lesson }: { lesson: Lesson }) {
         <h3 className="font-bold text-slate-900 dark:text-white mb-3">Content Checklist</h3>
         <div className="space-y-2">
           <ChecklistItem label="Notes / Explanation" done={!!(lesson.notes_markdown || lesson.explanation)} hint="Required. Go to the Notes tab to add." />
-          <ChecklistItem label="Topics & Subtopics" done={false} hint="Outline what this lesson covers." />
+          <ChecklistItem label="Topics & Subtopics" done={topicsDone} hint="Outline what this lesson covers." />
           {lesson.teaching_mode === 'live_class' ? (
-            <ChecklistItem label="Schedule Live Class" done={false} hint="Go to Live Class tab to schedule a Google Meet session." />
+            <ChecklistItem label="Schedule Live Class" done={recordingDone} hint="Go to Live Class tab to schedule a Google Meet session." />
           ) : (
-            <ChecklistItem label="Add Recording" done={false} hint="Go to Recording tab to add a YouTube/uploaded video." />
+            <ChecklistItem label="Add Recording" done={recordingDone} hint="Go to Recording tab to add a YouTube/uploaded video." />
           )}
-          <ChecklistItem label="Materials (Slides/Files)" done={false} hint="Upload slides, PDFs, or other resources for students." />
+          <ChecklistItem label="Materials (Slides/Files)" done={materialsDone} hint="Upload slides, PDFs, or other resources for students." />
           {lesson.enable_coding_playground && (
             <ChecklistItem label="Code Example" done={!!lesson.code_example} hint="Add starter code for the embedded playground." />
           )}

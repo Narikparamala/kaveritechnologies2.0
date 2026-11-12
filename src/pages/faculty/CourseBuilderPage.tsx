@@ -931,8 +931,15 @@ function ChapterPracticeManager({ chapterId, courseId, onClose, onToast, onError
     const swap = sorted[swapIdx];
     setBusy(true);
     try {
-      await supabase.from('coding_questions').update({ chapter_order_index: item.chapter_order_index ?? idx }).eq('id', swap.id);
-      await supabase.from('coding_questions').update({ chapter_order_index: swap.chapter_order_index ?? swapIdx }).eq('id', item.id);
+      // Capture errors on both halves of the swap: previously a failed
+      // update was ignored and load() then showed the stale order as if
+      // the move had worked. (A failed second update can still leave
+      // the first half applied — surfacing the error is the fix here;
+      // making the swap atomic needs a server-side RPC, follow-up.)
+      const { error: firstError } = await supabase.from('coding_questions').update({ chapter_order_index: item.chapter_order_index ?? idx }).eq('id', swap.id);
+      if (firstError) throw firstError;
+      const { error: secondError } = await supabase.from('coding_questions').update({ chapter_order_index: swap.chapter_order_index ?? swapIdx }).eq('id', item.id);
+      if (secondError) throw secondError;
       await load();
     } catch (e: any) { onError(e.message); }
     setBusy(false);
