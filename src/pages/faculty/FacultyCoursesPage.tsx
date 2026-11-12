@@ -41,7 +41,7 @@ function CourseThumbnail({ src, alt }: { src?: string | null; alt: string }) {
   );
 }
 
-const INITIAL_FORM = { title: '', slug: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', duration_hours: 0 };
+const INITIAL_FORM = { title: '', slug: '', short_description: '', description: '', thumbnail_url: '', difficulty: 'beginner', category: 'python', language: 'English', duration_hours: 0, price: 0 };
 
 export default function FacultyCoursesPage() {
   const { profile } = useAuth();
@@ -121,6 +121,7 @@ export default function FacultyCoursesPage() {
         category: form.category,
         language: form.language,
         duration_hours: Number(form.duration_hours) || 0,
+        price: Math.max(0, Number(form.price) || 0),
         created_by: profile.id,
       });
       success('Course created!', 'You can now build the curriculum in the Course Builder.');
@@ -280,6 +281,11 @@ export default function FacultyCoursesPage() {
               <label className="label">Estimated Duration (hours)</label>
               <input type="number" className="input" value={form.duration_hours} onChange={e => setForm(f => ({ ...f, duration_hours: Number(e.target.value) }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Course Price (INR)</label>
+            <input type="number" min={0} step={1} className="input" value={form.price} onChange={e => setForm(f => ({ ...f, price: Math.max(0, Number(e.target.value) || 0) }))} />
+            <p className="text-xs text-slate-400 mt-1">0 = free. A price only takes effect with “Approval required” enrolment — set that in the Course Builder after creating the course.</p>
           </div>
           <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs flex items-start gap-2">
             <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />

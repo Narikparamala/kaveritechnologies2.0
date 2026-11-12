@@ -399,6 +399,17 @@ verify_jwt = false
 [functions.marketing-lead-ingest]
 verify_jwt = false
 
+# cashfree-payments has two routes with different auth, so the gateway
+# JWT check is off and each route authenticates itself inside the
+# function: /create-order verifies the caller's Supabase JWT manually,
+# /webhook verifies the Cashfree HMAC-SHA256 signature over the raw
+# body (x-webhook-signature / x-webhook-timestamp). Never rely on the
+# browser redirect: the webhook is the only thing that marks an order
+# paid. Secrets: CASHFREE_TEST_APP_ID / CASHFREE_TEST_SECRET_KEY
+# (sandbox only in v1).
+[functions.cashfree-payments]
+verify_jwt = false
+
 
 [analytics]
 enabled = true
