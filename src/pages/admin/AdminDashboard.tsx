@@ -20,7 +20,11 @@ const MONTHLY_DATA = [
 ];
 
 export default function AdminDashboard() {
-  const [counts, setCounts] = useState({ students: 0, faculty: 0, courses: 0, certificates: 0, enrollments: 0 });
+  // counts.admins is the super_admin count. "Total Registered Users" must
+  // be students + faculty + admins: omitting admins made the dashboard
+  // show 22 while /admin/users and /admin/analytics (which count every
+  // profile) showed 23. Profiles: 18 students + 4 faculty + 1 super_admin.
+  const [counts, setCounts] = useState({ students: 0, faculty: 0, admins: 0, courses: 0, certificates: 0, enrollments: 0 });
   const [courses, setCourses] = useState<Course[]>([]);
   const [recentUsers, setRecentUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +38,7 @@ export default function AdminDashboard() {
       const [
         { data: students, error: errStudents },
         { data: faculty, error: errFaculty },
+        { data: admins, error: errAdmins },
         { data: cData, error: errCourses },
         { data: certs, error: errCerts },
         { data: users, error: errUsers },
@@ -41,13 +46,14 @@ export default function AdminDashboard() {
       ] = await Promise.all([
         supabase.from('profiles').select('id').eq('role', 'student'),
         supabase.from('profiles').select('id').eq('role', 'faculty'),
+        supabase.from('profiles').select('id').eq('role', 'super_admin'),
         supabase.from('courses').select('*').eq('is_published', true),
         supabase.from('certificates').select('id'),
         supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(8),
         supabase.from('course_enrollments').select('id'),
       ]);
       if (cancelled) return;
-      const firstError = errStudents ?? errFaculty ?? errCourses ?? errCerts ?? errUsers ?? errEnrollments;
+      const firstError = errStudents ?? errFaculty ?? errAdmins ?? errCourses ?? errCerts ?? errUsers ?? errEnrollments;
       if (firstError) {
         console.error('Admin dashboard query failed:', firstError);
         setLoadError(firstError.message);
@@ -57,6 +63,7 @@ export default function AdminDashboard() {
       setCounts({
         students: students?.length ?? 0,
         faculty: faculty?.length ?? 0,
+        admins: admins?.length ?? 0,
         courses: cData?.length ?? 0,
         certificates: certs?.length ?? 0,
         enrollments: enrollments?.length ?? 0,
@@ -185,7 +192,7 @@ export default function AdminDashboard() {
           <h2 className="section-title">Platform Summary</h2>
           <div className="space-y-4">
             {[
-              { label: 'Total Registered Users', value: counts.students + counts.faculty, icon: Users, color: 'text-primary-600' },
+              { label: 'Total Registered Users', value: counts.students + counts.faculty + counts.admins, icon: Users, color: 'text-primary-600' },
               { label: 'Total Enrollments', value: counts.enrollments, icon: BookOpen, color: 'text-emerald-600' },
               { label: 'Certificates Issued', value: counts.certificates, icon: Award, color: 'text-amber-600' },
               { label: 'Published Courses', value: counts.courses, icon: Activity, color: 'text-teal-600' },
