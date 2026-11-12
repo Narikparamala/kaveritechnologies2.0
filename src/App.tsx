@@ -140,6 +140,42 @@ const DemoLiveClassesPage = lazy(() => import('./pages/demo/student/DemoLiveClas
 const DemoFacultyLayout = lazy(() => import('./pages/demo/faculty/DemoFacultyLayout'));
 const DemoAdminLayout = lazy(() => import('./pages/demo/admin/DemoAdminLayout'));
 
+// Demo faculty/admin pages are named exports, so each lazy import maps
+// the named export to a default export (same lazy pattern as the
+// student demo pages above).
+const DemoFacultyDashboard = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyDashboard })));
+const DemoFacultyCoursesPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyCoursesPage })));
+const DemoCourseBuildPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoCourseBuildPage })));
+const DemoFacultyLessonsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyLessonsPage })));
+const DemoFacultyAssignmentsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyAssignmentsPage })));
+const DemoFacultySubmissionsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultySubmissionsPage })));
+const DemoFacultyQuizzesPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyQuizzesPage })));
+const DemoFacultyProjectsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyProjectsPage })));
+const DemoFacultyAnnouncementsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyAnnouncementsPage })));
+const DemoStudentProgressPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoStudentProgressPage })));
+const DemoFacultyCalendarPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyCalendarPage })));
+const DemoFacultyNotificationsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyNotificationsPage })));
+const DemoFacultyProfilePage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultyProfilePage })));
+const DemoFacultySettingsPage = lazy(() => import('./pages/demo/faculty/DemoFacultyPages').then(m => ({ default: m.DemoFacultySettingsPage })));
+const DemoAdminDashboard = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminDashboard })));
+const DemoAdminUsersPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminUsersPage })));
+const DemoAdminStudentsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminStudentsPage })));
+const DemoAdminFacultyPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminFacultyPage })));
+const DemoAdminCoursesPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminCoursesPage })));
+const DemoAdminCourseAssignments = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminCourseAssignments })));
+const DemoAdminAssignmentsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminAssignmentsPage })));
+const DemoAdminQuizzesPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminQuizzesPage })));
+const DemoAdminProjectsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminProjectsPage })));
+const DemoAdminCertificatesPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminCertificatesPage })));
+const DemoAdminAnnouncementsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminAnnouncementsPage })));
+const DemoAdminAnalyticsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminAnalyticsPage })));
+const DemoAdminLeaderboardPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminLeaderboardPage })));
+const DemoAdminStoragePage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminStoragePage })));
+const DemoAdminSettingsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminSettingsPage })));
+const DemoAdminRolesPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminRolesPage })));
+const DemoAdminProfilePage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminProfilePage })));
+const DemoAdminNotificationsPage = lazy(() => import('./pages/demo/admin/DemoAdminPages').then(m => ({ default: m.DemoAdminNotificationsPage })));
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -222,11 +258,43 @@ export default function App() {
 
                   <Route path="/demo/faculty" element={<DemoFacultyLayout />}>
                     <Route index element={<Navigate to="dashboard" replace />} />
+                    <Route path="dashboard" element={<DemoFacultyDashboard />} />
+                    <Route path="courses" element={<DemoFacultyCoursesPage />} />
+                    <Route path="course-builder" element={<DemoCourseBuildPage />} />
+                    <Route path="lessons" element={<DemoFacultyLessonsPage />} />
+                    <Route path="assignments" element={<DemoFacultyAssignmentsPage />} />
+                    <Route path="submissions" element={<DemoFacultySubmissionsPage />} />
+                    <Route path="quizzes" element={<DemoFacultyQuizzesPage />} />
+                    <Route path="projects" element={<DemoFacultyProjectsPage />} />
+                    <Route path="announcements" element={<DemoFacultyAnnouncementsPage />} />
+                    <Route path="progress" element={<DemoStudentProgressPage />} />
+                    <Route path="calendar" element={<DemoFacultyCalendarPage />} />
+                    <Route path="notifications" element={<DemoFacultyNotificationsPage />} />
+                    <Route path="profile" element={<DemoFacultyProfilePage />} />
+                    <Route path="settings" element={<DemoFacultySettingsPage />} />
                     <Route path="*" element={<ComingSoon title="Demo Page" />} />
                   </Route>
 
                   <Route path="/demo/admin" element={<DemoAdminLayout />}>
                     <Route index element={<Navigate to="dashboard" replace />} />
+                    <Route path="dashboard" element={<DemoAdminDashboard />} />
+                    <Route path="users" element={<DemoAdminUsersPage />} />
+                    <Route path="students" element={<DemoAdminStudentsPage />} />
+                    <Route path="faculty" element={<DemoAdminFacultyPage />} />
+                    <Route path="courses" element={<DemoAdminCoursesPage />} />
+                    <Route path="course-assignments" element={<DemoAdminCourseAssignments />} />
+                    <Route path="assignments" element={<DemoAdminAssignmentsPage />} />
+                    <Route path="quizzes" element={<DemoAdminQuizzesPage />} />
+                    <Route path="projects" element={<DemoAdminProjectsPage />} />
+                    <Route path="certificates" element={<DemoAdminCertificatesPage />} />
+                    <Route path="announcements" element={<DemoAdminAnnouncementsPage />} />
+                    <Route path="analytics" element={<DemoAdminAnalyticsPage />} />
+                    <Route path="leaderboard" element={<DemoAdminLeaderboardPage />} />
+                    <Route path="storage" element={<DemoAdminStoragePage />} />
+                    <Route path="settings" element={<DemoAdminSettingsPage />} />
+                    <Route path="roles" element={<DemoAdminRolesPage />} />
+                    <Route path="profile" element={<DemoAdminProfilePage />} />
+                    <Route path="notifications" element={<DemoAdminNotificationsPage />} />
                     <Route path="*" element={<ComingSoon title="Demo Page" />} />
                   </Route>
 

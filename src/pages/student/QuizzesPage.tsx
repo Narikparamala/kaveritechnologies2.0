@@ -37,7 +37,14 @@ export default function QuizzesPage() {
   const { success, error: toastError } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const practiceMode = searchParams.get('practice') === '1';
+  // Practice mode is staff-only: it serves the answer key through
+  // get_quiz_questions_staff and bypasses the lesson lock. A student
+  // opening ?practice=1 gets the normal locked flow instead (the staff
+  // RPC would also reject them, but they must never enter this path).
+  // profile loads async, so this flips to true once a staff profile
+  // arrives; the load effect below re-runs on practiceMode.
+  const isStaff = profile?.role === 'faculty' || profile?.role === 'super_admin';
+  const practiceMode = searchParams.get('practice') === '1' && isStaff;
   const requestedQuizId = searchParams.get('quizId');
   const returnTo = searchParams.get('returnTo') ?? '/faculty/quizzes';
   const [quizzes, setQuizzes] = useState<QuizWithCourse[]>([]);

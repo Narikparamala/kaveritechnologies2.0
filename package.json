@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "infisical run --env=dev -- npm run dev:plain",
     "dev:plain": "node scripts/generate-sw-config.mjs && vite",
-    "build": "node scripts/generate-sw-config.mjs && vite build",
+    "build": "node scripts/check-preview-role.mjs && node scripts/generate-sw-config.mjs && vite build",
     "build:infisical": "infisical run --env=prod -- npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
