@@ -19,18 +19,45 @@ export default function AdminCoursesPage() {
   useEffect(() => {
     // creator: courses.created_by -> profiles (FK embed; staff-only SELECT via RLS)
     supabase.from('courses').select('*, creator:created_by(full_name, email)').order('created_at', { ascending: false })
-      .then(({ data }) => { setCourses((data ?? []) as unknown as Course[]); setLoading(false); });
+      .then(({ data, error }) => {
+        if (error) { toastError('Error', error.message); }
+        setCourses((data ?? []) as unknown as Course[]);
+        setLoading(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount; toastError is stable
   }, []);
 
   const handleCreate = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from('courses').insert({
-      ...form,
-      slug: slugify(form.title),
-      is_published: false,
-      created_by: user?.id,
-    }).select().maybeSingle();
+    // Create through the same RPC faculty uses (create_faculty_course):
+    // a direct courses.insert skips the course_faculty row, so the new
+    // course never appears in the Faculty portal (issue #43). The RPC
+    // derives created_by from auth.uid() and always creates the
+    // course_faculty join; is_published stays false for drafts.
+    // The RPC accepts price (20261112150000 redefined it to accept
+    // `price` in the payload), but not enrollment_mode, so apply the
+    // chosen mode afterwards (the column defaults to 'open').
+    const { data: rpcData, error } = await supabase.rpc('create_faculty_course', {
+      p_payload: {
+        title: form.title,
+        slug: slugify(form.title),
+        short_description: form.short_description,
+        difficulty: form.difficulty,
+        category: form.category,
+        duration_hours: form.duration_hours,
+        price: Math.max(0, Number(form.price) || 0),
+        is_published: false,
+      },
+    });
     if (error) { toastError('Error', error.message); return; }
+    const courseId = (rpcData as { id?: string } | null)?.id;
+    if (!courseId) { toastError('Error', 'Course could not be created.'); return; }
+    if (form.enrollment_mode !== 'open') {
+      const { error: modeError } = await supabase.from('courses')
+        .update({ enrollment_mode: form.enrollment_mode }).eq('id', courseId);
+      if (modeError) { toastError('Warning', `Course created, but enrolment mode could not be set: ${modeError.message}`); }
+    }
+    const { data, error: fetchError } = await supabase.from('courses').select('*').eq('id', courseId).maybeSingle();
+    if (fetchError) { toastError('Error', fetchError.message); return; }
     if (data) { setCourses(cs => [data as Course, ...cs]); success('Course created!'); setShowModal(false); }
   };
 
@@ -59,7 +86,8 @@ export default function AdminCoursesPage() {
   };
 
   const togglePublish = async (id: string, current: boolean) => {
-    await supabase.from('courses').update({ is_published: !current }).eq('id', id);
+    const { error } = await supabase.from('courses').update({ is_published: !current }).eq('id', id);
+    if (error) { toastError('Update failed', error.message); return; }
     setCourses(cs => cs.map(c => c.id === id ? { ...c, is_published: !current } : c));
     success(current ? 'Course unpublished' : 'Course published!');
   };
