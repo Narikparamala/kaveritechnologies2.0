@@ -272,4 +272,48 @@
   - Migration NOT applied to prod (staging only)
 - **Branch / PR:** `fix/health-p1-bugs`, PR #46 — https://github.com/Narikparamala/kaveritechnologies2.0/pull/46, merge `6fbb415b`
 
+### 2026-11-14 — Multi-gateway payments v2: Razorpay, Stripe, PayPal (settings-driven)
+- **Agent / tool:** Muse (subagent)
+- **Goal (user's words):** "It's better platform automatically completes all things" — after being told Cashfree is not yet usable by end users and Stripe/Razorpay/PayPal are not built yet; build multi-gateway payments with automatic setup after keys are pasted, reusable and customisable
+- **What I changed:**
+  - New edge functions `razorpay-payments`, `stripe-payments`, `paypal-payments` (each ~600-700 lines) mirroring `cashfree-payments`: create-order reads price server-side, signature-verified webhook, server-side re-verification, idempotent grant via the existing `grant_paid_enrollment` RPC. No new order tables — all reuse `payment_orders` / `payment_transactions` (the `cf_order_id` / `cf_payment_id` columns are generic gateway-assigned ids, names are historical).
+  - `src/lib/payments.ts` rewritten as a provider registry (cashfree, razorpay, stripe, paypal) — backward compatible: `createPaymentOrder` / `startCashfreeCheckout` / `formatPrice` keep their signatures. New: `resolveActiveGateway()` (reads `gateway_settings`, falls back to env default), `probeGatewayStatus()`, `startRazorpayCheckout` (Checkout.js modal), `startRedirectCheckout` (Stripe/PayPal), `startCheckoutForCourse`.
+  - New Admin Payment Settings page `src/pages/admin/AdminPaymentSettingsPage.tsx` at `/admin/payments` (super_admin via parent RoleGuard): live status per gateway (probed), active-gateway picker, sandbox/live mode, currency, per-gateway setup steps + webhook URLs + fees. Cashfree mode select is disabled — the v1 function reads test secrets only; its live activation is a separate step.
+  - `CourseDetailPage.tsx` `handlePayNow` now uses generic `startCheckoutForCourse`; the fee shows the active gateway's currency and label. Manual PhonePe-reference flow untouched.
+  - Migrations added: `20261114120000_payment_gateway_settings.sql` — new `gateway_settings` table (non-secret config only; exactly one active gateway via partial unique index; RLS admin-all + authenticated select-active), seed rows (cashfree active/sandbox/INR, others inactive).
+  - Edge functions changed: three new (above); `supabase/config.toml` gained three `[functions.*]` sections, all `verify_jwt = false` like cashfree-payments.
+  - Secrets/env added: names only, in `.env.example` and the settings page — `RAZORPAY_TEST_KEY_ID/SECRET/WEBHOOK_SECRET`, `RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET` (live), `STRIPE_TEST_SECRET_KEY/WEBHOOK_SECRET`, `STRIPE_SECRET_KEY/WEBHOOK_SECRET` (live), `PAYPAL_TEST_CLIENT_ID/SECRET/WEBHOOK_ID`, `PAYPAL_CLIENT_ID/SECRET/WEBHOOK_ID` (live), `LMS_PUBLIC_URL` (Stripe/PayPal). No real secret set anywhere.
+  - Docs: `docs/payments-multi-gateway.md` (research note + setup steps + owner checklist); `AGENTS.md` §11 fixed (stale "No payments" line).
+  - Mode is real for the new gateways: `gateway_settings.mode` picks which secret names the function reads; without the table each function falls back to sandbox + its default currency (INR/INR/USD).
+  - Research (official docs only, 2026-11-14): Razorpay Orders API + Checkout.js, HMAC hex webhook, fulfil on `payment.captured` only, 2% + GST, UPI test `success@razorpay`; Stripe Checkout Sessions + redirect, `Stripe-Signature` `t.v1` HMAC, 2% domestic / 3% international India, **invite-only for new Indian businesses**; PayPal Orders v2 + OAuth2, postback webhook verification, 4.40% + fixed fee, **India international-only, no domestic INR**.
+- **What I verified:**
+  - `npm run typecheck` pass (zero errors — fixed 4 real type errors
+    in the first run: DB mode `'live'` vs `PaymentMode 'production'`
+    mapping, a `Promise | null` narrowing, and a missing
+    `GatewayStatus` export), `npm run lint` 0 errors / 581 warnings
+    (baseline — one new warning found and fixed), `npm run build`
+    pass (1m 27s, same as baseline; Monaco chunk warning is known)
+  - Edge functions: standalone `tsc` only (no Deno in the VM). Only
+    errors are the same untyped-`createClient` artifacts the deployed
+    cashfree-payments function already shows (no new error classes).
+    One real bug caught by it and fixed: `PAYPAL_LIVE_BASE_URL` was
+    referenced but never defined.
+  - Staging (2026-11-14): migration `20261114120000` applied to
+    staging only (4 seed rows, exactly one active: cashfree /
+    sandbox / INR); all three functions deployed to staging only
+    (razorpay-payments, stripe-payments, paypal-payments — all ACTIVE
+    v1, verify_jwt=false) and probed live: create-order without auth
+    returns 503 CONFIGURATION_ERROR with the correct secret names
+    (fail-closed, no secrets set yet), webhook GET returns 405.
+- **What I deliberately did NOT change (and why):**
+  - Did not touch the Cashfree flow, RLS policies, RPC signatures, routes, or grading (additive only, per AGENTS.md Rule 0)
+  - Did not create merchant accounts, do KYC, or set any real secrets anywhere
+  - Did not apply the migration to prod, deploy to prod, or set prod secrets — production untouched
+  - `src/types/database.ts` not hand-edited (needs `supabase gen types` regen; the `gateway_settings` table is not in it yet — the page uses the untyped client, like `PlatformSettingsPage`)
+- **Known risks / follow-ups:**
+  - Owner still needs: test keys per gateway, sandbox E2E test per gateway, Cashfree whitelist approval (pending), Stripe invite (India), PayPal international-only limit
+  - Production activation waits for the new-entity decision (user resigned from Kaveri Technologies) and the faculty share % decision
+  - `courses.price` is a single number; the active gateway's currency applies — PayPal is USD-only for Indian merchants
+- **Branch / PR:** `feat/payments-multi-gateway`, PR #52 — https://github.com/Narikparamala/kaveritechnologies2.0/pull/52, commit `c5394c22` (log entry updated with the PR number + staging results in a second push to the same branch)
+
 ## New entries go above this line (newest first)

@@ -8,7 +8,8 @@ import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatPrice, createPaymentOrder, startCashfreeCheckout } from '../../lib/payments';
+import { formatPrice, startCheckoutForCourse, resolveActiveGateway, PAYMENT_CONFIG, PAYMENT_PROVIDERS } from '../../lib/payments';
+import type { ActiveGateway } from '../../lib/payments';
 import type { Course, Chapter, Lesson, CourseEnrollment, EnrollmentRequest } from '../../types/database';
 import { COMPANY } from '../../lib/company';
 
@@ -27,18 +28,24 @@ export default function CourseDetailPage() {
   const [requesting, setRequesting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [activeGateway, setActiveGateway] = useState<ActiveGateway | null>(null);
   const [openChapters, setOpenChapters] = useState<Set<string>>(new Set());
   const [paymentRef, setPaymentRef] = useState('');
 
   useEffect(() => {
     const load = async () => {
-      // Returning from Cashfree checkout: the webhook (not this redirect)
-      // is what grants access, so this is only an informational note.
+      // Returning from a gateway checkout: the webhook (not this
+      // redirect) is what grants access, so this is only an
+      // informational note.
       const params = new URLSearchParams(window.location.search);
       if (params.get('payment') === 'return') {
         info('Payment submitted', 'Your access will unlock once the payment is confirmed.');
         window.history.replaceState(null, '', window.location.pathname);
       }
+
+      // Active gateway (for the fee currency + Pay button label).
+      // Falls back to the env default when gateway_settings is absent.
+      void resolveActiveGateway().then(setActiveGateway).catch(() => undefined);
 
       const { data: courseData } = await supabase
         .from('courses')
@@ -157,9 +164,9 @@ export default function CourseDetailPage() {
     setPaying(true);
     try {
       // Price is read server-side from courses.price; the client only
-      // sends the course id. Checkout opens via the Cashfree JS SDK.
-      const order = await createPaymentOrder(course.id);
-      await startCashfreeCheckout(order);
+      // sends the course id. Checkout opens via the active gateway
+      // (Cashfree SDK, Razorpay modal, or a Stripe/PayPal redirect).
+      await startCheckoutForCourse(course.id, course.slug);
     } catch (e: unknown) {
       toastError('Payment failed to start', e instanceof Error ? e.message : 'Please try again.');
     }
@@ -398,17 +405,17 @@ export default function CourseDetailPage() {
                       {(course.price ?? 0) > 0 && (
                         <>
                           <p className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-                            Course fee: {formatPrice(course.price)}
+                            Course fee: {formatPrice(course.price, activeGateway?.currency ?? PAYMENT_CONFIG.currency)}
                           </p>
                           <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                            Pay securely online (UPI, cards, netbanking). Your access unlocks automatically once the payment is confirmed.
+                            Pay securely online{activeGateway ? ` via ${PAYMENT_PROVIDERS[activeGateway.gateway].label}` : ''}. Your access unlocks automatically once the payment is confirmed.
                           </p>
                           <button
                             onClick={() => void handlePayNow()}
                             disabled={paying}
                             className="w-full py-3 rounded-xl font-semibold text-sm btn-primary mb-2"
                           >
-                            {paying ? 'Starting checkout…' : `Pay ${formatPrice(course.price)}`}
+                            {paying ? 'Starting checkout…' : `Pay ${formatPrice(course.price, activeGateway?.currency ?? PAYMENT_CONFIG.currency)}`}
                           </button>
                           <p className="text-center text-xs text-slate-400 mb-3">or pay offline and request access below</p>
                         </>
