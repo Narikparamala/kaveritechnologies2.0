@@ -224,9 +224,11 @@ Follow `REBRAND-GUIDE.md` — it lists every file to touch.
 
 ## 11. What this project does NOT have
 
-- No payments (no Razorpay/Stripe/UPI). Paid gating = enrollment /
-  access flags. `CourseDetailPage.tsx` collects a free-text
-  `paymentRef` on enrollment only.
+- Payments: Cashfree (v1, sandbox/test) + Razorpay/Stripe/PayPal (v2,
+  multi-gateway, settings-driven — see `docs/payments-multi-gateway.md`).
+  Paid gating = enrollment / access flags. `CourseDetailPage.tsx`
+  collects a free-text `paymentRef` on enrollment only (offline
+  PhonePe fallback, kept alongside online checkout).
 - No test suite. No `.nvmrc` / `engines` pin (CI uses Node 22;
   verified locally on Node 24.22.1). Package name is still the
   Vite starter name (`vite-react-typescript-starter`, `0.0.0`).

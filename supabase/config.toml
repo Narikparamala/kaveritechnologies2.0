@@ -410,6 +410,33 @@ verify_jwt = false
 [functions.cashfree-payments]
 verify_jwt = false
 
+# razorpay-payments mirrors cashfree-payments: the gateway JWT check
+# is off and each route authenticates itself inside the function:
+# /create-order verifies the caller's Supabase JWT manually,
+# /webhook verifies the Razorpay HMAC-SHA256 hex signature over the
+# raw body (x-razorpay-signature). Secrets: RAZORPAY_TEST_KEY_ID /
+# RAZORPAY_TEST_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET (sandbox only).
+[functions.razorpay-payments]
+verify_jwt = false
+
+# stripe-payments mirrors cashfree-payments: /create-order verifies
+# the caller's Supabase JWT manually, /webhook verifies the
+# Stripe-Signature header (HMAC-SHA256 over timestamp + "." + raw
+# body). Secrets: STRIPE_TEST_SECRET_KEY / STRIPE_WEBHOOK_SECRET
+# (sandbox only). LMS_PUBLIC_URL is required for Checkout
+# success/cancel URLs.
+[functions.stripe-payments]
+verify_jwt = false
+
+# paypal-payments mirrors cashfree-payments: /create-order verifies
+# the caller's Supabase JWT manually, /webhook verifies by postback
+# (PayPal verify-webhook-signature API). Secrets:
+# PAYPAL_TEST_CLIENT_ID / PAYPAL_TEST_CLIENT_SECRET / PAYPAL_WEBHOOK_ID
+# (sandbox only). LMS_PUBLIC_URL is required for order return/cancel
+# URLs.
+[functions.paypal-payments]
+verify_jwt = false
+
 
 [analytics]
 enabled = true

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Video, Link2, FileText,
   ClipboardList, HelpCircle, FolderKanban, Award, Megaphone, Bell,
   BarChart2, Trophy, Settings, User, Building2, DollarSign, UserCheck, Briefcase, Inbox,
-  CalendarCheck2, Users2, Code2, Upload, Terminal, Puzzle,
+  CalendarCheck2, Users2, Code2, Upload, Terminal, Puzzle, CreditCard,
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/common/DashboardLayout';
 import { Sidebar } from '../../components/common/Sidebar';
@@ -39,6 +39,7 @@ const NAV_ITEMS = [
   { label: 'Analytics', icon: BarChart2, to: '/analytics' },
   { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
   { label: 'Platform Settings', icon: Settings, to: '/settings' },
+  { label: 'Payment Settings', icon: CreditCard, to: '/payments' },
   { label: 'Profile', icon: User, to: '/profile' },
 ];
 

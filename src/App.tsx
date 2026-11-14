@@ -106,6 +106,7 @@ const CourseAssignmentsPage = lazy(() => import('./pages/admin/CourseAssignments
 const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
 const AdminCertificatesPage = lazy(() => import('./pages/admin/AdminCertificatesPage'));
 const PlatformSettingsPage = lazy(() => import('./pages/admin/PlatformSettingsPage'));
+const AdminPaymentSettingsPage = lazy(() => import('./pages/admin/AdminPaymentSettingsPage'));
 const AdminLiveClassesPage = lazy(() => import('./pages/admin/AdminLiveClassesPage'));
 const AdminLiveSessionFormPage = lazy(() => import('./pages/admin/AdminLiveSessionFormPage'));
 const AdminSessionAttendancePage = lazy(() => import('./pages/admin/AdminSessionAttendancePage'));
@@ -444,6 +445,7 @@ export default function App() {
                     <Route path="leaderboard" element={<LeaderboardPage />} />
                     <Route path="storage" element={<Navigate to="/admin/settings" replace />} />
                     <Route path="settings" element={<PlatformSettingsPage />} />
+                    <Route path="payments" element={<AdminPaymentSettingsPage />} />
                     <Route path="roles" element={<Navigate to="/admin/users" replace />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>
