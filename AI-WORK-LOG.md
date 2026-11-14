@@ -298,7 +298,13 @@
     cashfree-payments function already shows (no new error classes).
     One real bug caught by it and fixed: `PAYPAL_LIVE_BASE_URL` was
     referenced but never defined.
-  - Staging: migration applied to staging only; three functions deployed to staging only and probed (expect fail-closed 503 / 401 — no secrets set yet)
+  - Staging (2026-11-14): migration `20261114120000` applied to
+    staging only (4 seed rows, exactly one active: cashfree /
+    sandbox / INR); all three functions deployed to staging only
+    (razorpay-payments, stripe-payments, paypal-payments — all ACTIVE
+    v1, verify_jwt=false) and probed live: create-order without auth
+    returns 503 CONFIGURATION_ERROR with the correct secret names
+    (fail-closed, no secrets set yet), webhook GET returns 405.
 - **What I deliberately did NOT change (and why):**
   - Did not touch the Cashfree flow, RLS policies, RPC signatures, routes, or grading (additive only, per AGENTS.md Rule 0)
   - Did not create merchant accounts, do KYC, or set any real secrets anywhere
@@ -308,6 +314,6 @@
   - Owner still needs: test keys per gateway, sandbox E2E test per gateway, Cashfree whitelist approval (pending), Stripe invite (India), PayPal international-only limit
   - Production activation waits for the new-entity decision (user resigned from Kaveri Technologies) and the faculty share % decision
   - `courses.price` is a single number; the active gateway's currency applies — PayPal is USD-only for Indian merchants
-- **Branch / PR:** `feat/payments-multi-gateway`, PR — (number to be added when opened)
+- **Branch / PR:** `feat/payments-multi-gateway`, PR #52 — https://github.com/Narikparamala/kaveritechnologies2.0/pull/52, commit `c5394c22` (log entry updated with the PR number + staging results in a second push to the same branch)
 
 ## New entries go above this line (newest first)
