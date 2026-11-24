@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle, Users } from 'lucide-react';
+import { Search, GraduationCap, BookOpen, Award, AlertTriangle, CheckCircle, Users, Trash2 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { DeleteUserModal } from '../../components/admin/DeleteUserModal';
 import { AddToBatchModal } from '../../components/common/AddToBatchModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -27,6 +28,9 @@ export default function FacultyStudentsPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [batchModalStudent, setBatchModalStudent] = useState<StudentWithProgress | null>(null);
   const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>([]);
+  // Hard-delete request (feature/hard-delete-user): faculty file a request,
+  // they never delete directly. New state only.
+  const [requestTarget, setRequestTarget] = useState<StudentWithProgress | null>(null);
 
   useEffect(() => {
     if (!faculty) return;
@@ -260,6 +264,12 @@ export default function FacultyStudentsPage() {
                   >
                     <Users size={12} /> Add to Batch
                   </button>
+                  <button
+                    onClick={() => setRequestTarget(student)}
+                    className="btn-ghost text-xs flex items-center gap-1 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={12} /> Request Delete
+                  </button>
                   <Link
                     to={`/faculty/students/${student.id}`}
                     className="btn-primary text-xs"
@@ -283,6 +293,15 @@ export default function FacultyStudentsPage() {
           setJoinedBatchIds(ids => [...ids, batchId]);
           success(`Added to ${batchName}`);
         }}
+      />
+
+      {/* Hard-delete request (feature/hard-delete-user) — faculty request only, never a direct delete. */}
+      <DeleteUserModal
+        open={!!requestTarget}
+        onClose={() => setRequestTarget(null)}
+        target={requestTarget}
+        mode="request"
+        onRequested={() => setRequestTarget(null)}
       />
     </div>
   );

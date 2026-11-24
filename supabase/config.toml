@@ -471,3 +471,13 @@ enabled = true
 client_id = "735463799740-easdns2e0mqet6fakrdnfcdl3esau2qa.apps.googleusercontent.com"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
 skip_nonce_check = false
+
+# admin-delete-user has Super Admin / faculty routes with different auth,
+# so the gateway JWT check is off and each route authenticates itself
+# inside the function: the caller's Supabase JWT is verified manually
+# (initStaffRequest), the caller must be super_admin to delete, and
+# faculty may only preview/export/request for students in their own
+# courses. The function uses the service-role key to call
+# auth.admin.deleteUser(). No secrets besides the injected Supabase keys.
+[functions.admin-delete-user]
+verify_jwt = false
