@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  Trash2,
   UserCheck,
   UserX,
   Users,
@@ -13,6 +14,7 @@ import {
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { DeleteUserModal } from '../../components/admin/DeleteUserModal';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/utils';
@@ -21,6 +23,11 @@ import {
   setPlatformUserActive,
   setPlatformUserRole,
 } from '../../services/userAdministration';
+import {
+  listDeletionRequests,
+  reviewDeletionRequest,
+  type DeletionRequest,
+} from '../../services/userDeletion';
 import type { Profile, UserRole } from '../../types/database';
 
 const ROLE_OPTIONS: UserRole[] = ['student', 'faculty', 'super_admin'];
@@ -49,6 +56,11 @@ export default function UsersPage() {
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
+  // Hard delete (feature/hard-delete-user): new state only — existing flows untouched.
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
+  const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -67,6 +79,49 @@ export default function UsersPage() {
   useEffect(() => {
     void loadUsers();
   }, [loadUsers]);
+
+  // Hard delete requests filed by faculty (feature/hard-delete-user).
+  const loadDeletionRequests = useCallback(async () => {
+    setRequestsLoading(true);
+    try {
+      setDeletionRequests(await listDeletionRequests('pending'));
+    } catch (caught) {
+      if (import.meta.env.DEV) console.error('Failed to load deletion requests:', caught);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDeletionRequests();
+  }, [loadDeletionRequests]);
+
+  const reviewRequest = async (request: DeletionRequest, decision: 'approved' | 'rejected') => {
+    const confirmed = window.confirm(
+      decision === 'approved'
+        ? `Approve deletion of ${request.target_name ?? request.target_email}? The account and all of its data will be permanently removed.`
+        : `Reject the deletion request for ${request.target_name ?? request.target_email}?`,
+    );
+    if (!confirmed) return;
+    setReviewingRequestId(request.id);
+    try {
+      await reviewDeletionRequest({ requestId: request.id, decision });
+      setDeletionRequests(current => current.filter(r => r.id !== request.id));
+      if (decision === 'approved') {
+        setUsers(current => current.filter(user => user.id !== request.target_user_id));
+        success('Account deleted', `${request.target_name ?? request.target_email} was permanently removed.`);
+      } else {
+        success('Request rejected', 'The account was left untouched.');
+      }
+    } catch (caught) {
+      toastError(
+        'Review failed',
+        caught instanceof Error ? caught.message : 'Please try again.',
+      );
+    } finally {
+      setReviewingRequestId(null);
+    }
+  };
 
   const replaceUser = (updated: Profile) => {
     setUsers(current =>
@@ -197,6 +252,53 @@ export default function UsersPage() {
         </div>
       </div>
 
+      {/* Deletion requests filed by faculty (feature/hard-delete-user) — new section only. */}
+      {deletionRequests.length > 0 && (
+        <div className="card p-5 mb-6 border-amber-200 dark:border-amber-800">
+          <h2 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">
+            Deletion requests from faculty ({deletionRequests.length})
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">
+            Faculty cannot delete accounts directly — they ask here. Approving permanently deletes the account and all of its data.
+          </p>
+          <div className="space-y-3">
+            {deletionRequests.map(request => (
+              <div key={request.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+                <p className="font-medium text-sm text-slate-900 dark:text-white">
+                  {request.target_name || 'Unnamed user'} <span className="font-normal text-slate-500">({request.target_email} · {request.target_role.replace('_', ' ')})</span>
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Reason: {request.reason}</p>
+                {request.ai_report && (
+                  <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">Report: {request.ai_report}</p>
+                )}
+                <p className="text-xs text-slate-400 mt-1">
+                  Requested by {request.requested_by_profile?.full_name ?? request.requested_by_profile?.email ?? 'a faculty member'} · {formatDate(request.created_at)}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    disabled={reviewingRequestId === request.id}
+                    onClick={() => void reviewRequest(request, 'approved')}
+                    className="py-1.5 px-3 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {reviewingRequestId === request.id ? 'Working…' : 'Approve & delete'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reviewingRequestId === request.id}
+                    onClick={() => void reviewRequest(request, 'rejected')}
+                    className="btn-secondary text-xs"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {requestsLoading && <p className="text-xs text-slate-400 mt-2">Refreshing requests…</p>}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map(item => (
@@ -308,12 +410,35 @@ export default function UsersPage() {
                       </span>
                     )}
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={busy || isCurrentAdmin}
+                    onClick={() => setDeleteTarget(user)}
+                    className="btn-ghost text-xs text-red-600 hover:text-red-700"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Trash2 size={14} /> Delete
+                    </span>
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Hard delete (feature/hard-delete-user) — new modal only. */}
+      <DeleteUserModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        target={deleteTarget}
+        mode="delete"
+        onDeleted={deleted => {
+          setUsers(current => current.filter(user => user.id !== deleted.id));
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

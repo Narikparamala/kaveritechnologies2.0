@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, UserPlus, MoreVertical, Mail, BookOpen, Users, Calendar, TrendingUp, AlertCircle } from 'lucide-react';
+import { Search, UserPlus, MoreVertical, Mail, BookOpen, Users, Calendar, TrendingUp, AlertCircle, Trash2 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { DeleteUserModal } from '../../components/admin/DeleteUserModal';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -44,6 +45,8 @@ export default function AdminFacultyManagementPage() {
   const [showCompensationModal, setShowCompensationModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedFaculty, setSelectedFaculty] = useState<FacultyWithDetails | null>(null);
+  // Hard delete (feature/hard-delete-user): new state only — existing flows untouched.
+  const [deleteTarget, setDeleteTarget] = useState<FacultyWithDetails | null>(null);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [nonFacultyUsers, setNonFacultyUsers] = useState<Profile[]>([]);
   const [saving, setSaving] = useState(false);
@@ -270,6 +273,12 @@ export default function AdminFacultyManagementPage() {
                     View
                   </button>
                   <button
+                    onClick={() => setDeleteTarget(f)}
+                    className="btn-ghost text-xs text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={12} className="inline mr-1" /> Delete
+                  </button>
+                  <button
                     onClick={() => { setSelectedFaculty(f); setShowCourseModal(true); }}
                     className="btn-secondary text-xs"
                   >
@@ -368,6 +377,18 @@ export default function AdminFacultyManagementPage() {
           </div>
         )}
       </Modal>
+
+      {/* Hard delete (feature/hard-delete-user) — new modal only. */}
+      <DeleteUserModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        target={deleteTarget}
+        mode="delete"
+        onDeleted={() => {
+          setDeleteTarget(null);
+          loadData();
+        }}
+      />
     </div>
   );
 }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, GraduationCap, BookOpen, CheckCircle, Clock, AlertTriangle, Mail, Award, Users } from 'lucide-react';
+import { Search, GraduationCap, BookOpen, CheckCircle, Clock, AlertTriangle, Mail, Award, Users, Trash2 } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
+import { DeleteUserModal } from '../../components/admin/DeleteUserModal';
 import { AddToBatchModal } from '../../components/common/AddToBatchModal';
 import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
@@ -34,6 +35,8 @@ export default function AdminStudentManagementPage() {
   const [saving, setSaving] = useState(false);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [batchModalStudent, setBatchModalStudent] = useState<StudentWithDetails | null>(null);
+  // Hard delete (feature/hard-delete-user): new state only — existing flows untouched.
+  const [deleteTarget, setDeleteTarget] = useState<StudentWithDetails | null>(null);
   const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -250,6 +253,12 @@ export default function AdminStudentManagementPage() {
                   >
                     <AlertTriangle size={12} /> Support
                   </button>
+                  <button
+                    onClick={() => setDeleteTarget(student)}
+                    className="btn-ghost text-xs flex items-center gap-1 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
                   <Link
                     to={`/admin/student-management/${student.id}`}
                     className="btn-primary text-xs"
@@ -334,6 +343,18 @@ export default function AdminStudentManagementPage() {
           </div>
         )}
       </Modal>
+
+      {/* Hard delete (feature/hard-delete-user) — new modal only. */}
+      <DeleteUserModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        target={deleteTarget}
+        mode="delete"
+        onDeleted={deleted => {
+          setStudents(current => current.filter(s => s.id !== deleted.id));
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }
