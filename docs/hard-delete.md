@@ -70,7 +70,24 @@ The confirm modal forces the order: preview → download → reason → report
   `generate-report`, `delete`, `request`, `list-requests`,
   `review-request`.
 - Migration: `supabase/migrations/20261124120000_user_deletion_requests.sql`
-  (new table only, RLS: Super Admin all, faculty own rows).
+  (new table only, RLS: Super Admin all, faculty own rows), plus
+  `20261124130000_user_deletion_requests_set_null.sql` (D2 fix:
+  `target_user_id` and `requested_by` changed from `ON DELETE CASCADE`
+  to `ON DELETE SET NULL` — with the NOT NULL constraints dropped, so
+  an approved request row survives the delete as the record, with its
+  reason/report intact. The request is marked approved *before* the
+  delete runs, and reverts to pending if the delete fails).
+- Export (D1 fix): every select/order was verified against
+  `information_schema` on staging — real columns only
+  (e.g. certificates `certificate_uid`/`issued_at`,
+  assignment_submissions `score`/`submitted_at`,
+  quiz_attempts `max_score`/`completed_at`,
+  payment_transactions `received_at`); course titles come from one
+  `courses` lookup, not a PostgREST embed. A failed section is
+  reported visibly (`{unavailable: true, error: ...}` plus a top-level
+  `exportErrors` list) instead of silently dropping. Counts/export
+  queries run concurrently (D3) — preview was 21 s, export 40 s
+  sequential.
 - Frontend: `src/services/userDeletion.ts`,
   `src/components/admin/DeleteUserModal.tsx`; Delete buttons wired
   into `AdminStudentManagementPage`, `AdminFacultyManagementPage`,

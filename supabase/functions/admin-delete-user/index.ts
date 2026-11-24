@@ -126,25 +126,42 @@ const RESTRICT_SPECS: Array<{ table: string; column: string; label: string }> = 
 
 // Rows included in the pre-delete export. faculty_ai_connections is
 // deliberately excluded (it holds encrypted API keys — counts only).
-const EXPORT_SPECS: Array<{ table: string; column: string; select: string }> = [
-  { table: "course_enrollments", column: "student_id", select: "*, course:courses(title)" },
-  { table: "course_faculty", column: "faculty_id", select: "*, course:courses(title)" },
-  { table: "lesson_progress", column: "student_id", select: "id, course_id, lesson_id, completed, completed_at, created_at" },
-  { table: "assignment_submissions", column: "student_id", select: "id, assignment_id, status, marks_obtained, submitted_at, created_at" },
-  { table: "quiz_attempts", column: "student_id", select: "id, quiz_id, score, total_marks, submitted_at, created_at" },
-  { table: "project_submissions", column: "student_id", select: "id, project_id, status, submitted_at, created_at" },
-  { table: "certificates", column: "student_id", select: "id, course_id, certificate_url, issued_at, created_at" },
-  { table: "user_achievements", column: "student_id", select: "id, achievement_id, earned_at, created_at" },
-  { table: "xp_transactions", column: "student_id", select: "id, amount, reason, created_at" },
-  { table: "coding_question_attempts", column: "student_id", select: "id, question_id, status, attempts_count, last_attempted_at" },
-  { table: "enrollment_requests", column: "student_id", select: "id, course_id, status, created_at" },
-  { table: "batch_students", column: "student_id", select: "id, batch_id, created_at" },
-  { table: "session_attendance", column: "student_id", select: "id, session_id, status, created_at" },
-  { table: "student_support_records", column: "student_id", select: "id, category, priority, status, notes, created_at" },
-  { table: "payment_orders", column: "student_id", select: "id, course_id, amount, currency, gateway, gateway_order_id, status, created_at" },
-  { table: "faculty_employment", column: "faculty_id", select: "id, designation, employment_status, created_at" },
-  { table: "faculty_compensation_history", column: "faculty_id", select: "id, amount, created_at" },
-  { table: "faculty_performance_reviews", column: "faculty_id", select: "id, rating, created_at" },
+//
+// D1 fix (2026-11-24): every `select`/`order` below was verified column
+// by column against information_schema on staging
+// (vrzydtqcatgkfhifuchk). The original selects named columns that do
+// not exist (certificates.certificate_url/created_at,
+// assignment_submissions.marks_obtained/created_at,
+// quiz_attempts.total_marks/submitted_at/created_at,
+// project_submissions.created_at, user_achievements.created_at,
+// batch_students.created_at, session_attendance.status,
+// payment_transactions.created_at) and `*, course:courses(title)`
+// embeds that PostgREST rejects, so whole sections came back
+// {"unavailable": true} — and payment_transactions swallowed its error
+// entirely. Course titles are NOT embedded here: course_enrollments /
+// course_faculty have no created_at either, so ordering by it failed
+// too. Titles are attached afterwards from one courses lookup (see
+// handleExport). `order` is a real column on that table, or null for
+// no ordering.
+const EXPORT_SPECS: Array<{ table: string; column: string; select: string; order: string | null }> = [
+  { table: "course_enrollments", column: "student_id", select: "id, course_id, student_id, enrolled_at, completed_at, progress_percentage, enrollment_source, access_status, granted_by, granted_at, revoked_by, revoked_at, notes, expiry_date, enrollment_reason, is_test", order: "enrolled_at" },
+  { table: "course_faculty", column: "faculty_id", select: "id, course_id, faculty_id, assigned_at", order: "assigned_at" },
+  { table: "lesson_progress", column: "student_id", select: "id, course_id, lesson_id, completed, completed_at, created_at", order: "created_at" },
+  { table: "assignment_submissions", column: "student_id", select: "id, assignment_id, status, score, submitted_at, updated_at", order: "submitted_at" },
+  { table: "quiz_attempts", column: "student_id", select: "id, quiz_id, score, max_score, passed, completed_at, started_at", order: "completed_at" },
+  { table: "project_submissions", column: "student_id", select: "id, project_id, status, score, submitted_at, updated_at", order: "submitted_at" },
+  { table: "certificates", column: "student_id", select: "id, course_id, certificate_uid, issued_at", order: "issued_at" },
+  { table: "user_achievements", column: "student_id", select: "id, achievement_id, earned_at", order: "earned_at" },
+  { table: "xp_transactions", column: "student_id", select: "id, amount, reason, created_at", order: "created_at" },
+  { table: "coding_question_attempts", column: "student_id", select: "id, question_id, status, attempts_count, last_attempted_at", order: "last_attempted_at" },
+  { table: "enrollment_requests", column: "student_id", select: "id, course_id, status, message, requested_at, created_at", order: "created_at" },
+  { table: "batch_students", column: "student_id", select: "id, batch_id, enrolled_at, status", order: "enrolled_at" },
+  { table: "session_attendance", column: "student_id", select: "id, session_id, attendance_status, joined_at, created_at", order: "created_at" },
+  { table: "student_support_records", column: "student_id", select: "id, category, priority, status, notes, created_at", order: "created_at" },
+  { table: "payment_orders", column: "student_id", select: "id, course_id, amount, currency, gateway, gateway_order_id, cf_order_id, status, created_at", order: "created_at" },
+  { table: "faculty_employment", column: "faculty_id", select: "id, designation, employment_status, created_at", order: "created_at" },
+  { table: "faculty_compensation_history", column: "faculty_id", select: "id, amount, created_at", order: "created_at" },
+  { table: "faculty_performance_reviews", column: "faculty_id", select: "id, rating, created_at", order: "created_at" },
 ];
 
 async function countRows(admin: AdminClient, table: string, column: string, value: string): Promise<number | null> {
@@ -162,21 +179,28 @@ async function countRows(admin: AdminClient, table: string, column: string, valu
 
 type CountMap = Record<string, { label: string; count: number | null }>;
 
+// D3: the ~28 count queries used to run sequentially (preview took
+// 21 s, export 40 s). They are independent, so run them concurrently:
+// the payment-orders lookup is started first, then all cascade counts
+// run in parallel, then the transaction count follows from the orders.
 async function collectCounts(admin: AdminClient, targetId: string): Promise<{ counts: CountMap; total: number }> {
   const counts: CountMap = {};
   let total = 0;
-  for (const spec of CASCADE_SPECS) {
-    const count = await countRows(admin, spec.table, spec.column, targetId);
+  const ordersPromise = admin
+    .from("payment_orders")
+    .select("id")
+    .eq("student_id", targetId)
+    .limit(500);
+  const results = await Promise.all(
+    CASCADE_SPECS.map(async (spec) => ({ spec, count: await countRows(admin, spec.table, spec.column, targetId) })),
+  );
+  for (const { spec, count } of results) {
     counts[spec.table] = { label: spec.label, count };
     if (typeof count === "number") total += count;
   }
   // payment_transactions hang off payment_orders, not the profile.
   try {
-    const { data: orders } = await admin
-      .from("payment_orders")
-      .select("id")
-      .eq("student_id", targetId)
-      .limit(500);
+    const { data: orders } = await ordersPromise;
     const orderIds = (orders ?? []).map((o) => (o as JsonRecord).id as string);
     if (orderIds.length > 0) {
       const txCount = await countRowsIn(admin, "payment_transactions", "payment_order_id", orderIds);
@@ -207,9 +231,12 @@ async function countRowsIn(admin: AdminClient, table: string, column: string, va
 type Blocker = { table: string; column: string; label: string; count: number };
 
 async function collectBlockers(admin: AdminClient, targetId: string): Promise<Blocker[]> {
+  // D3: independent checks — run concurrently.
+  const results = await Promise.all(
+    RESTRICT_SPECS.map(async (spec) => ({ spec, count: await countRows(admin, spec.table, spec.column, targetId) })),
+  );
   const blockers: Blocker[] = [];
-  for (const spec of RESTRICT_SPECS) {
-    const count = await countRows(admin, spec.table, spec.column, targetId);
+  for (const { spec, count } of results) {
     if (typeof count === "number" && count > 0) {
       blockers.push({ table: spec.table, column: spec.column, label: spec.label, count });
     }
@@ -439,45 +466,100 @@ async function handleExport(ctx: StaffRequestContext, admin: AdminClient, body: 
   const { counts, total } = await collectCounts(admin, targetId);
   const blockers = await collectBlockers(admin, targetId);
 
+  // D1: a failed section must be VISIBLE, never silently
+  // {"unavailable": true}. Every failure records its error message in
+  // the section AND in the top-level exportErrors list. An empty array
+  // means the table genuinely has no rows for this user.
+  // D3: the section fetches are independent — run them concurrently.
   const sections: Record<string, unknown> = { profile: target };
-  for (const spec of EXPORT_SPECS) {
-    try {
-      const { data, error } = await admin
-        .from(spec.table)
-        .select(spec.select)
-        .eq(spec.column, targetId)
-        .order("created_at", { ascending: false })
-        .limit(EXPORT_ROW_LIMIT);
-      if (error) {
-        sections[spec.table] = { unavailable: true };
-      } else {
-        sections[spec.table] = data ?? [];
+  const exportErrors: Array<{ table: string; error: string }> = [];
+  const sectionResults = await Promise.all(
+    EXPORT_SPECS.map(async (spec) => {
+      try {
+        let query = admin
+          .from(spec.table)
+          .select(spec.select)
+          .eq(spec.column, targetId)
+          .limit(EXPORT_ROW_LIMIT);
+        if (spec.order) query = query.order(spec.order, { ascending: false });
+        const { data, error } = await query;
+        if (error) return { table: spec.table, rows: null as unknown, error: error.message };
+        return { table: spec.table, rows: (data ?? []) as unknown, error: null as string | null };
+      } catch (e) {
+        return { table: spec.table, rows: null as unknown, error: e instanceof Error ? e.message : String(e) };
       }
-    } catch {
-      sections[spec.table] = { unavailable: true };
+    }),
+  );
+  for (const r of sectionResults) {
+    if (r.error) {
+      sections[r.table] = { unavailable: true, error: r.error };
+      exportErrors.push({ table: r.table, error: r.error });
+    } else {
+      sections[r.table] = r.rows;
     }
   }
-  // Payment transactions hang off payment_orders.
+  // Payment transactions hang off payment_orders. D1: the old code
+  // selected created_at (the table has received_at) AND ignored the
+  // error entirely, silently returning [] for a row that existed.
   try {
-    const { data: orders } = await admin
+    const { data: orders, error: ordersError } = await admin
       .from("payment_orders")
       .select("id")
       .eq("student_id", targetId)
       .limit(500);
+    if (ordersError) throw new Error(ordersError.message);
     const orderIds = (orders ?? []).map((o) => (o as JsonRecord).id as string);
     if (orderIds.length > 0) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from("payment_transactions")
-        .select("id, payment_order_id, gateway, event_type, gateway_status, amount, currency, created_at")
+        .select("id, payment_order_id, gateway, cf_payment_id, event_type, gateway_status, amount, currency, signature_valid, received_at")
         .in("payment_order_id", orderIds)
-        .order("created_at", { ascending: false })
+        .order("received_at", { ascending: false })
         .limit(EXPORT_ROW_LIMIT);
+      if (error) throw new Error(error.message);
       sections["payment_transactions"] = data ?? [];
     } else {
       sections["payment_transactions"] = [];
     }
-  } catch {
-    sections["payment_transactions"] = { unavailable: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    sections["payment_transactions"] = { unavailable: true, error: message };
+    exportErrors.push({ table: "payment_transactions", error: message });
+  }
+
+  // Course titles: the old `course:courses(title)` embed failed in
+  // PostgREST, so attach titles from one courses lookup instead.
+  try {
+    const courseIds = new Set<string>();
+    for (const table of ["course_enrollments", "course_faculty", "payment_orders", "certificates"]) {
+      const rows = sections[table];
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          const id = (row as JsonRecord).course_id;
+          if (typeof id === "string" && id) courseIds.add(id);
+        }
+      }
+    }
+    if (courseIds.size > 0) {
+      const { data: courses } = await admin
+        .from("courses")
+        .select("id, title")
+        .in("id", [...courseIds]);
+      const titles = new Map((courses ?? []).map((c) => [(c as JsonRecord).id as string, (c as JsonRecord).title as string]));
+      for (const table of ["course_enrollments", "course_faculty", "payment_orders", "certificates"]) {
+        const rows = sections[table];
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            const r = row as JsonRecord;
+            if (typeof r.course_id === "string") r.course_title = titles.get(r.course_id) ?? null;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Titles are a convenience; a lookup failure must not fail the
+    // export itself — but record it visibly.
+    exportErrors.push({ table: "courses", error: e instanceof Error ? e.message : String(e) });
   }
 
   const summaryText = buildSummaryText(target, counts, total, blockers);
@@ -492,6 +574,7 @@ async function handleExport(ctx: StaffRequestContext, admin: AdminClient, body: 
     total,
     blockers,
     sections,
+    exportErrors,
     summaryText,
   });
 }
@@ -536,6 +619,30 @@ async function handleGenerateReport(ctx: StaffRequestContext, admin: AdminClient
   }
 }
 
+// D2: the request row must be marked approved BEFORE the target is
+// deleted — the old code updated it after the delete, which could
+// never take effect while target_user_id was ON DELETE CASCADE (and
+// with the SET NULL migration the row survives, but the ordering is
+// still wrong: a failed delete must not leave an approved request).
+// If the delete then fails, the request is reverted to pending.
+async function markRequestApproved(admin: AdminClient, requestId: string, reviewerId: string, reviewNote: string | null) {
+  await admin
+    .from("user_deletion_requests")
+    .update({ status: "approved", reviewed_by: reviewerId, reviewed_at: new Date().toISOString(), review_note: reviewNote, updated_at: new Date().toISOString() })
+    .eq("id", requestId);
+}
+
+async function revertRequestToPending(admin: AdminClient, requestId: string) {
+  try {
+    await admin
+      .from("user_deletion_requests")
+      .update({ status: "pending", reviewed_by: null, reviewed_at: null, updated_at: new Date().toISOString() })
+      .eq("id", requestId);
+  } catch (e) {
+    console.error("admin-delete-user request revert failed:", e instanceof Error ? e.message : e);
+  }
+}
+
 async function handleDelete(ctx: StaffRequestContext, admin: AdminClient, body: JsonRecord) {
   const targetId = String(body.targetUserId ?? "").trim();
   const reason = String(body.reason ?? "").trim();
@@ -547,12 +654,13 @@ async function handleDelete(ctx: StaffRequestContext, admin: AdminClient, body: 
     throw new HttpError(400, "Download the user's data first, or confirm you are skipping the download.");
   }
   const { caller, target } = await authorizeTarget(ctx, admin, targetId, { superAdminOnly: true });
-  const result = await deleteUserInternal(admin, caller, target, { reason, report, requestId });
-  if (requestId) {
-    await admin
-      .from("user_deletion_requests")
-      .update({ status: "approved", reviewed_by: caller.id as string, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("id", requestId);
+  if (requestId) await markRequestApproved(admin, requestId, caller.id as string, null);
+  let result;
+  try {
+    result = await deleteUserInternal(admin, caller, target, { reason, report, requestId });
+  } catch (e) {
+    if (requestId) await revertRequestToPending(admin, requestId);
+    throw e;
   }
   return json({ ok: true, deleted: true, profile: target, ...result });
 }
@@ -638,19 +746,25 @@ async function handleReviewRequest(ctx: StaffRequestContext, admin: AdminClient,
     return json({ ok: true, requestId, decision: "rejected" });
   }
 
-  // Approved: run the same guarded delete as a direct delete. If the
-  // delete is blocked (RESTRICT rows, last admin, ...), the request
-  // stays pending so the admin can clean up and approve again.
+  // Approved: mark the request approved FIRST (D2 — updating after
+  // the delete could never take effect while the row was
+  // cascade-deleted), then run the same guarded delete as a direct
+  // delete. If the delete is blocked (RESTRICT rows, last admin, ...),
+  // the request reverts to pending so the admin can clean up and
+  // approve again.
   const { target } = await authorizeTarget(ctx, admin, req.target_user_id as string, { superAdminOnly: true });
-  const result = await deleteUserInternal(admin, caller, target, {
-    reason: req.reason as string,
-    report: (req.ai_report as string | null) ?? null,
-    requestId,
-  });
-  await admin
-    .from("user_deletion_requests")
-    .update({ status: "approved", reviewed_by: caller.id as string, reviewed_at: new Date().toISOString(), review_note: reviewNote, updated_at: new Date().toISOString() })
-    .eq("id", requestId);
+  await markRequestApproved(admin, requestId, caller.id as string, reviewNote);
+  let result;
+  try {
+    result = await deleteUserInternal(admin, caller, target, {
+      reason: req.reason as string,
+      report: (req.ai_report as string | null) ?? null,
+      requestId,
+    });
+  } catch (e) {
+    await revertRequestToPending(admin, requestId);
+    throw e;
+  }
   return json({ ok: true, requestId, decision: "approved", deleted: true, profile: target, ...result });
 }
 

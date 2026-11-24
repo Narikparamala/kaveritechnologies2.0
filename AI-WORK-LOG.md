@@ -333,4 +333,14 @@
   - If `GEMINI_API_KEY` is unset on staging and no faculty AI connection exists, the report falls back to the template (by design).
   - Prod enablement needs the staging checklist in docs/hard-delete.md to pass first + owner approval.
 
+- **2026-11-24 — Hard-delete D1/D2/D3 fixes (Muse, feature/hard-delete-user, DRAFT PR #53 — not merged)**
+- **Goal:** Fix the two merge-blocking defects found by staging verification (report `~/workspace/goals/kaveri-academy-health-check-and-bug-fixes/files/hard-delete-staging-verification-2026-11-24.md` §5) plus the latency note, without changing any existing feature/behaviour.
+- **What I changed/added:**
+  - D1 (export): rewrote `EXPORT_SPECS` in `supabase/functions/admin-delete-user/index.ts` — every select/order verified column-by-column against `information_schema` on staging (`vrzydtqcatgkfhifuchk`): certificates `certificate_uid`/`issued_at`, assignment_submissions `score`/`submitted_at`/`updated_at`, quiz_attempts `max_score`/`completed_at`/`started_at`, project_submissions `submitted_at`/`updated_at`, user_achievements `earned_at`, batch_students `enrolled_at`/`status`, session_attendance `attendance_status`, payment_transactions `received_at`, course_enrollments/course_faculty explicit columns (both have no `created_at`). Course titles now come from one `courses` lookup instead of the failing `course:courses(title)` embed. A failed section now returns `{unavailable: true, error: <message>}` and is listed in a top-level `exportErrors` array — payment_transactions previously swallowed its error entirely and returned `[]`.
+  - D2 (request row): new append-only migration `20261124130000_user_deletion_requests_set_null.sql` — `target_user_id` and `requested_by` FKs changed CASCADE → SET NULL (NOT NULL dropped, which SET NULL requires); `reviewed_by` was already SET NULL. Original `20261124120000` migration NOT edited. Code order fixed: `handleDelete` and `handleReviewRequest` now mark the request approved BEFORE the delete (new helpers `markRequestApproved`/`revertRequestToPending`) and revert it to pending if the delete fails.
+  - D3 (latency): `collectCounts`, `collectBlockers`, and the export section fetches now run concurrently (`Promise.all`); the payment-orders lookup starts before the counts are awaited.
+  - Docs: `docs/hard-delete.md` updated with the D1/D2/D3 fixes.
+- **What I verified:** `npm run typecheck` zero errors, `npm run build` passes, `eslint` on touched files 0 errors, esbuild TS parse of the edge function passes (no Deno in the VM). Staging re-verification of export + approve-request still to run (see parent task) — nothing applied to prod.
+- **What I deliberately did NOT change:** no existing page, button, RPC, RLS policy, route, or grading path touched; the original migration file untouched; `faculty_work_requests` still not widened; no secrets set.
+
 ## New entries go above this line (newest first)
