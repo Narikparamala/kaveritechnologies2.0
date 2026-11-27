@@ -21,6 +21,8 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { detectQuestionMediaType, type QuestionMediaType } from '../../lib/questionMedia';
+import { uploadQuestionMedia } from '../../services/fileUpload';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -46,6 +48,9 @@ type CodingQuestion = {
   default_marks: number;
   source_type: 'original' | 'faculty_created' | 'adapted_pattern';
   is_published: boolean;
+  example_media_url: string | null;
+  example_media_type: string | null;
+  example_media_title: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -81,6 +86,9 @@ type QuestionForm = {
   default_marks: number;
   source_type: CodingQuestion['source_type'];
   is_published: boolean;
+  exampleMediaUrl: string;
+  exampleMediaType: QuestionMediaType | '';
+  exampleMediaTitle: string;
 };
 
 const EMPTY_FORM: QuestionForm = {
@@ -103,6 +111,9 @@ const EMPTY_FORM: QuestionForm = {
   default_marks: 10,
   source_type: 'faculty_created',
   is_published: false,
+  exampleMediaUrl: '',
+  exampleMediaType: '',
+  exampleMediaTitle: '',
 };
 
 function errorMessage(error: unknown) {
@@ -265,6 +276,7 @@ function QuestionBankList({ onCreate, onEdit }: { onCreate: () => void; onEdit: 
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white">{question.title}</h2>
                     <Badge variant={question.is_published ? 'success' : 'warning'}>{question.is_published ? 'Published' : 'Draft'}</Badge>
                     <Badge variant={question.difficulty === 'easy' ? 'success' : question.difficulty === 'medium' ? 'warning' : 'error'}>{question.difficulty}</Badge>
+                    {question.example_media_url && <Badge variant="info">Example media</Badge>}
                   </div>
                   <p className="line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{question.problem_statement}</p>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
@@ -310,6 +322,7 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
   const [testOutput, setTestOutput] = useState('');
   const [testHidden, setTestHidden] = useState(false);
   const [testWeight, setTestWeight] = useState(1);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   const loadTests = async (id: string) => {
     const { data, error } = await supabase
@@ -352,6 +365,9 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
           default_marks: question.default_marks,
           source_type: question.source_type,
           is_published: question.is_published,
+          exampleMediaUrl: question.example_media_url ?? '',
+          exampleMediaType: (question.example_media_type as QuestionMediaType | null) ?? '',
+          exampleMediaTitle: question.example_media_title ?? '',
         });
         await loadTests(questionId);
       } catch (error) {
@@ -403,6 +419,11 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
         language: 'python',
         source_type: form.source_type,
         is_published: isPublished,
+        example_media_url: form.exampleMediaUrl.trim() || null,
+        example_media_type: form.exampleMediaUrl.trim()
+          ? (form.exampleMediaType || detectQuestionMediaType(form.exampleMediaUrl) || null)
+          : null,
+        example_media_title: form.exampleMediaTitle.trim() || null,
         created_by: profile?.id ?? null,
       };
 
@@ -518,6 +539,39 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
     }
   };
 
+  const updateMediaUrl = (url: string) => {
+    setForm(current => ({
+      ...current,
+      exampleMediaUrl: url,
+      exampleMediaType: url.trim() ? (detectQuestionMediaType(url) ?? current.exampleMediaType) : '',
+    }));
+  };
+
+  const handleMediaFile = async (file: File | undefined) => {
+    if (!file) return;
+    // The upload path is keyed by question id, so a new question must be
+    // saved first (same pattern as adding a test case).
+    let id = savedQuestionId;
+    if (!id) id = await saveQuestion(false) || '';
+    if (!id) return;
+
+    setUploadingMedia(true);
+    try {
+      const result = await uploadQuestionMedia(id, file);
+      setForm(current => ({
+        ...current,
+        exampleMediaUrl: result.publicUrl,
+        exampleMediaType: result.mediaType,
+        exampleMediaTitle: current.exampleMediaTitle || result.fileName,
+      }));
+      success('Example media uploaded — save the question to keep it');
+    } catch (error) {
+      toastError('Could not upload example media', errorMessage(error));
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex min-h-[500px] items-center justify-center"><Loader2 className="animate-spin text-primary-500" /></div>;
   }
@@ -599,6 +653,69 @@ function QuestionEditor({ questionId, onBack, basePath = '/faculty/question-bank
                 <div className="grid gap-4 text-sm sm:grid-cols-2"><div><p className="mb-1 text-xs uppercase text-slate-400">Input</p><pre className="whitespace-pre-wrap rounded-lg bg-slate-100 p-3 dark:bg-slate-800">{testCase.input_data || '(no input)'}</pre></div><div><p className="mb-1 text-xs uppercase text-slate-400">Expected</p><pre className="whitespace-pre-wrap rounded-lg bg-slate-100 p-3 text-emerald-600 dark:bg-slate-800">{testCase.expected_output}</pre></div></div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="card p-5 lg:p-6">
+          <SectionTitle number="5" title="Example Output Media" description="Optional: one video, GIF or image showing the example output — students see it under Examples" />
+          <div className="grid gap-4">
+            <Field label="Media URL (YouTube link or uploaded file URL)">
+              <input
+                className="input w-full"
+                value={form.exampleMediaUrl}
+                onChange={event => updateMediaUrl(event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=... or https://.../course-content/questions/..."
+              />
+            </Field>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Field label="Media type">
+                <select
+                  className="input w-full"
+                  value={form.exampleMediaType}
+                  onChange={event => update('exampleMediaType', event.target.value as QuestionMediaType | '')}
+                >
+                  <option value="">Auto-detect from URL</option>
+                  <option value="youtube">YouTube video</option>
+                  <option value="video">Uploaded video</option>
+                  <option value="gif">GIF</option>
+                  <option value="image">Image</option>
+                </select>
+              </Field>
+              <Field label="Media title (shown to students)">
+                <input className="input w-full" value={form.exampleMediaTitle} onChange={event => update('exampleMediaTitle', event.target.value)} placeholder="First and Last Digit — Example Output" />
+              </Field>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Or upload a file</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="btn-secondary flex cursor-pointer items-center gap-2 text-sm">
+                  {uploadingMedia ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  {uploadingMedia ? 'Uploading…' : 'Upload GIF / image / video'}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/gif,image/png,image/jpeg,image/webp,video/mp4,video/webm"
+                    disabled={uploadingMedia}
+                    onChange={event => { void handleMediaFile(event.target.files?.[0]); event.target.value = ''; }}
+                  />
+                </label>
+                {form.exampleMediaUrl && (
+                  <button type="button" className="btn-secondary flex items-center gap-2 text-sm" onClick={() => setForm(current => ({ ...current, exampleMediaUrl: '', exampleMediaType: '', exampleMediaTitle: '' }))}>
+                    <Trash2 size={16} /> Remove media
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">GIF, PNG, JPG, WebP or MP4 / WebM, up to 100 MB. Uploaded to the course-content bucket under questions/{'{question id}'} — the file is public by URL, like lesson resources.</p>
+            </div>
+            {form.exampleMediaUrl && (form.exampleMediaType === 'gif' || form.exampleMediaType === 'image' || detectQuestionMediaType(form.exampleMediaUrl) === 'gif' || detectQuestionMediaType(form.exampleMediaUrl) === 'image') && (
+              <img src={form.exampleMediaUrl} alt={form.exampleMediaTitle || 'Example output preview'} className="max-h-64 w-auto rounded-xl border border-slate-200 dark:border-slate-700" onError={event => { event.currentTarget.style.display = 'none'; }} />
+            )}
+            {form.exampleMediaUrl && (form.exampleMediaType === 'video' || detectQuestionMediaType(form.exampleMediaUrl) === 'video') && (
+              <video controls preload="metadata" src={form.exampleMediaUrl} className="max-h-80 w-full rounded-xl bg-slate-900" />
+            )}
+            {form.exampleMediaUrl && (form.exampleMediaType === 'youtube' || detectQuestionMediaType(form.exampleMediaUrl) === 'youtube') && (
+              <p className="text-sm text-slate-500 dark:text-slate-400">YouTube video — students will see the embedded player in the practice page.</p>
+            )}
           </div>
         </section>
 

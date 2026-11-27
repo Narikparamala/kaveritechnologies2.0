@@ -42,6 +42,7 @@ import {
   type SecureTestResult,
 } from '../../services/secureGrading';
 import CodeEditor from '../../components/common/CodeEditor';
+import ExampleOutputMedia from './ExampleOutputMedia';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -66,6 +67,9 @@ type CodingQuestion = {
   language: string;
   default_marks: number;
   is_published: boolean;
+  example_media_url: string | null;
+  example_media_type: string | null;
+  example_media_title: string | null;
 };
 
 type QuestionTestCase = {
@@ -811,6 +815,8 @@ function QuestionWorkspace({ questionId, onBack }: { questionId: string; onBack:
               </div>
             </div>
           )}
+
+          <ExampleOutputMedia question={question} />
 
           {question.hints.length > 0 && (
             <details className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/10">
