@@ -8,6 +8,7 @@ import { useToast } from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
 import { PushNotificationCard } from '../../components/settings/PushNotificationCard';
+import { PhoneVerificationCard } from '../../components/settings/PhoneVerificationCard';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -422,6 +423,9 @@ export default function SettingsPage() {
             </form>
           )}
         </div>
+
+        {/* Phone verification (OTP) — optional, added 2026-11-24. */}
+        <PhoneVerificationCard />
 
         {/* Danger Zone */}
         <div className="card p-6 border border-red-100 dark:border-red-900/30">
