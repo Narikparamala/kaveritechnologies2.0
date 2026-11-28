@@ -361,6 +361,9 @@
   - The YouTube URL used for the Even or Odd staging test is a format-valid placeholder video, not Kaveri content.
 - **Branch / PR:** `feature/practice-media`, local commit `6b2f081` — ready to push, **DRAFT PR NOT YET OPENED**. The GitHub write approval (list_branches call, approval `connector-attempt-e526757b2a09c2eb91d4910b6a21805e221877b0302b5477560fab62e046eb1e`) **timed out unanswered while the user slept, so no branch/push/PR was created** — per the task instructions it was NOT retried. Morning step (one tap): approve the GitHub write card, then push `feature/practice-media` (8 files, snapshot push of the local commit) and open a DRAFT PR to `main` (do not merge, no prod changes). Prod untouched.
 
+## New entries go above this line (newest first)
+
+<!-- Note: this entry sits below the marker to avoid a merge conflict with the practice-media entry above it. -->
 - **2026-11-24 — Branding settings (Muse, feature/branding-settings, DRAFT PR — not merged)**
 - **Goal:** Second of three features (after hard delete, before OTP): admin-editable branding — display name, tagline, contact email/phone, website, logo/favicon upload, legal display name, primary colour — additive only, per AGENTS.md Rule 0 and the owner's "do not change existing code" instruction. Built while the user slept, using the decisions in the task (no questions asked).
 - **What I changed/added:**
@@ -385,4 +388,4 @@
   - Full runtime recolouring (CSS-variable layer across Tailwind tokens) is a separate change; the `primary_color` column + `--brand-primary` hook point are ready for it.
   - Staging `company_settings` now has a NEW row id (re-seeded after the fallback test); the values are identical to the migration seed.
 - **Branch / PR:** `feature/branding-settings`, DRAFT PR — (link to be added once opened; if the GitHub push approval timed out overnight, the local branch + commit below is the morning handoff)
-## New entries go above this line (newest first)
+
