@@ -343,6 +343,9 @@
 - **What I verified:** `npm run typecheck` zero errors, `npm run build` passes, `eslint` on touched files 0 errors, esbuild TS parse of the edge function passes (no Deno in the VM). Pushed to `feature/hard-delete-user` (snapshot `7b9d92fb`, local `d5355c0`; plain `git push` has no credentials in this VM — snapshot push via the GitHub connector, sync record updated). New migration `20261124130000` applied to staging only (FKs verified SET NULL); edge function redeployed to staging only (v2 ACTIVE). Staging re-test with fresh `hd2-*` test accounts: **(a) export PASS** — HTTP 200 in 7.0 s (was 40 s), `exportErrors: []`, zero unavailable sections, payment_transactions present (1 row, was `[]`); **(b) approve-request PASS** — request row survives approval with status/reviewer/reason/report intact and `target_user_id` NULL, target fully deleted, sign-in 400. D1 + D2 blockers cleared; D3 latency improved (export 40→7 s). Full evidence in the staging verification report §10. Nothing applied to prod.
 - **What I deliberately did NOT change:** no existing page, button, RPC, RLS policy, route, or grading path touched; the original migration file untouched; `faculty_work_requests` still not widened; no secrets set.
 
+## New entries go above this line (newest first)
+
+<!-- Note: this entry sits below the marker to avoid a merge conflict with the practice-media/branding entries above it. -->
 - **2026-11-24 — Supabase OTP: email + phone one-time-code sign-in (Muse, feature/supabase-otp, DRAFT PR — not merged)**
 - **Goal:** Add OTP sign-in (audit §C: no OTP flow existed at all) without touching password login, Google OAuth, or the magic-link password reset. Additive only, per AGENTS.md Rule 0 and the owner's "do not change existing code" instruction. Decision (no questions asked, user asleep): Supabase email OTP as primary, Supabase phone OTP wired but dashboard-gated on Twilio; NO Firebase Phone Auth.
 - **What I changed/added:**
@@ -371,4 +374,3 @@
   `feature/supabase-otp` from `main` `d9a8fb9e` → snapshot-push the 8 files
   in commit `e384eb7` → open a DRAFT PR against `main`. Do NOT merge.
 
-## New entries go above this line (newest first)
