@@ -362,3 +362,30 @@
 - **Branch / PR:** `feature/practice-media`, local commit `6b2f081` — ready to push, **DRAFT PR NOT YET OPENED**. The GitHub write approval (list_branches call, approval `connector-attempt-e526757b2a09c2eb91d4910b6a21805e221877b0302b5477560fab62e046eb1e`) **timed out unanswered while the user slept, so no branch/push/PR was created** — per the task instructions it was NOT retried. Morning step (one tap): approve the GitHub write card, then push `feature/practice-media` (8 files, snapshot push of the local commit) and open a DRAFT PR to `main` (do not merge, no prod changes). Prod untouched.
 
 ## New entries go above this line (newest first)
+
+<!-- Note: this entry sits below the marker to avoid a merge conflict with the practice-media entry above it. -->
+- **2026-11-24 — Branding settings (Muse, feature/branding-settings, DRAFT PR — not merged)**
+- **Goal:** Second of three features (after hard delete, before OTP): admin-editable branding — display name, tagline, contact email/phone, website, logo/favicon upload, legal display name, primary colour — additive only, per AGENTS.md Rule 0 and the owner's "do not change existing code" instruction. Built while the user slept, using the decisions in the task (no questions asked).
+- **What I changed/added:**
+  - New migration `supabase/migrations/20261124150000_company_settings.sql` — new table `company_settings` only (singleton row via `singleton boolean UNIQUE`, 15 columns incl. `legal_name` and nullable `primary_color` with a `#RRGGBB` CHECK), RLS public read + Super Admin write, one seed row with today's `company.ts` values. Original migrations untouched.
+  - New service `src/services/companyBranding.ts` (`getCompanyBranding` / `saveCompanyBranding`, `DEFAULT_BRANDING` from `company.ts`).
+  - New hook `src/hooks/useCompanyBranding.ts` — DB row merged over `company.ts` defaults (missing row = defaults, so existing pages keep working); shared one-fetch module cache; applies `document.title`, favicon swap, and `--brand-primary` only when a DB row exists.
+  - New `uploadBrandingFile('logo' | 'favicon', file)` in `src/services/fileUpload.ts` — reuses the `course-content` bucket (`branding/logo/…`, `branding/favicon/…`), PNG/JPG/GIF/WebP only, 5 MB max (SVG excluded by the bucket on purpose; `.ico` not in the bucket MIME list).
+  - `src/components/ui/Logo.tsx` reads the hook (logo URL + display name); layout/classes unchanged, default name still renders as "Kaveri Technologies" / "Academy".
+  - `src/pages/admin/PlatformSettingsPage.tsx` — new Branding section only (fields + uploads + Save Branding); the generic row renderer is unchanged except `content_auto_update` now renders as an Enabled/Disabled select like `maintenance_mode` (audit fix; stored `'true'`/`'false'` values unchanged — prod has it `false`, so the trends feed stays off until an admin enables it).
+  - Docs: `docs/branding-settings.md` (incl. staging evidence + the two staging gotchas below).
+- **What I verified:**
+  - `npm run typecheck` zero errors, `npm run build` passes (1m 30s, known Monaco chunk warning only), `eslint` 0 errors on the 5 touched files.
+  - Staging only (`vrzydtqcatgkfhifuchk`, ACTIVE_HEALTHY): migration applied (`{"success":true}`); table/columns/RLS/policies/1 seed row verified; anon select 200 (1 row), anon update 401, anon upload 400 (fail closed). End-to-end through the real client path with a throwaway test Super Admin (`branding-test-admin@kaveri-qatest.com`, `is_test=true`, deleted afterwards): logo upload 200, `PATCH company_settings` 204, anon read-back 200 with `display_name: "Kaveri Academy (Staging Test)"` + test tagline + uploaded logo URL, public logo GET 200 `image/jpeg`. Fallback: row deleted → anon read `[]` (hook returns `company.ts` defaults); row re-seeded. Final staging state: 1 settings row with original values, 0 test profiles, 0 `branding/` objects. Nothing applied to prod.
+  - Staging gotchas (recorded in docs/branding-settings.md): staging Auth signup is rate-limited (`over_email_send_rate_limit`, 429), so the test admin was seeded via SQL; a SQL-seeded `auth.users` row needs non-NULL `confirmation_token`/`recovery_token`/`email_change_token_new`/`email_change` or GoTrue sign-in 500s (`converting NULL to string is unsupported`); `profiles.role` changes via SQL need `request.jwt.claim.sub` set to an existing active Super Admin in the same statement (trigger `protect_profile_authorization_fields()`); Storage `remove()` is `DELETE /object/<bucket>` with `{prefixes}`, not `POST …/remove`.
+- **What I deliberately did NOT change (and why):**
+  - No existing page, button, RPC, RLS policy, route, or grading path touched; `index.html` untouched (static title/favicon are the fallback); `company.ts` untouched (it IS the fallback); the other 9 public pages still read `company.ts` — pointing them at the hook is a later pass, not this PR.
+  - Legal name is a display-only field, labelled as NOT a company rename (registered-entity change waits for the new-company decision); contact email is labelled display-only, never an account email.
+  - Primary colour is stored + exposed as `--brand-primary` but does NOT recolour Tailwind classes (they compile at build time; nothing in `src/` reads the variable) — documented as a follow-up, not faked.
+  - `feature/practice-media` branch (ceb820e, unpushed) not touched; this branch is based on main `d9a8fb9e` only, so the two PRs stay separate.
+- **Known risks / follow-ups:**
+  - Live click-through of the Branding section in a Vercel preview was NOT possible in this session (no live browser); needs the user in the morning after the draft PR opens.
+  - Full runtime recolouring (CSS-variable layer across Tailwind tokens) is a separate change; the `primary_color` column + `--brand-primary` hook point are ready for it.
+  - Staging `company_settings` now has a NEW row id (re-seeded after the fallback test); the values are identical to the migration seed.
+- **Branch / PR:** `feature/branding-settings`, DRAFT PR — (link to be added once opened; if the GitHub push approval timed out overnight, the local branch + commit below is the morning handoff)
+

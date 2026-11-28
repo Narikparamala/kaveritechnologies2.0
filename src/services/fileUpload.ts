@@ -148,3 +148,28 @@ export const ACCEPTED_FILE_TYPES = {
   code: '.py,.js,.ts,.json,.txt',
   all: '.pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.gif,.webp,.svg,.mp4,.webm,.zip,.py,.js,.ts,.json',
 };
+
+const BRANDING_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const BRANDING_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Upload a branding image (logo or favicon) to the course-content bucket
+ * under branding/<kind>/…. Only raster image types the bucket allows
+ * (png/jpg/gif/webp — SVG is deliberately excluded by the bucket, it can
+ * embed scripts; .ico is not in the bucket MIME list, use PNG instead).
+ */
+export async function uploadBrandingFile(
+  kind: 'logo' | 'favicon',
+  file: File,
+): Promise<UploadResult> {
+  const ext = getFileExtension(file.name);
+  if (!BRANDING_IMAGE_EXTENSIONS.includes(ext)) {
+    throw new Error(
+      `Logo/favicon must be a PNG, JPG, GIF or WebP image (got .${ext || 'unknown'}).`,
+    );
+  }
+  if (file.size > BRANDING_MAX_BYTES) {
+    throw new Error('Logo/favicon must be 5 MB or smaller.');
+  }
+  return uploadFile(file, ['branding', kind]);
+}
