@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 import { Logo } from '../../components/ui/Logo';
 import { ThemeToggle } from '../../components/ui/ThemeToggle';
+import { OtpLoginForm } from '../../components/auth/OtpLoginForm';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
@@ -55,6 +56,10 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [emailSent, setEmailSent] = useState(false);
+  // OTP sign-up (email code) is an ADDITIONAL option (2026-11-24,
+  // feature/supabase-otp). The password form and Google button are
+  // unchanged; this flag only switches which form is shown.
+  const [otpMode, setOtpMode] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,6 +170,7 @@ export default function RegisterPage() {
             <div className="relative flex justify-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-900 px-3">or create account with email</div>
           </div>
 
+          {!otpMode && (
           <form onSubmit={handleSubmit} className="space-y-5" noValidate>
             {error && (
               <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-400 text-sm animate-fade-in">
@@ -276,6 +282,20 @@ export default function RegisterPage() {
               <Link to="/privacy" className="text-primary-600 dark:text-primary-400 hover:underline">Privacy Policy</Link>.
             </p>
           </form>
+          )}
+
+          {/* OTP sign-up (email code) — additional option, added 2026-11-24. */}
+          {otpMode ? (
+            <OtpLoginForm mode="register" onBack={() => setOtpMode(false)} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setOtpMode(true)}
+              className="w-full mt-5 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-sm transition-all hover:shadow-sm flex items-center justify-center gap-2"
+            >
+              <KeyRound size={15} /> Create account with an email code instead
+            </button>
+          )}
         </div>
       </div>
     </div>

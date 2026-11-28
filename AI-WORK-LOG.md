@@ -29,6 +29,36 @@
 - **Branch / PR:** <branch name, PR link or "not pushed yet">
 ```
 
+<!-- OTP entry placed at the top of the log (not above the marker) so PR #56 merges cleanly after PRs #54/#55, whose entries occupy the marker region. -->
+- **2026-11-24 — Supabase OTP: email + phone one-time-code sign-in (Muse, feature/supabase-otp, DRAFT PR — not merged)**
+- **Goal:** Add OTP sign-in (audit §C: no OTP flow existed at all) without touching password login, Google OAuth, or the magic-link password reset. Additive only, per AGENTS.md Rule 0 and the owner's "do not change existing code" instruction. Decision (no questions asked, user asleep): Supabase email OTP as primary, Supabase phone OTP wired but dashboard-gated on Twilio; NO Firebase Phone Auth.
+- **What I changed/added:**
+  - New `src/services/otpAuth.ts` — `signInWithOtp`/`verifyOtp` calls for email (`type: 'email'`) and phone (`type: 'sms'`), phone-change linking for signed-in users (`updateUser({ phone })` + `verifyOtp({ type: 'phone_change' })`), E.164 normalisation (bare 10-digit Indian number assumed +91), friendly error mapping (wrong/expired code, resend cooldown, 429 rate limit, and SMS-provider-not-configured → plain-English Twilio message).
+  - New `src/components/auth/OtpLoginForm.tsx` — Email-code / SMS-code tabs on login (60 s resend cooldown, 6-digit input, navigates to `/auth/redirect` on success so the existing AuthContext session/profile flow takes over); email-code sign-up on register (full name collected first, passed as user metadata, `shouldCreateUser: true`; register is email-only so the profile trigger gets a name). Login uses `shouldCreateUser: false` so a typo'd email cannot create an account.
+  - New `src/components/settings/PhoneVerificationCard.tsx` — optional phone verification on the student Settings page; phone never required; shows verified state from `user.phone_confirmed_at` and the Twilio-gated notice in the UI.
+  - Additive insertions only in existing files: one toggle button + conditional render in `LoginPage.tsx` ("Sign in with an email or SMS code instead") and `RegisterPage.tsx` ("Create account with an email code instead"); `<PhoneVerificationCard />` before the Danger Zone in student `SettingsPage.tsx`. Password forms, Google buttons, `AuthContext.tsx`, `ForgotPasswordPage.tsx` untouched (diff: 46 insertions, 2 deletions — the 2 deletions are only the `<form>` tag lines wrapped in the `{!otpMode && (...)}` conditional).
+  - Docs: `docs/supabase-otp.md` (how email OTP works, phone gating with exact dashboard location + Twilio keys needed, no values, what did not change, staging results).
+- **What I verified:**
+  - `npm run typecheck` zero errors, `npm run build` passes (1 m 10 s; known 3.3 MB Monaco chunk warning), `eslint` on the 6 touched files 0 errors (2 pre-existing warnings elsewhere in those files: `setEmailSent` unused in RegisterPage, `useEffect` dep in SettingsPage — both pre-date this change).
+  - Staging (`kaveri-academy-staging` `vrzydtqcatgkfhifuchk`, ACTIVE_HEALTHY, verified before testing). Test account `narikparamala+otp-test-20261124@gmail.com` (Gmail plus-address, staging-only, created 18:15:19Z, id `7185d5a0-…`): sign-up 200, confirmation email arrived in Gmail 23:45:22 IST from Supabase Auth (proves the staging mailer delivers), confirmation link fetched → HTTP 303 with access token. **Email OTP send PROVEN, code-entry NOT proven:** every OTP request first → HTTP 429 `over_email_send_rate_limit` ("only request this after 54 seconds", then "email rate limit exceeded"); a `/auth/v1/recover` probe returned the same 429, proving ALL Supabase Auth mail on staging was rate-limited at that point — not OTP-specific and not a code failure. The bucket refilled ~35 min later: retry at 18:50Z → HTTP 200 `{}` and the OTP email arrived 00:20:06 IST (25 Nov), subject "Your sign-in link" — but the default template sends a MAGIC LINK, no 6-digit code, so the typed-code `verifyOtp` path is still untested on staging until an admin adds `{{ .Token }}` to the Auth "Magic Link" template (dashboard-only). The sign-in link is held as a Gmail credential reference for the parent to click/verify in the morning (message `1a20ee4d392fb49f`); the UI already tells users both code and link work. **Phone OTP fail-clean PASS:** `signInWithOtp({ phone: '+919999999999' })` → HTTP 400 `phone_provider_disabled` "Unsupported phone provider". **Wrong-code PASS:** `verifyOtp` token `000000` → HTTP 403 `otp_expired` "Token has expired or is invalid". Google login and reset-password: code-level only (unmodified in the diff, no live Google sign-in run).
+- **What I deliberately did NOT change (and why):**
+  - No existing page, button, RPC, RLS policy, route, or grading path touched; no migration (no new table; `profiles.phone` already exists and Supabase Auth tracks `phone_confirmed_at` itself, so no `phone_verified` flag was needed); no new edge function (direct Supabase Auth client calls need no server code); no Firebase Auth (Firebase here is FCM push only); no secrets set or pasted anywhere (no Twilio keys invented).
+- **Known risks / follow-ups:**
+  - **Password-login anomaly on the staging test account (must re-test before merge):** password sign-in before confirmation correctly failed 400 `email_not_confirmed`, but after the confirmation link it fails 400 `invalid_credentials` (5 retries, incl. a Python request with the password read from the file it was written to at sign-up — clean 22-char string; still failing at 00:20 IST after the OTP email arrived). Cause unknown; the password-login code is byte-for-byte unchanged from `main`, so this is a staging test-account anomaly, not a regression from this PR — but re-test password login after the OTP magic-link sign-in (which also confirms the account) before merging.
+  - Email OTP code path needs the dashboard template edit (`{{ .Token }}`) for a guaranteed 6-digit code, and the rate-limit bucket to refill, before the end-to-end check can pass.
+  - Phone OTP needs Twilio enabled in the Supabase dashboard (Authentication → Providers → Phone: Account SID, Auth Token, sender number) — owner/admin step, no code.
+  - Still untested: Vercel preview click-through of the OTP toggle on Login/Register and the Settings phone card; live admin click-through is a morning item.
+- **Branch / PR:** `feature/supabase-otp`, local commits `e384eb7` (feature) + docs follow-up (final staging results + approval timeout) — **NO PR
+  OPENED: the GitHub write approval card timed out overnight
+  (list_branches via `call-tool`, approval
+  `connector-attempt-765ed4091f7f08a2da1de756ad32ed8229099e9c9ecaddfc26e2f04fe2a082cf`,
+  "egress approval timed out", ~30 min wait, user asleep). Per instructions
+  it was NOT retried. Morning one-tap path: approve the pending GitHub
+  card (or re-run from the parent agent) → create remote branch
+  `feature/supabase-otp` from `main` `d9a8fb9e` → snapshot-push the 8 files
+  in commit `e384eb7` → open a DRAFT PR against `main`. Do NOT merge.
+
+
 ---
 
 ## Reconstructed history (before this log existed)
