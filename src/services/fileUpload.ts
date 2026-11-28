@@ -76,6 +76,27 @@ export async function uploadExamFile(
   return uploadFile(file, ['exams', examId, studentId]);
 }
 
+export interface QuestionMediaUploadResult extends UploadResult {
+  mediaType: QuestionMediaType;
+}
+
+/**
+ * Example-output media for a coding question (feature/practice-media).
+ * Validates the file against the course-content bucket whitelist
+ * (GIF/PNG/JPG/WebP image or MP4/WebM video, max 100 MB) and uploads it
+ * to `questions/{questionId}/...` in the same bucket lesson files use.
+ * The caller stores the returned publicUrl + mediaType in the question's
+ * example_media_url / example_media_type columns.
+ */
+export async function uploadQuestionMedia(
+  questionId: string,
+  file: File,
+): Promise<QuestionMediaUploadResult> {
+  const mediaType = validateQuestionMediaFile(file);
+  const result = await uploadFile(file, ['questions', questionId]);
+  return { ...result, mediaType };
+}
+
 const BRANDING_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 const BRANDING_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -101,27 +122,6 @@ export async function uploadBrandingFile(
   return uploadFile(file, ['branding', kind]);
 }
 
-export interface QuestionMediaUploadResult extends UploadResult {
-  mediaType: QuestionMediaType;
-}
-
-/**
- * Example-output media for a coding question (feature/practice-media).
- * Validates the file against the course-content bucket whitelist
- * (GIF/PNG/JPG/WebP image or MP4/WebM video, max 100 MB) and uploads it
- * to `questions/{questionId}/...` in the same bucket lesson files use.
- * The caller stores the returned publicUrl + mediaType in the question's
- * example_media_url / example_media_type columns.
- */
-export async function uploadQuestionMedia(
-  questionId: string,
-  file: File,
-): Promise<QuestionMediaUploadResult> {
-  const mediaType = validateQuestionMediaFile(file);
-  const result = await uploadFile(file, ['questions', questionId]);
-  return { ...result, mediaType };
-
-}
 
 export async function deleteFile(path: string): Promise<void> {
   const { error } = await supabase.storage.from(BUCKET).remove([path]);
